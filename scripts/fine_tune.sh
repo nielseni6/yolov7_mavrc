@@ -1,20 +1,34 @@
 #!/bin/bash
+datasets=("data/large.yaml" "data/medium.yaml" "data/small.yaml")
+epochs=(5 5 5)
 
-# Train
-nohup \
-python3 train.py \
---epochs 150 \
---workers 8 \
---device 0,1,2,3,4,5 \
---batch-size 132 \
---data data/drone.yaml \
---img 480 480 \
---cfg cfg/training/yolov7-tiny-drone.yaml \
---entity "drone_detection" \
---weights 'weights/yolov7-tiny.pt' \
---name yolov7-custom \
---hyp data/hyp.drone.tiny.yaml \
---multi-scale \
---save_period 2 \
---freeze 0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38 39 40 41 42 43 44 45 46 47 48 49 50 \
-| tee TEMP.out
+for i in "${!datasets[@]}"
+do
+    dataset="${datasets[i]}"
+    epoch="${epochs[i]}"
+
+    if [ $i -eq 0 ]; then
+        weights='weights/yolov7-tiny.pt'
+    else
+        weights="weights/yolov7-custom.pt"
+    fi
+
+    fname=$(echo ${datasets[i]} | sed -e 's/data\/\(.*\).yaml/\1/g')
+    fname=$(echo $fname.out)
+
+    python3 train.py \
+    --epochs $epoch \
+    --workers 8 \
+    --device 1,2,3,4 \
+    --batch-size 64 \
+    --data $dataset \
+    --img 480 480 \
+    --entity "aslane84" \
+    --name CL_yolov7_ \
+    --cfg cfg/training/yolov7-tiny-drone.yaml \
+    --weights $weights \
+    --hyp data/hyp.drone.tiny.yaml \
+    --multi-scale \
+    --save_period 2 \
+
+done
