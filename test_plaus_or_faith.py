@@ -352,7 +352,7 @@ def test(opt,
             img /= 255.0  # 0 - 255 to 0.0 - 1.0
             if img.ndimension() == 3:
                 img = img.unsqueeze(0)
-
+            
             # Warmup
             if device.type != 'cpu' and (old_img_b != img.shape[0] or old_img_h != img.shape[2] or old_img_w != img.shape[3]):
                 old_img_b = img.shape[0]
