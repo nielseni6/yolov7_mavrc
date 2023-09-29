@@ -149,8 +149,10 @@ class ConfusionMatrix:
         for i, gc in enumerate(gt_classes):
             j = m0 == i
             if n and sum(j) == 1:
+                # test_matrix = self.matrix[gc, detection_classes[m1[j]]]
                 self.matrix[gc, detection_classes[m1[j]]] += 1  # correct
             else:
+                # test_matrix = self.matrix[self.nc, gc]
                 self.matrix[self.nc, gc] += 1  # background FP
 
         if n:

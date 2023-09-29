@@ -448,7 +448,10 @@ class ComputeLoss:
             setattr(self, k, getattr(det, k))
 
     def __call__(self, p, targets,metric="CIoU"):  # predictions, targets, model
-        device = targets.device
+        try:
+            device = targets.device
+        except:
+            device = 'cpu'
         lcls, lbox, lobj = torch.zeros(1, device=device), torch.zeros(1, device=device), torch.zeros(1, device=device)
         tcls, tbox, indices, anchors = self.build_targets(p, targets)  # targets
 
@@ -501,10 +504,18 @@ class ComputeLoss:
 
     def build_targets(self, p, targets):
         # Build targets for compute_loss(), input targets(image,class,x,y,w,h)
-        na, nt = self.na, targets.shape[0]  # number of anchors, targets
+        try:
+            na, nt = self.na, targets.shape[0]  # number of anchors, targets
+        except:
+            na, nt = self.na, len(targets)  # number of anchors, targets
         tcls, tbox, indices, anch = [], [], [], []
-        gain = torch.ones(7, device=targets.device).long()  # normalized to gridspace gain
-        ai = torch.arange(na, device=targets.device).float().view(na, 1).repeat(1, nt)  # same as .repeat_interleave(nt)
+        try:
+            gain = torch.ones(7, device=targets.device).long()  # normalized to gridspace gain
+            ai = torch.arange(na, device=targets.device).float().view(na, 1).repeat(1, nt)  # same as .repeat_interleave(nt)
+        except:
+            gain = torch.ones(7, device='cpu').long()  # normalized to gridspace gain
+            ai = torch.arange(na, device='cpu').float().view(na, 1).repeat(1, nt)  # same as .repeat_interleave(nt)
+
         targets = torch.cat((targets.repeat(na, 1, 1), ai[:, :, None]), 2)  # append anchor indices
 
         g = 0.5  # bias
