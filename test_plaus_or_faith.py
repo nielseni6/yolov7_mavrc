@@ -30,7 +30,8 @@ import matplotlib.pyplot as plt
 from utils.plots import plot_one_box
 from numpy import random
 from plot_bboxes import plot_one_box_PIL_, plot_one_box_seg
-from visualize_plaus_faith import plot_plaus_faith
+# from visualize_plaus_faith import plot_plaus_faith
+import visualize_plaus_faith
 
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -43,27 +44,35 @@ from utils.general import labels_to_class_weights, increment_path, labels_to_ima
     check_requirements, print_mutation, set_logging, one_cycle, colorstr
 
 class TracePrints(object):
-  def __init__(self):    
-    self.stdout = sys.stdout
-  def write(self, s):
-    self.stdout.write("Writing %r\n" % s)
-    traceback.print_stack(file=self.stdout)
+    def __init__(self):    
+        self.stdout = sys.stdout
+    def write(self, s):
+        self.stdout.write("Writing %r\n" % s)
+        traceback.print_stack(file=self.stdout)
 
 def VisualizeImageGrayscale(image_3d):
-  r"""Returns a 3D tensor as a grayscale normalized between 0 and 1 2D tensor.
-  """
-  vmin = torch.min(image_3d)
-  image_2d = image_3d - vmin
-  vmax = torch.max(image_2d)
-  return (image_2d / vmax)
+    r"""Returns a 3D tensor as a grayscale normalized between 0 and 1 2D tensor.
+    """
+    vmin = torch.min(image_3d)
+    image_2d = image_3d - vmin
+    vmax = torch.max(image_2d)
+    return (image_2d / vmax)
 
 def VisualizeNumpyImageGrayscale(image_3d):
-  r"""Returns a 3D tensor as a grayscale normalized between 0 and 1 2D tensor.
-  """
-  vmin = np.min(image_3d)
-  image_2d = image_3d - vmin
-  vmax = np.max(image_2d)
-  return (image_2d / vmax)
+    r"""Returns a 3D tensor as a grayscale normalized between 0 and 1 2D tensor.
+    """
+    vmin = np.min(image_3d)
+    image_2d = image_3d - vmin
+    vmax = np.max(image_2d)
+    return (image_2d / vmax)
+
+def VisualizeImageGrayscale(image_3d):
+    r"""Returns a 3D tensor as a grayscale normalized between 0 and 1 2D tensor.
+    """
+    vmin = torch.min(image_3d)
+    image_2d = image_3d - vmin
+    vmax = torch.max(image_2d)
+    return (image_2d / vmax)
 
 def format_img(img_):
     img_ = img_     # unnormalize
@@ -352,7 +361,7 @@ def test(opt,
             img /= 255.0  # 0 - 255 to 0.0 - 1.0
             if img.ndimension() == 3:
                 img = img.unsqueeze(0)
-            
+
             # Warmup
             if device.type != 'cpu' and (old_img_b != img.shape[0] or old_img_h != img.shape[2] or old_img_w != img.shape[3]):
                 old_img_b = img.shape[0]
@@ -801,8 +810,12 @@ def test(opt,
         np.savetxt(str(save_to + ".csv"), loss_averages_list, 
                                     delimiter = ", ", fmt = "% s")
         print("Full csv results saved to ", save_to)
-        plot_plaus_faith(file_path=save_to)
+        #PythonScripts/yolov7_mavrc/runs/test1/evalattai_eval1_AddAttr__inc1_nsamples15_grayscale__robust__img_num9018_random_fullgrad_grad_eigen_eigengrad.csv
+        # /home/nielseni6/PythonScripts/yolov7_mavrc/test_plaus_or_faith.py
     
+    path_vis = str('/home/nielseni6/PythonScripts/yolov7_mavrc/' + save_to)
+    visualize_plaus_faith.plot_plaus_faith(file_path=path_vis)
+    print("Visualizations saved to ", path_vis)
     
     
     # Compute statistics

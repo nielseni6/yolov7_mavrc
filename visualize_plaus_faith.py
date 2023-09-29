@@ -9,12 +9,15 @@ import pandas as pd
 import matplotlib.pyplot as plt
 
 # file_path = './csv/evalattai_eval1_AddAttr__inc1_nsamples3_grayscale__robust__img_num9018_random_fullgrad_grad_eigen_eigengrad'
-file_path = './csv/plausibility_eval1_AddAttr__inc1_nsamples3_grayscale__robust__img_num9018_random_fullgrad_grad_eigen_eigengrad'
+# file_path = './csv/plausibility_eval1_AddAttr__inc1_nsamples3_grayscale__robust__img_num9018_random_fullgrad_grad_eigen_eigengrad'
+# file_path = '/home/nielseni6/PythonScripts/yolov7_mavrc/runs/test1/evalattai_eval1_AddAttr__inc1_nsamples15_grayscale__robust__img_num9018_random_fullgrad_grad_eigen_eigengrad'
+file_path = '/home/nielseni6/PythonScripts/yolov7_mavrc/runs/test1/evalattai_eval1_AddAttr__inc1_nsamples2_grayscale__robust__img_num9018_random_grad'
 
 def plot_plaus_faith(file_path):
     # Load the CSV file
     data = pd.read_csv(str(file_path + '.csv'), header=None)
-    
+    print(data)
+    print(file_path)
     # Set the x values (iterations)
     x = range(1, 11)
     
@@ -28,9 +31,12 @@ def plot_plaus_faith(file_path):
     # method_names = ['random', 'fullgrad', 'grad', 'eigen', 'eigengrad',]
     
     if 'evalattai' in file_path:
-        
+
+        # print('len(method_names):', len(method_names))
+        # print('data.iloc', data.iloc)
         # Plot each method
         for i in range(len(method_names)):
+            # print('i:', i)
             ax.plot(x, data.iloc[i], label=method_names[i])
         
         # Set labels and title
@@ -70,3 +76,5 @@ def plot_plaus_faith(file_path):
         
     else:
         print('File neither evalattai nor plausibility')
+
+# plot_plaus_faith(file_path)
