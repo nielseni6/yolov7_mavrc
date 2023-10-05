@@ -627,7 +627,12 @@ def test(opt,
             num_sampled = 0
             # loss = 0.0
             for j, (attr_multi_channel, img, targets, cam) in enumerate(results):
+                labels = targets
                 if current_cam == cam:
+                    labels = torch.tensor(labels)
+                    targets = torch.tensor(targets)
+                    # targets = targets.to(device)
+                    
                     t_iter = t_[ite]
                     model.zero_grad()
                     # img = results[j][1]
@@ -635,8 +640,10 @@ def test(opt,
                     # convert grayscale_cam to three channel
                     # img_norm = (img / 255.0)
                     img_norm = img
-                    attr_multi_channel_norm = (attr_multi_channel)
-                    print(str(cam),'torch.mean(attr_multi_channel):', torch.mean(attr_multi_channel))
+                    # attr_multi_channel_norm = VisualizeImageGrayscale(attr_multi_channel)
+                    attr_multi_channel_norm = ((attr_multi_channel) / torch.mean(VisualizeImageGrayscale(attr_multi_channel))) * 0.05
+                    print(str(cam),'torch.mean(attr_multi_channel):', 
+                          torch.mean(((attr_multi_channel_norm) + torch.min(attr_multi_channel_norm))))
                     img_norm = VisualizeImageGrayscale(img) # might want to normalize
                     # print('torch.max(attr_multi_channel):', torch.max(attr_multi_channel))
                     # print('torch.max(img):', torch.max(img))
@@ -651,9 +658,7 @@ def test(opt,
                     formatted_img = formatted_img.half() if half else formatted_img.float()  # uint8 to fp16/32
                     formatted_img *= 255.0  # 0.0 - 1.0 to 0 - 255 
                     # formatted_img /= 255.0  # 0 - 255 to 0.0 - 1.0
-                    
-                    targets = torch.tensor(targets)
-                    # targets = targets.to(device)
+
                     nb, _, height, width = formatted_img.shape  # batch size, channels, height, width
 
                     with torch.no_grad():
@@ -671,11 +676,12 @@ def test(opt,
                             loss, loss_items = compute_loss([x.float() for x in train_out], labels, metric=loss_metric)#[1][:3]  # box, obj, cls
                             eval_totals[int(ite)] += float(torch.sum(loss))
                         if opt.eval_method == 'plausibility':
+                            # MIGHT NEED TO NORMALIZE OR TAKE ABS VAL OF ATTR
                             seg_box = np.zeros_like(im0, dtype=np.float32)# zeros with white pixels inside bbox
                             xyxy_gnd = targets[0][2:]
                             plot_one_box_seg(xyxy_gnd, seg_box, label=None, color=(255,255,255), line_thickness=-1)
                             # attr = np.transpose((attr_multi_channel[0].numpy()), (1, 2, 0))
-                            attr = (attr_multi_channel[0].numpy())
+                            attr = (attr_multi_channel_norm[0].numpy())
                             seg_box_norm = seg_box / float(np.max(seg_box))#255.0 #np.max(seg_box)
                             seg_box_t = np.transpose(seg_box_norm, (2, 0, 1))
                             attr_and_segbox = attr * seg_box_t
@@ -683,7 +689,7 @@ def test(opt,
                             # attr_and_segbox_dot = np.dot(attr,seg_box_t)
                             # imshow((VisualizeNumpyImageGrayscale(attr_and_segbox_dot)), save_path='attr_and_segbox_dot')
                             IoU_num = float(np.sum(attr_and_segbox))
-                            IoU_denom = float(torch.sum(attr_multi_channel))
+                            IoU_denom = float(torch.sum(attr_multi_channel_norm))
                             IoU = IoU_num / IoU_denom
                             eval_totals[int(ite)] += IoU
                         
@@ -831,12 +837,19 @@ def test(opt,
         img_num_str = str('_img_num' + str(img_num))
         for cam in opt.cam_list:
             img_num_str = str(img_num_str + '_' + cam)
-        save_to = str(save_dir.__str__() + "/{}_eval".format(opt.eval_method) + str(run_num) + "_" + addsub + 
+        run_name = str("/{}_eval".format(opt.eval_method) + str(run_num) + "_" + addsub + 
                                     "_" + norm + '_inc' + str(increment) + '_nsamples' + str(n_samples) + gray + "_" + 
                                     robust +'_robust_' + img_num_str)
-        np.savetxt(str(save_to + ".txt"), opt.cam_list, 
+        save_to = str(save_dir.__str__() + run_name)
+        try:
+            os.mkdir(save_to)
+        except OSError:
+            print ("Creation of the directory %s failed" % save_to)
+        else:
+            print ("Successfully created the directory %s" % save_to)
+        np.savetxt(str(save_to + run_name + ".txt"), opt.cam_list, 
                                     delimiter = ", ", fmt = "% s")
-        np.savetxt(str(save_to + ".csv"), loss_averages_list, 
+        np.savetxt(str(save_to + run_name + ".csv"), loss_averages_list, 
                                     delimiter = ", ", fmt = "% s")
         print("Full csv results saved to ", save_to)
         #PythonScripts/yolov7_mavrc/runs/test1/evalattai_eval1_AddAttr__inc1_nsamples15_grayscale__robust__img_num9018_random_fullgrad_grad_eigen_eigengrad.csv
@@ -969,7 +982,7 @@ if __name__ == '__main__':
     opt.data = 'data/real_world.yaml'
     # opt.data = 'data/sls.yaml'
     opt.img_size = 480 
-    opt.name = 'test3' 
+    opt.name = 'test4' 
     opt.weights = 'weights/yolov7-tiny.pt' 
     opt.task = 'val'
     opt.n_samples = 2
