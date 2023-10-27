@@ -10,13 +10,18 @@ import matplotlib.pyplot as plt
 
 # file_path = './csv/evalattai_eval1_AddAttr__inc1_nsamples3_grayscale__robust__img_num9018_random_fullgrad_grad_eigen_eigengrad'
 # file_path = './csv/plausibility_eval1_AddAttr__inc1_nsamples3_grayscale__robust__img_num9018_random_fullgrad_grad_eigen_eigengrad'
-# file_path = '/home/nielseni6/PythonScripts/yolov7_mavrc/runs/test1/evalattai_eval1_AddAttr__inc1_nsamples15_grayscale__robust__img_num9018_random_fullgrad_grad_eigen_eigengrad'
-file_path = '/home/nielseni6/PythonScripts/yolov7_mavrc/runs/test1/evalattai_eval1_AddAttr__inc1_nsamples2_grayscale__robust__img_num9018_random_grad'
+# file_path = '/home/nielseni6/PythonScripts/yolov7_mavrc/runs/test4/plausibility_eval1_AddAttr__inc1_nsamples1_grayscale__robust__img_num9018_random_vanilla_grad/plausibility_eval1_AddAttr__inc1_nsamples1_grayscale__robust__img_num9018_random_vanilla_grad'
+# file_path = '/home/nielseni6/PythonScripts/yolov7_mavrc/runs/test1/evalattai_eval1_AddAttr__inc1_nsamples2_grayscale__robust__img_num9018_random_grad'
+# file_path = '/home/nielseni6/PythonScripts/yolov7_mavrc/runs/test4/evalattai_eval1_AddAttr__inc1_nsamples1_grayscale__robust__img_num9018_random_vanilla_grad/evalattai_eval1_AddAttr__inc1_nsamples1_grayscale__robust__img_num9018_random_vanilla_grad'
+# file_path = '/home/nielseni6/PythonScripts/yolov7_mavrc/runs/test4/plausibility_eval1_AddAttr__inc1_nsamples25_grayscale__robust__img_num9018_random_fullgrad_gradcam_eigen_eigengrad_vanilla_grad/plausibility_eval1_AddAttr__inc1_nsamples25_grayscale__robust__img_num9018_random_fullgrad_gradcam_eigen_eigengrad_vanilla_grad'
+file_path = '/home/nielseni6/PythonScripts/yolov7_mavrc/runs/test4/evalattai_eval1_AddAttr__inc1_nsamples10_grayscale__robust__img_num9018_random_fullgrad_gradcam_eigen_eigengrad_vanilla_grad/evalattai_eval1_AddAttr__inc1_nsamples10_grayscale__robust__img_num9018_random_fullgrad_gradcam_eigen_eigengrad_vanilla_grad'
+
 
 def plot_plaus_faith(file_path):
     # Load the CSV file
     data = pd.read_csv(str(file_path + '.csv'), header=None)
-    print(data)
+    data_CI = pd.read_csv(str(file_path + '_CI.csv'), header=None)
+    
     print(file_path)
     # Set the x values (iterations)
     x = range(1, 11)
@@ -38,6 +43,8 @@ def plot_plaus_faith(file_path):
         for i in range(len(method_names)):
             # print('i:', i)
             ax.plot(x, data.iloc[i], label=method_names[i])
+            ax.fill_between(x, data.iloc[i] - float(data_CI.iloc[i]), data.iloc[i] + float(data_CI.iloc[i]), alpha=0.4)
+            # ax.fill_between(x, data.iloc[i] - 0.5, data.iloc[i] + 0.5, alpha=0.4)
         
         # Set labels and title
         ax.set_xlabel('Iterations')
@@ -58,17 +65,34 @@ def plot_plaus_faith(file_path):
         # Drop all NaN values
         data = data.dropna(axis=1)
         
-        data = data.transpose()
+        data.index = method_names
+        data_CI.index = method_names
+        # data.columns = ['Attribution Methods']
+        # data_CI.columns = ['Attribution Methods']
+        data.columns = [' ']
+        data_CI.columns = [' ']
         
-        data.columns = method_names
+        data = data.transpose()
+        data_CI = data_CI.transpose()
+        # # Reset the index
+        # data.reset_index(inplace=True)
+        # data_CI.reset_index(inplace=True)
+        
+        print(data)
+        print(data_CI)
         
         # Create a bar plot
-        data.plot(kind='bar')
+        ax = data.plot(kind='bar', yerr=(data_CI), capsize=5)
+        # plt.bar(data.index, data, yerr=data_CI)
         
         # Add labels and title
         plt.xlabel('Method')
         plt.ylabel('IoU Average')
         plt.title('Plausibility Bar Plot')
+        
+        # print(data.columns)
+        # Set x-tick labels to column names
+        # ax.set_xticklabels(method_names, rotation=45, horizontalalignment='right')
         
         # Show the plot
         # plt.show()
@@ -77,4 +101,4 @@ def plot_plaus_faith(file_path):
     else:
         print('File neither evalattai nor plausibility')
 
-# plot_plaus_faith(file_path)
+plot_plaus_faith(file_path)

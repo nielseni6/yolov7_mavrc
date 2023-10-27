@@ -59,7 +59,7 @@ def VisualizeNumpyImageGrayscale(image_3d):
     vmax = np.max(image_2d)
     return (image_2d / vmax)
 
-def VisualizeImageGrayscale(image_3d):
+def VisualizeImageGrayscale(image_3d): 
     r"""Returns a 3D tensor as a grayscale normalized between 0 and 1 2D tensor.
     """
     vmin = torch.min(image_3d)
@@ -117,7 +117,31 @@ def returnGrad(img, labels, model, compute_loss, loss_metric, augment=None, devi
 #    S_c = torch.max(pred[0].data, 0)[0]
     Sc_dx = img.grad
     model.eval()
+    Sc_dx = torch.tensor(Sc_dx, dtype=torch.float32)
     return Sc_dx
+
+def calculate_snr(img, attr, dB=True):
+    try:
+        img_np = img.detach().cpu().numpy()
+        attr_np = attr.detach().cpu().numpy()
+    except:
+        img_np = img
+        attr_np = attr
+    
+    # Calculate the signal power
+    signal_power = np.mean(img_np**2)
+
+    # Calculate the noise power
+    noise_power = np.mean(attr_np**2)
+
+    if dB == True:
+        # Calculate SNR in dB
+        snr = 10 * np.log10(signal_power / noise_power)
+    else:
+        # Calculate SNR
+        snr = signal_power / noise_power
+
+    return snr
 
 def test(opt,
          data,
@@ -263,9 +287,9 @@ def test(opt,
     ########### EvalAttAI Variables ###########
     increment = 1
     t_ = [round(float(p_it * increment),2) for p_it in range(10)]
-    epsilon = 0.05
+    epsilon = 0.005
     add_or_subtract_attr = False
-    normalize = True
+    normalize = False
     grayscale = True
     n_samples = opt.n_samples
     samples_processed = 0
@@ -313,10 +337,14 @@ def test(opt,
     model.names = names
 
     compute_loss = ComputeLoss(model)
-    loss_averages_list = []
+    loss_averages_list, loss_averages_CI_list = [], []
     accuracy_averages_list, accuracy_CI_list = [], []
     results = []
-    n_steps_t = 10
+    if opt.eval_method == 'evalattai':
+        n_steps_t = 10
+    else:
+        n_steps_t = 1
+    
     
     model, imgsz, stride = load_model(imgsz)
     
@@ -608,13 +636,19 @@ def test(opt,
                     except:
                         print('|| No object detected ||', end='\r')
             ###################################### end of generate_attr ######################################
+    
+    ###################################### Evaluating Attributions ######################################
     for current_cam in opt.cam_list:
         eval_totals = [0] * n_steps_t
+        eval_totals_CI = [0] * n_steps_t
         eval_averages = [0] * n_steps_t
         eval_averages_CI = [0] * n_steps_t
+        eval_individual_data = [[]] * n_steps_t
+        snr_totals, snr_totals_norm = [0] * n_steps_t, [0] * n_steps_t
         
         if opt.eval_method == 'plausibility':
             eval_steps = 1
+            epsilon = 0.0
             # t_ = [0 for i in range(len(t_))]
         if opt.eval_method == 'evalattai':
             eval_steps = n_steps_t
@@ -640,10 +674,27 @@ def test(opt,
                     # convert grayscale_cam to three channel
                     # img_norm = (img / 255.0)
                     img_norm = img
-                    # attr_multi_channel_norm = VisualizeImageGrayscale(attr_multi_channel)
-                    attr_multi_channel_norm = ((attr_multi_channel) / torch.mean(VisualizeImageGrayscale(attr_multi_channel))) * 0.05
-                    print(str(cam),'torch.mean(attr_multi_channel):', 
-                          torch.mean(((attr_multi_channel_norm) + torch.min(attr_multi_channel_norm))))
+                    attr_mean = torch.mean(attr_multi_channel)
+                    attr_multi_channel_norm = VisualizeImageGrayscale(attr_multi_channel)
+                    if opt.eval_method == 'evalattai':
+                        attr_multi_channel_norm = attr_multi_channel_norm * torch.mean(attr_multi_channel_norm**2.0)
+                        # attr_multi_channel_norm = attr_multi_channel_norm * (1 / torch.var(attr_multi_channel_norm))
+                        attr_multi_channel_norm = attr_multi_channel_norm - torch.mean(attr_multi_channel_norm) + attr_mean
+                    
+                    # if cam == 'random':
+                    #     attr_rand = attr_multi_channel_norm
+                    # if cam == 'vanilla_grad':
+                    #     attr_multi_channel_norm = torch.tensor(attr_multi_channel_norm * (10.0 ** 12), dtype=torch.float32)
+                    # print("torch.mean(attr_multi_channel):", torch.mean(attr_multi_channel))
+                    print("torch.mean(attr_multi_channel_norm):", torch.mean(attr_multi_channel_norm))
+                    # print("torch.var(attr_multi_channel):", torch.var(attr_multi_channel))
+                    print("torch.var(attr_multi_channel_norm):", torch.var(attr_multi_channel_norm))
+                    snr_attr = calculate_snr(img_norm, attr_multi_channel, dB=False)
+                    # print("SNR of", cam, ': ', snr_attr)
+                    snr_totals[int(ite)] += float(snr_attr)
+                    snr_attr_norm = calculate_snr(img_norm, VisualizeImageGrayscale(attr_multi_channel), dB=False)
+                    print("Norm SNR of", cam, ': ', snr_attr_norm)
+                    snr_totals_norm[int(ite)] += float(snr_attr_norm)
                     img_norm = VisualizeImageGrayscale(img) # might want to normalize
                     # print('torch.max(attr_multi_channel):', torch.max(attr_multi_channel))
                     # print('torch.max(img):', torch.max(img))
@@ -675,6 +726,7 @@ def test(opt,
                             # plot three loss terms separate
                             loss, loss_items = compute_loss([x.float() for x in train_out], labels, metric=loss_metric)#[1][:3]  # box, obj, cls
                             eval_totals[int(ite)] += float(torch.sum(loss))
+                            eval_individual_data[int(ite)].append(float(torch.sum(loss)))
                         if opt.eval_method == 'plausibility':
                             # MIGHT NEED TO NORMALIZE OR TAKE ABS VAL OF ATTR
                             seg_box = np.zeros_like(im0, dtype=np.float32)# zeros with white pixels inside bbox
@@ -692,6 +744,7 @@ def test(opt,
                             IoU_denom = float(torch.sum(attr_multi_channel_norm))
                             IoU = IoU_num / IoU_denom
                             eval_totals[int(ite)] += IoU
+                            eval_individual_data[int(ite)].append(IoU)
                         
                         num_sampled += 1
                         
@@ -827,7 +880,15 @@ def test(opt,
             # print("eval_averages: ", eval_averages)
     
         # accuracy_averages_list.append(accuracy_averages)
+        # ADD CONFIDENCE INTERVAL CALCULATION
+        # loss_total = np.mean(eval_totals, axis=0)
+        
+        delta_y = 1 - np.array(eval_individual_data)
+        stdev = np.std(eval_individual_data)
+        loss_CI = Z * (stdev / (len(eval_individual_data) ** 0.5))
+        
         loss_averages_list.append(eval_averages)
+        loss_averages_CI_list.append(loss_CI)
         # print("loss_averages_list: ", loss_averages_list)
         print('Saving csv results in', save_dir.__str__())
         # np.savetxt(str(save_dir.__str__() + "faithful_eval_acc" + str(run_num) + "_" + addsub + 
@@ -841,8 +902,12 @@ def test(opt,
                                     "_" + norm + '_inc' + str(increment) + '_nsamples' + str(n_samples) + gray + "_" + 
                                     robust +'_robust_' + img_num_str)
         save_to = str(save_dir.__str__() + run_name)
+        def create_dir_if_not_exists(path):
+            if not os.path.exists(path):
+                os.makedirs(path)
         try:
-            os.mkdir(save_to)
+            create_dir_if_not_exists(save_dir.__str__())
+            create_dir_if_not_exists(save_to)
         except OSError:
             print ("Creation of the directory %s failed" % save_to)
         else:
@@ -851,11 +916,13 @@ def test(opt,
                                     delimiter = ", ", fmt = "% s")
         np.savetxt(str(save_to + run_name + ".csv"), loss_averages_list, 
                                     delimiter = ", ", fmt = "% s")
+        np.savetxt(str(save_to + run_name + "_CI.csv"), loss_averages_CI_list, 
+                                    delimiter = ", ", fmt = "% s")
         print("Full csv results saved to ", save_to)
         #PythonScripts/yolov7_mavrc/runs/test1/evalattai_eval1_AddAttr__inc1_nsamples15_grayscale__robust__img_num9018_random_fullgrad_grad_eigen_eigengrad.csv
         # /home/nielseni6/PythonScripts/yolov7_mavrc/test_plaus_or_faith.py
     
-    path_vis = str('/home/nielseni6/PythonScripts/yolov7_mavrc/' + save_to)
+    path_vis = str('/home/nielseni6/PythonScripts/yolov7_mavrc/' + save_to + run_name)
     visualize_plaus_faith.plot_plaus_faith(file_path=path_vis)
     print("Visualizations saved to ", path_vis)
     
@@ -969,23 +1036,23 @@ if __name__ == '__main__':
     print(opt)
     #check_requirements()
 
-    # opt.cam_list = ["random", "fullgrad", "gradcam", "eigen", "eigengrad",]
+    opt.cam_list = ["random", "fullgrad", "gradcam", "eigen", "eigengrad",'vanilla_grad',]
     # opt.cam_list = ["fullgrad", "gradcam", "eigen"]
     # opt.cam_list = ["random","gradcam",]
-    opt.cam_list = ["random",'vanilla_grad',]
+    # opt.cam_list = ["random",'vanilla_grad',]
     # opt.cam_list = ["random",]
     # opt.cam_list = ["gradcam",]
     opt.source = '/data/Koutsoubn8/ijcnn_v7data/Real_world_test/images'
     opt.no_trace = True
     opt.conf_thres = 0.50 
-    opt.batch_size = 1 
+    opt.batch_size = 2 
     opt.data = 'data/real_world.yaml'
     # opt.data = 'data/sls.yaml'
     opt.img_size = 480 
     opt.name = 'test4' 
     opt.weights = 'weights/yolov7-tiny.pt' 
     opt.task = 'val'
-    opt.n_samples = 2
+    opt.n_samples = 100
     # opt.n_samples = 100
     opt.save_img = True
     # opt.classes = 2
