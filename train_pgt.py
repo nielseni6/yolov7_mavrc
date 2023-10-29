@@ -35,6 +35,8 @@ from utils.plots import plot_images, plot_labels, plot_results, plot_evolution
 from utils.torch_utils import ModelEMA, select_device, intersect_dicts, torch_distributed_zero_first, is_parallel
 from utils.wandb_logging.wandb_utils import WandbLogger, check_wandb_resume
 
+from plaus_functs import generate_vanilla_grad, eval_plausibility
+
 logger = logging.getLogger(__name__)
 # import torch
 torch.manual_seed(8)
@@ -249,6 +251,8 @@ def train(hyp, opt, device, tb_writer=None):
                                             hyp=hyp, augment=True, cache=opt.cache_images, rect=opt.rect, rank=rank,
                                             world_size=opt.world_size, workers=opt.workers,
                                             image_weights=opt.image_weights, quad=opt.quad, prefix=colorstr('train: '))
+    # dataset_w_labels = LoadImagesAndLabels(opt.source, img_size=imgsz, batch_size=1, augment=opt.augment, stride=stride)
+    
     mlc = np.concatenate(dataset.labels, 0)[:, 0].max()  # max label class
     nb = len(dataloader)  # number of batches
     assert mlc < nc, 'Label class %g exceeds nc=%g in %s. Possible class labels are 0-%g' % (mlc, nc, opt.data, nc - 1)
@@ -277,6 +281,7 @@ def train(hyp, opt, device, tb_writer=None):
 
     # DDP mode
     if cuda and rank != -1:
+        print('-------------- DDP mode --------------')
         model = DDP(model, device_ids=[opt.local_rank], output_device=opt.local_rank,
                     # nn.MultiheadAttention incompatibility with DDP https://github.com/pytorch/pytorch/issues/26698
                     find_unused_parameters=any(isinstance(layer, nn.MultiheadAttention) for layer in model.modules()))
@@ -339,7 +344,7 @@ def train(hyp, opt, device, tb_writer=None):
         for i, (imgs, targets, paths, _) in pbar:  # batch -------------------------------------------------------------
             ni = i + nb * epoch  # number integrated batches (since train start)
             imgs = imgs.to(device, non_blocking=True).float() / 255.0  # uint8 to float32, 0-255 to 0.0-1.0
-
+            
             # Warmup
             if ni <= nw:
                 xi = [0, nw]  # x interp
@@ -363,8 +368,10 @@ def train(hyp, opt, device, tb_writer=None):
             with amp.autocast(enabled=cuda):
                 pred = model(imgs)  # forward
                 if 'loss_ota' not in hyp or hyp['loss_ota'] == 1:
+                    print('Using loss_ota') if i == 0 else None
                     loss, loss_items = compute_loss_ota(pred, targets.to(device), imgs,metric=opt.loss_metric)  # loss scaled by batch_size
                 else:
+                    print('Using loss') if i == 0 else None
                     loss, loss_items = compute_loss(pred, targets.to(device),metric=opt.loss_metric)  # loss scaled by batch_size
                 if rank != -1:
                     loss *= opt.world_size  # gradient averaged between devices in DDP mode
@@ -374,11 +381,17 @@ def train(hyp, opt, device, tb_writer=None):
             #################################################################################
 
             # Add attribution maps
-
+            attribution_map = generate_vanilla_grad(model, imgs, opt, mlc, targets, device=device) # mlc = max label class
+            
             # Calculate Plausibility IoU with attribution maps
+            plaus_score = eval_plausibility(imgs, targets, attribution_map)
+            
+            alpha = float(abs(loss))
+
+            loss = loss + (alpha * plaus_score)
 
             #################################################################################
-            
+
             # Backward
             scaler.scale(loss).backward()
 
@@ -401,7 +414,7 @@ def train(hyp, opt, device, tb_writer=None):
                 # Plot
                 if plots and ni < 10:
                     f = save_dir / f'train_batch{ni}.jpg'  # filename
-                    Thread(target=plot_images, args=(imgs, targets, paths, f), daemon=True).start()
+                    Thread(target=plot_images, args=(imgs.detach(), targets, paths, f), daemon=True).start()
                     # if tb_writer:
                     #     tb_writer.add_image(f, result, dataformats='HWC', global_step=epoch)
                     #     tb_writer.add_graph(torch.jit.trace(model, imgs, strict=False), [])  # add model graph
@@ -538,10 +551,10 @@ def train(hyp, opt, device, tb_writer=None):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--weights', type=str, default='yolo7.pt', help='initial weights path')
+    parser.add_argument('--weights', type=str, default='weights/yolov7-tiny.pt', help='initial weights path')
     parser.add_argument('--cfg', type=str, default='', help='model.yaml path')
-    parser.add_argument('--data', type=str, default='data/coco.yaml', help='data.yaml path')
-    parser.add_argument('--hyp', type=str, default='data/hyp.scratch.p5.yaml', help='hyperparameters path')
+    parser.add_argument('--data', type=str, default='data/real_world.yaml', help='data.yaml path')
+    parser.add_argument('--hyp', type=str, default='data/hyp.real_world.yaml', help='hyperparameters path')
     parser.add_argument('--epochs', type=int, default=300)
     parser.add_argument('--batch-size', type=int, default=16, help='total batch size for all GPUs')
     parser.add_argument('--img-size', nargs='+', type=int, default=[640, 640], help='[train, test] image sizes')
@@ -561,9 +574,9 @@ if __name__ == '__main__':
     parser.add_argument('--sync-bn', action='store_true', help='use SyncBatchNorm, only available in DDP mode')
     parser.add_argument('--local_rank', type=int, default=-1, help='DDP parameter, do not modify')
     parser.add_argument('--workers', type=int, default=8, help='maximum number of dataloader workers')
-    parser.add_argument('--project', default='runs/train', help='save to project/name')
+    parser.add_argument('--project', default='runs/pgt/train-pgt-yolov7', help='save to project/name')
     parser.add_argument('--entity', default=None, help='W&B entity')
-    parser.add_argument('--name', default='exp', help='save to project/name')
+    parser.add_argument('--name', default='pgt', help='save to project/name')
     parser.add_argument('--exist-ok', action='store_true', help='existing project/name ok, do not increment')
     parser.add_argument('--quad', action='store_true', help='quad dataloader')
     parser.add_argument('--linear-lr', action='store_true', help='linear LR')
@@ -575,8 +588,29 @@ if __name__ == '__main__':
     parser.add_argument('--freeze', nargs='+', type=int, default=[0], help='Freeze layers: backbone of yolov7=50, first3=0 1 2')
     parser.add_argument('--v5-metric', action='store_true', help='assume maximum recall as 1.0 in AP calculation')
     parser.add_argument('--loss_metric', type=str, default="CIoU",help='metric to minimize: CIoU, NWD')
+    ############################################################################
+    parser.add_argument('--conf-thres', type=float, default=0.001, help='object confidence threshold')
+    parser.add_argument('--iou-thres', type=float, default=0.65, help='IOU threshold for NMS')
+    parser.add_argument('--agnostic-nms', action='store_true', help='class-agnostic NMS')
+    parser.add_argument('--classes', nargs='+', type=int, help='filter by class: --class 0, or --class 0 2 3')
+    ############################################################################
     opt = parser.parse_args()
     
+    opt.epochs = 2
+    opt.data = check_file(opt.data)  # check file
+    opt.source = '/data/Koutsoubn8/ijcnn_v7data/Real_world_test/images'
+    opt.no_trace = True
+    opt.conf_thres = 0.50 
+    opt.batch_size = 1 
+    opt.data = 'data/real_world.yaml'
+    opt.hyp = 'data/hyp.real_world.yaml'
+    opt.save_dir = str('runs/' + opt.name)
+    # opt.device = "4, 5, 6, 7"
+    
+    # Set CUDA device
+    os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
+    # os.environ["CUDA_VISIBLE_DEVICES"] = "4, 5, 6, 7"
+    os.environ["CUDA_VISIBLE_DEVICES"] = "4"
   
     # Set DDP variables
     opt.world_size = int(os.environ['WORLD_SIZE']) if 'WORLD_SIZE' in os.environ else 1

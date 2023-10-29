@@ -283,8 +283,6 @@ def detect(save_img=False):
                                 grayscale_cam = cam_(input_tensor=img.requires_grad_(True), targets=targets)
                             if cam == "score":
                                 cam_ = ScoreCAM(model_seg, target_layers, use_cuda=False) # model_seg
-                                
-
                                 grayscale_cam = cam_(input_tensor=img.requires_grad_(True), targets=targets)
                             if cam == 'vanilla_grad':
                                 grayscale_cam = returnGrad(img, model=model, device=device, augment=opt.augment)

@@ -577,7 +577,7 @@ class Model(nn.Module):
         initialize_weights(self)
         self.info()
         logger.info('')
-
+    
     def forward(self, x, augment=False, profile=False):
         if augment:
             img_size = x.shape[-2:]  # height, width
@@ -597,7 +597,7 @@ class Model(nn.Module):
             return torch.cat(y, 1), None  # augmented inference, train
         else:
             return self.forward_once(x, profile)  # single-scale inference, train
-
+    
     def forward_once(self, x, profile=False):
         if not hasattr(self, 'k'):
             self.k = 0

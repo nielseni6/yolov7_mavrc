@@ -429,7 +429,7 @@ class ComputeLoss:
         # Define criteria
         BCEcls = nn.BCEWithLogitsLoss(pos_weight=torch.tensor([h['cls_pw']], device=device))
         BCEobj = nn.BCEWithLogitsLoss(pos_weight=torch.tensor([h['obj_pw']], device=device))
-
+        
         # Class label smoothing https://arxiv.org/pdf/1902.04103.pdf eqn 3
         self.cp, self.cn = smooth_BCE(eps=h.get('label_smoothing', 0.0))  # positive, negative BCE targets
 
@@ -617,7 +617,7 @@ class ComputeLossOTA:
                 selected_tbox = targets[i][:, 2:6] * pre_gen_gains[i]
                 selected_tbox[:, :2] -= grid
                 if pbox.T.isnan().any():
-                    print("pbox is nan", pbox.T)            #OTA!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+                    print("pbox is nan", pbox.T)            #OTA!
                 iou = bbox_iou(pbox.T, selected_tbox, x1y1x2y2=False, metric=metric)
                 # print("iou",iou.min(),iou.shape)
                   # iou(prediction, target)             

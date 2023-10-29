@@ -101,4 +101,4 @@ def plot_plaus_faith(file_path):
     else:
         print('File neither evalattai nor plausibility')
 
-plot_plaus_faith(file_path)
+# plot_plaus_faith(file_path)

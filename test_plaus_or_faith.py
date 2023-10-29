@@ -32,6 +32,7 @@ from numpy import random
 from plot_bboxes import plot_one_box_PIL_, plot_one_box_seg
 # from visualize_plaus_faith import plot_plaus_faith
 import visualize_plaus_faith
+from plaus_functs import generate_vanilla_grad, eval_plausibility
 
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -319,7 +320,6 @@ def test(opt,
     skip = False
     # model_unseg = model
 
-    opt.hyp = 'data/hyp.real_world.yaml'
     with open(opt.hyp) as f:
         hyp = yaml.load(f, Loader=yaml.SafeLoader)  # load hyps
 
@@ -565,10 +565,11 @@ def test(opt,
                                 cam_ = ScoreCAM(model_seg, target_layers, use_cuda=False) # model_seg
                                 grayscale_cam = cam_(input_tensor=img.requires_grad_(True), targets=targets)
                             if cam == 'vanilla_grad':
-                               grayscale_cam = returnGrad(img = img, labels = labels, 
-                                                          model = model_unseg, compute_loss = compute_loss, 
-                                                          loss_metric = loss_metric, augment = opt.augment, 
-                                                          device = device)
+                                grayscale_cam = generate_vanilla_grad(model, img, labels, device)
+                            #    grayscale_cam = returnGrad(img = img, labels = labels, 
+                            #                               model = model_unseg, compute_loss = compute_loss, 
+                            #                               loss_metric = loss_metric, augment = opt.augment, 
+                            #                               device = device)
                             #    grayscale_cam = torch.autograd.grad(det_non_norm.requires_grad_(requires_grad=True), img.requires_grad_(True), 
                             #                              retain_graph=True, create_graph=True)
                             imshape = (img.shape)
@@ -1048,6 +1049,7 @@ if __name__ == '__main__':
     opt.batch_size = 2 
     opt.data = 'data/real_world.yaml'
     # opt.data = 'data/sls.yaml'
+    opt.hyp = 'data/hyp.real_world.yaml'
     opt.img_size = 480 
     opt.name = 'test4' 
     opt.weights = 'weights/yolov7-tiny.pt' 
