@@ -1,3 +1,7 @@
+# XAI Branch Info
+
+Main script to run is test_plaus_or_faith.py. Plausibility Guided Training being added soon.
+
 # Turret Gunner Survivability and Simulation Environment Project
 
 This project is a collaborative effort between the Machine Learning, AI, and Virtual Reality Center at Rowan University and the Picatinny Arsenal. We, the AI team at Rowan, have been tasked with developing a drone detection algorithm that enhances the survivability of turret gunners. 
