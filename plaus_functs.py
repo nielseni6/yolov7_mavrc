@@ -19,26 +19,29 @@ def generate_vanilla_grad(model, input_tensor, opt, mlc, targets = None, norm=Fa
     """
     # maybe add model.train() at the beginning and model.eval() at the end of this function
 
-    # Set model to evaluation mode
-    model.eval()
-    model.to(device)
+    
 
     # Set requires_grad attribute of tensor. Important for computing gradients
     input_tensor.requires_grad = True
-
+    
+    # Set model to evaluation mode
+    # model.eval()
+    # model.to(device)
+    # out, train_out = model(input_tensor) # inference and training outputs if model in eval mode
+    
     # Forward pass
-    out, train_out = model(input_tensor.to(device)) # inference and training outputs
+    train_out = model(input_tensor) # training outputs (no inference outputs in train mode)
 
     # # Apply NMS
     # out = non_max_suppression(out, opt.conf_thres, opt.iou_thres, classes=opt.classes, agnostic=opt.agnostic_nms)
     
     num_classes = 2
     
-    if targets is None:
-        # Find index of class with highest score
-        index = torch.argmax(out[:, :, -num_classes:], dim=-1) # num_classes = 2
-    else:
-        index = targets
+    # if targets is None:
+    #     # Find index of class with highest score
+    #     index = torch.argmax(out[:, :, -num_classes:], dim=-1) # num_classes = 2
+    # else:
+    #     index = targets
     
     # Zero gradients
     model.zero_grad()
@@ -68,7 +71,7 @@ def generate_vanilla_grad(model, input_tensor, opt, mlc, targets = None, norm=Fa
         attribution_map = gradients
 
     # Set model back to training mode
-    model.train()
+    # model.train()
     
     return torch.tensor(attribution_map, dtype=torch.float32, device=device)
 

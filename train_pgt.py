@@ -379,16 +379,17 @@ def train(hyp, opt, device, tb_writer=None):
                     loss *= 4.
 
             #################################################################################
-
-            # Add attribution maps
-            attribution_map = generate_vanilla_grad(model, imgs, opt, mlc, targets, device=device) # mlc = max label class
+                if opt.pgt_lr != 0:
+                    # Add attribution maps
+                    attribution_map = generate_vanilla_grad(model, imgs, opt, mlc, targets, device=device) # mlc = max label class
             
-            # Calculate Plausibility IoU with attribution maps
-            plaus_score = eval_plausibility(imgs, targets, attribution_map)
-            
-            alpha = float(abs(loss))
+            if opt.pgt_lr != 0:
+                # Calculate Plausibility IoU with attribution maps
+                plaus_score = eval_plausibility(imgs, targets, attribution_map)
+                
+                alpha = float(abs(loss)) * opt.pgt_lr
 
-            loss = loss + (alpha * plaus_score)
+                loss = loss - (alpha * plaus_score)
 
             #################################################################################
 
@@ -593,24 +594,27 @@ if __name__ == '__main__':
     parser.add_argument('--iou-thres', type=float, default=0.65, help='IOU threshold for NMS')
     parser.add_argument('--agnostic-nms', action='store_true', help='class-agnostic NMS')
     parser.add_argument('--classes', nargs='+', type=int, help='filter by class: --class 0, or --class 0 2 3')
+    parser.add_argument('--pgt-lr', type=float, default=0.5, help='learning rate for plausibility gradient')
     ############################################################################
     opt = parser.parse_args()
     
-    opt.epochs = 2
+    opt.pgt_lr = 0.1
+    opt.epochs = 25
     opt.data = check_file(opt.data)  # check file
     opt.source = '/data/Koutsoubn8/ijcnn_v7data/Real_world_test/images'
     opt.no_trace = True
     opt.conf_thres = 0.50 
-    opt.batch_size = 1 
+    opt.batch_size = 16 
     opt.data = 'data/real_world.yaml'
     opt.hyp = 'data/hyp.real_world.yaml'
-    opt.save_dir = str('runs/' + opt.name)
-    # opt.device = "4, 5, 6, 7"
+    opt.save_dir = str('runs/' + opt.name + '_lr' + str(opt.pgt_lr))
+    opt.device = "4,5,6,7"
+    opt.quad = True# Must be true for multiple gpu training
     
     # Set CUDA device
     os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
-    # os.environ["CUDA_VISIBLE_DEVICES"] = "4, 5, 6, 7"
-    os.environ["CUDA_VISIBLE_DEVICES"] = "4"
+    os.environ["CUDA_VISIBLE_DEVICES"] = "4,5,6,7"
+    # os.environ["CUDA_VISIBLE_DEVICES"] = "4"
   
     # Set DDP variables
     opt.world_size = int(os.environ['WORLD_SIZE']) if 'WORLD_SIZE' in os.environ else 1
