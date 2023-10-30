@@ -387,7 +387,9 @@ def train(hyp, opt, device, tb_writer=None):
                 # Calculate Plausibility IoU with attribution maps
                 plaus_score = eval_plausibility(imgs, targets, attribution_map)
                 
-                alpha = float(abs(loss)) * opt.pgt_lr
+                # alpha = float(abs(loss)) * opt.pgt_lr # change this from loss scaling to something else
+                # problem because pgt_lr is ignored if loss is 0
+                alpha = opt.pgt_lr
 
                 loss = loss - (alpha * plaus_score)
 
@@ -598,7 +600,7 @@ if __name__ == '__main__':
     ############################################################################
     opt = parser.parse_args()
     
-    opt.pgt_lr = 0.1
+    opt.pgt_lr = 0.01
     opt.epochs = 25
     opt.data = check_file(opt.data)  # check file
     opt.source = '/data/Koutsoubn8/ijcnn_v7data/Real_world_test/images'

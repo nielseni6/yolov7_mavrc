@@ -46,7 +46,11 @@ def generate_vanilla_grad(model, input_tensor, opt, mlc, targets = None, norm=Fa
     # Zero gradients
     model.zero_grad()
     
-    gradients = torch.autograd.grad(train_out[2], input_tensor, grad_outputs=torch.ones_like(train_out[2]), retain_graph=True, create_graph=True)
+    # train_out[1] = torch.Size([4, 3, 80, 80, 7]) HxWx(#anchorxC) cls (class probabilities)
+    # train_out[0] = torch.Size([4, 3, 160, 160, 7]) HxWx(#anchorx4) reg (location and scaling)
+    # train_out[2] = torch.Size([4, 3, 40, 40, 7]) HxWx(#anchorx1) obj (objectness score or confidence)
+    
+    gradients = torch.autograd.grad(train_out[1], input_tensor, grad_outputs=torch.ones_like(train_out[1]), retain_graph=True, create_graph=True)
 
     # # Calculate gradients of output with respect to input
     # out[:, :, -1].backward()
