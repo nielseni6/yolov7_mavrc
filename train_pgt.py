@@ -391,7 +391,9 @@ def train(hyp, opt, device, tb_writer=None):
                 # problem because pgt_lr is ignored if loss is 0
                 alpha = opt.pgt_lr
 
-                loss = loss - (alpha * plaus_score)
+                plaus_loss = (alpha * plaus_score)
+                
+                loss = loss - plaus_loss
 
             #################################################################################
 
@@ -461,11 +463,12 @@ def train(hyp, opt, device, tb_writer=None):
                 os.system('gsutil cp %s gs://%s/results/results%s.txt' % (results_file, opt.bucket, opt.name))
 
             # Log
-            tags = ['train/box_loss', 'train/obj_loss', 'train/cls_loss',  # train loss
+            tags = ['plaus_loss'] + ['train/box_loss', 'train/obj_loss', 'train/cls_loss',  # train loss
                     'metrics/precision', 'metrics/recall', 'metrics/mAP_0.5', 'metrics/mAP_0.5:0.95',
                     'val/box_loss', 'val/obj_loss', 'val/cls_loss',  # val loss
                     'x/lr0', 'x/lr1', 'x/lr2']  # params
-            for x, tag in zip(list(mloss[:-1]) + list(results) + lr, tags):
+            
+            for x, tag in zip(list(mloss[:-1]) + list(((plaus_loss,) + results)) + lr, tags):
                 if tb_writer:
                     tb_writer.add_scalar(tag, x, epoch)  # tensorboard
                 if wandb_logger.wandb:
@@ -610,12 +613,13 @@ if __name__ == '__main__':
     opt.data = 'data/real_world.yaml'
     opt.hyp = 'data/hyp.real_world.yaml'
     opt.save_dir = str('runs/' + opt.name + '_lr' + str(opt.pgt_lr))
-    opt.device = "4,5,6,7"
-    opt.quad = True# Must be true for multiple gpu training
+    opt.device = "5,7"
+    opt.quad = True # Must be true for multiple gpu training
+    opt.entity = 'nielseni6'
     
     # Set CUDA device
     os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
-    os.environ["CUDA_VISIBLE_DEVICES"] = "4,5,6,7"
+    os.environ["CUDA_VISIBLE_DEVICES"] = opt.device
     # os.environ["CUDA_VISIBLE_DEVICES"] = "4"
   
     # Set DDP variables

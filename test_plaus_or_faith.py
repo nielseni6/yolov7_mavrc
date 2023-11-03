@@ -1051,7 +1051,7 @@ if __name__ == '__main__':
     # opt.data = 'data/sls.yaml'
     opt.hyp = 'data/hyp.real_world.yaml'
     opt.img_size = 480 
-    opt.name = 'test4' 
+    opt.name = 'test_VG_targets[1]' 
     opt.weights = 'weights/yolov7-tiny.pt' 
     opt.task = 'val'
     opt.n_samples = 100
