@@ -7,6 +7,7 @@ import time
 from copy import deepcopy
 from pathlib import Path
 from threading import Thread
+import wandb
 
 import numpy as np
 import torch.distributed as dist
@@ -603,18 +604,19 @@ if __name__ == '__main__':
     ############################################################################
     opt = parser.parse_args()
     
-    opt.pgt_lr = 0.01
-    opt.epochs = 25
+    opt.pgt_lr = 0.1
+    opt.epochs = 100
     opt.data = check_file(opt.data)  # check file
     opt.source = '/data/Koutsoubn8/ijcnn_v7data/Real_world_test/images'
     opt.no_trace = True
     opt.conf_thres = 0.50 
-    opt.batch_size = 16 
+    opt.batch_size = 128 
     opt.data = 'data/real_world.yaml'
     opt.hyp = 'data/hyp.real_world.yaml'
     opt.save_dir = str('runs/' + opt.name + '_lr' + str(opt.pgt_lr))
-    opt.device = "5,7"
-    opt.quad = True # Must be true for multiple gpu training
+    # opt.device = '4'
+    opt.device = "0,1,2,3"
+    # opt.quad = True # Helps for large batch sizes especially for multiple gpu training
     opt.entity = 'nielseni6'
     
     # Set CUDA device
@@ -635,6 +637,9 @@ if __name__ == '__main__':
     else:
         print("USING CIOU LOSS")
 
+    username = os.getenv('USER')
+    os.environ["WANDB_ENTITY"] = username
+    
     # Resume
     wandb_run = check_wandb_resume(opt)
     if opt.resume and not wandb_run:  # resume an interrupted run
@@ -652,6 +657,11 @@ if __name__ == '__main__':
         opt.img_size.extend([opt.img_size[-1]] * (2 - len(opt.img_size)))  # extend to 2 sizes (train, test)
         opt.name = 'evolve' if opt.evolve else opt.name
         opt.save_dir = increment_path(Path(opt.project) / opt.name, exist_ok=opt.exist_ok | opt.evolve)  # increment run
+
+    # api = wandb.Api()
+    # run = api.run("nielseni6/pgt-yolo-v7/")
+    # run.config["key"] = 'c78ac3818bb6f33a9aded2783a08e97424ba315f'
+    # run.update()
 
     # DDP mode
     opt.total_batch_size = opt.batch_size
