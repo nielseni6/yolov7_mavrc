@@ -378,23 +378,30 @@ def train(hyp, opt, device, tb_writer=None):
                     loss *= opt.world_size  # gradient averaged between devices in DDP mode
                 if opt.quad:
                     loss *= 4.
-
             #################################################################################
-                if opt.pgt_lr != 0:
+            # ADD PLAUSIBILITY LOSS FOR VALIDATION #
+            # ADD EXPLAINABILITY TO THE MEDIA OUTPUTS ON WANDB #
+            #################################################################################
+                if not (opt.pgt_lr == 0):
                     # Add attribution maps
                     attribution_map = generate_vanilla_grad(model, imgs, opt, mlc, targets, device=device) # mlc = max label class
-            
-            if opt.pgt_lr != 0:
+                else:
+                    plaus_loss, plaus_score = 0.0, 0.0
+                
+            if not (opt.pgt_lr == 0):
                 # Calculate Plausibility IoU with attribution maps
                 plaus_score = eval_plausibility(imgs, targets, attribution_map)
                 
                 # alpha = float(abs(loss)) * opt.pgt_lr # change this from loss scaling to something else
                 # problem because pgt_lr is ignored if loss is 0
-                alpha = opt.pgt_lr
+                # alpha = opt.pgt_lr
+                # ADD LR SCHEDULER
 
-                plaus_loss = (alpha * plaus_score)
+                plaus_loss = (opt.pgt_lr * plaus_score)
                 
                 loss = loss - plaus_loss
+            else:
+                plaus_loss, plaus_score = 0.0, 0.0
 
             #################################################################################
 
@@ -464,12 +471,12 @@ def train(hyp, opt, device, tb_writer=None):
                 os.system('gsutil cp %s gs://%s/results/results%s.txt' % (results_file, opt.bucket, opt.name))
 
             # Log
-            tags = ['plaus_loss'] + ['train/box_loss', 'train/obj_loss', 'train/cls_loss',  # train loss
+            tags = ['train/box_loss', 'train/obj_loss', 'train/cls_loss',  # train loss
                     'metrics/precision', 'metrics/recall', 'metrics/mAP_0.5', 'metrics/mAP_0.5:0.95',
                     'val/box_loss', 'val/obj_loss', 'val/cls_loss',  # val loss
-                    'x/lr0', 'x/lr1', 'x/lr2']  # params
-            
-            for x, tag in zip(list(mloss[:-1]) + list(((plaus_loss,) + results)) + lr, tags):
+                    'x/lr0', 'x/lr1', 'x/lr2',  # params
+                    ] + ['plaus_loss', 'plaus_score']
+            for x, tag in zip(list(mloss[:-1]) + list((results)) + lr + [plaus_loss, plaus_score,], tags):
                 if tb_writer:
                     tb_writer.add_scalar(tag, x, epoch)  # tensorboard
                 if wandb_logger.wandb:
@@ -604,7 +611,7 @@ if __name__ == '__main__':
     ############################################################################
     opt = parser.parse_args()
     
-    opt.pgt_lr = 0.1
+    opt.pgt_lr = 0.05
     opt.epochs = 100
     opt.data = check_file(opt.data)  # check file
     opt.source = '/data/Koutsoubn8/ijcnn_v7data/Real_world_test/images'
@@ -615,8 +622,8 @@ if __name__ == '__main__':
     opt.hyp = 'data/hyp.real_world.yaml'
     opt.save_dir = str('runs/' + opt.name + '_lr' + str(opt.pgt_lr))
     # opt.device = '4'
-    opt.device = "0,1,2,3"
-    # opt.quad = True # Helps for large batch sizes especially for multiple gpu training
+    opt.device = "2,3"
+    opt.quad = True # Helps for large batch sizes especially for multiple gpu training
     opt.entity = 'nielseni6'
     
     # Set CUDA device
@@ -631,7 +638,8 @@ if __name__ == '__main__':
     #if opt.global_rank in [-1, 0]:
     #    check_git_status()
     #    check_requirements()
-
+    print(opt)
+    
     if opt.loss_metric=="NWD":
         print("USING NWD LOSS")
     else:
