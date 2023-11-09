@@ -1,8 +1,14 @@
 import torch
 import numpy as np
-from plot_bboxes import plot_one_box_PIL_, plot_one_box_seg
+# from plot_bboxes import plot_one_box_PIL_, plot_one_box_seg
 from utils.general import coco80_to_coco91_class, check_dataset, check_file, check_img_size, check_requirements, \
     box_iou, non_max_suppression, scale_coords, xyxy2xywh, xywh2xyxy, set_logging, increment_path, colorstr
+import cv2
+import random
+from plot_functs import *
+from utils.plots import plot_one_box
+    
+    
 
 def generate_vanilla_grad(model, input_tensor, opt, mlc, targets = None, norm=False, device='cpu'):
     """
@@ -19,29 +25,13 @@ def generate_vanilla_grad(model, input_tensor, opt, mlc, targets = None, norm=Fa
     """
     # maybe add model.train() at the beginning and model.eval() at the end of this function
 
-    
-
     # Set requires_grad attribute of tensor. Important for computing gradients
     input_tensor.requires_grad = True
-    
-    # Set model to evaluation mode
-    # model.eval()
-    # model.to(device)
-    # out, train_out = model(input_tensor) # inference and training outputs if model in eval mode
     
     # Forward pass
     train_out = model(input_tensor) # training outputs (no inference outputs in train mode)
 
-    # # Apply NMS
-    # out = non_max_suppression(out, opt.conf_thres, opt.iou_thres, classes=opt.classes, agnostic=opt.agnostic_nms)
-    
     num_classes = 2
-    
-    # if targets is None:
-    #     # Find index of class with highest score
-    #     index = torch.argmax(out[:, :, -num_classes:], dim=-1) # num_classes = 2
-    # else:
-    #     index = targets
     
     # Zero gradients
     model.zero_grad()
@@ -54,12 +44,6 @@ def generate_vanilla_grad(model, input_tensor, opt, mlc, targets = None, norm=Fa
                                     grad_outputs=torch.ones_like(train_out[1]), 
                                     retain_graph=True, create_graph=True)
 
-    # # Calculate gradients of output with respect to input
-    # out[:, :, -1].backward()
-
-    # # Get gradients
-    # gradients = input_tensor.grad.data
-    
     # Convert gradients to numpy array
     gradients = gradients[0].detach().cpu().numpy()
 
@@ -102,17 +86,43 @@ def eval_plausibility(im0, targets, attr_tensor):
     # MIGHT NEED TO NORMALIZE OR TAKE ABS VAL OF ATTR
     eval_totals = 0
     eval_individual_data = []
-    seg_box = np.zeros_like(im0.detach().cpu(), dtype=np.float32) # zeros with white pixels inside bbox
-    xyxy_gnd = targets[0][2:]
-    plot_one_box_seg(xyxy_gnd, seg_box, label=None, color=(255,255,255), line_thickness=-1)
-    attr = (attr_tensor[0].detach().cpu().numpy())
-    seg_box_norm = seg_box / float(np.max(seg_box))
-    seg_box_t = seg_box_norm[0] # np.transpose(seg_box_norm[0], (2, 0, 1))
-    attr_and_segbox = attr * seg_box_t
-    IoU_num = float(np.sum(attr_and_segbox))
-    IoU_denom = float(torch.sum(attr_tensor))
-    IoU = IoU_num / IoU_denom
-    eval_totals += IoU
-    eval_individual_data.append(IoU)
+    for i in range(len(targets)):
+        xyxy_pred = targets[i][2:]# * torch.tensor([im0.shape[2], im0.shape[1], im0.shape[2], im0.shape[1]])
+        seg_black = np.zeros_like(im0[i].detach().cpu(), dtype=np.float32) # zeros with white pixels inside bbox
+        # seg_box = np.transpose(seg_box, (1, 2, 0))
+        # seg_box = np.zeros_like(im0.detach().cpu())#, dtype=np.float32) # zeros with white pixels inside bbox
+        # xyxy_gnd = targets[0][2:]
+        seg_box = plot_one_box_seg(xyxy_pred, seg_black, label=None, color=(255,255,255), line_thickness=-1)
+        imshow(im0[i], "./figs/im0_i")
+        imshow(seg_box, "./figs/seg_box")
+        attr = (attr_tensor[0].detach().cpu().numpy())
+        seg_box_norm = seg_box / float(np.max(seg_box))
+        seg_box_t = seg_box_norm[0] # np.transpose(seg_box_norm[0], (2, 0, 1))
+        attr_and_segbox = attr * seg_box_t
+        IoU_num = float(np.sum(attr_and_segbox))
+        IoU_denom = float(torch.sum(attr_tensor))
+        IoU = IoU_num / IoU_denom
+        eval_totals += IoU
+        eval_individual_data.append(torch.tensor(IoU))
 
-    return eval_totals
+    return torch.tensor(eval_totals).requires_grad_(True)
+
+def plot_one_box_seg(x, img, color=None, label=None, line_thickness=-1, center_coords = True):
+    def corners_coords(center_xywh):
+        center_x, center_y, w, h = center_xywh
+        x = center_x - w/2
+        y = center_y - h/2
+        return np.array([x, y, x+w, y+h])
+
+    if center_coords:
+        x = corners_coords(x) * np.array([img.shape[1], img.shape[2], img.shape[1], img.shape[2]])
+    # Plots one bounding box on image img
+    tl = line_thickness or round(0.002 * (img.shape[2] + img.shape[1]) / 2) + 1  # line/font thickness
+    color = color or [random.randint(0, 255) for _ in range(3)]
+    c1, c2 = (int(x[0]), int(x[1])), (int(x[2]), int(x[3]))
+    img[:,c1[0]:c2[0], c1[1]:c2[1]] = color
+    return img
+#     test_im = cv2.rectangle(img, c1, c2, color, thickness=tl, lineType=cv2.LINE_AA)
+#     # imshow(test_im, "./figs/test_im")
+#     # imshow(img, "./figs/img")
+#     return test_im
