@@ -120,7 +120,8 @@ def plot_one_box_seg(x, img, color=None, label=None, line_thickness=-1, center_c
     tl = line_thickness or round(0.002 * (img.shape[2] + img.shape[1]) / 2) + 1  # line/font thickness
     color = color or [random.randint(0, 255) for _ in range(3)]
     c1, c2 = (int(x[0]), int(x[1])), (int(x[2]), int(x[3]))
-    img[:,c1[0]:c2[0], c1[1]:c2[1]] = color
+    for i in range(img.shape[0]):
+        img[i,c1[1]:c2[1], c1[0]:c2[0]] = color[i]
     return img
 #     test_im = cv2.rectangle(img, c1, c2, color, thickness=tl, lineType=cv2.LINE_AA)
 #     # imshow(test_im, "./figs/test_im")
