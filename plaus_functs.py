@@ -66,7 +66,7 @@ def generate_vanilla_grad(model, input_tensor, opt, mlc, targets = None, norm=Fa
     return torch.tensor(attribution_map, dtype=torch.float32, device=device)
 
 
-def eval_plausibility(im0, targets, attr_tensor):
+def eval_plausibility(imgs, targets, attr_tensor):
     """
     Evaluate the plausibility of an object detection prediction by computing the Intersection over Union (IoU) between
     the predicted bounding box and the ground truth bounding box.
@@ -81,29 +81,34 @@ def eval_plausibility(im0, targets, attr_tensor):
     Returns:
         float: The total IoU score for all predicted bounding boxes.
     """
-    if len(targets) == 0:
-        return 0
+    # if len(targets) == 0:
+    #     return 0
     # MIGHT NEED TO NORMALIZE OR TAKE ABS VAL OF ATTR
     eval_totals = 0
     eval_individual_data = []
-    for i in range(len(targets)):
-        xyxy_pred = targets[i][2:]# * torch.tensor([im0.shape[2], im0.shape[1], im0.shape[2], im0.shape[1]])
-        seg_black = np.zeros_like(im0[i].detach().cpu(), dtype=np.float32) # zeros with white pixels inside bbox
-        # seg_box = np.transpose(seg_box, (1, 2, 0))
-        # seg_box = np.zeros_like(im0.detach().cpu())#, dtype=np.float32) # zeros with white pixels inside bbox
-        # xyxy_gnd = targets[0][2:]
-        seg_box = plot_one_box_seg(xyxy_pred, seg_black, label=None, color=(255,255,255), line_thickness=-1)
-        imshow(im0[i], "./figs/im0_i")
-        imshow(seg_box, "./figs/seg_box")
-        attr = (attr_tensor[0].detach().cpu().numpy())
-        seg_box_norm = seg_box / float(np.max(seg_box))
-        seg_box_t = seg_box_norm[0] # np.transpose(seg_box_norm[0], (2, 0, 1))
-        attr_and_segbox = attr * seg_box_t
-        IoU_num = float(np.sum(attr_and_segbox))
-        IoU_denom = float(torch.sum(attr_tensor))
-        IoU = IoU_num / IoU_denom
-        eval_totals += IoU
-        eval_individual_data.append(torch.tensor(IoU))
+    targets_ = [[targets[i] for i in range(len(targets)) if int(targets[i][0]) == j] for j in range(int(max(targets[:,0])))]
+    for i, im0 in enumerate(imgs):
+        if len(targets[i]) == 0:
+            eval_individual_data.append([torch.tensor(0),])
+        else:
+            IoU_list = []
+            for targs in targets_:
+                for j in range(len(targs)):
+                    xyxy_pred = targs[j][2:] # * torch.tensor([im0.shape[2], im0.shape[1], im0.shape[2], im0.shape[1]])
+                    seg_box = np.zeros_like(im0.detach().cpu(), dtype=np.float32) # zeros with white pixels inside bbox
+                    seg_box = plot_one_box_seg(xyxy_pred, seg_box, label=None, color=(255,255,255), line_thickness=-1)
+                    # imshow(im0[i], "./figs/im0_i")
+                    # imshow(seg_box, "./figs/seg_box")
+                    attr = VisualizeNumpyImageGrayscale(abs(attr_tensor[0].detach().cpu().numpy()))
+                    seg_box_norm = seg_box / float(np.max(seg_box))
+                    seg_box_t = seg_box_norm[0] # np.transpose(seg_box_norm[0], (2, 0, 1))
+                    attr_and_segbox = attr * seg_box_t
+                    IoU_num = float(np.sum(attr_and_segbox))
+                    IoU_denom = float(np.sum(attr))
+                    IoU = IoU_num / IoU_denom
+                    IoU_list.append(IoU)
+            eval_totals += np.mean(IoU_list)
+            eval_individual_data.append(torch.tensor(IoU_list))
 
     return torch.tensor(eval_totals).requires_grad_(True)
 

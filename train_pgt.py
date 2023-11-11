@@ -391,14 +391,14 @@ def train(hyp, opt, device, tb_writer=None):
             if not (opt.pgt_lr == 0):
                 # Calculate Plausibility IoU with attribution maps
                 plaus_score = eval_plausibility(imgs, targets, attribution_map)
-                plaus_score_np = plaus_score.cpu().clone().detach().numpy()
+                # plaus_score_np = plaus_score.cpu().clone().detach().numpy()
                 # alpha = float(abs(loss)) * opt.pgt_lr # change this from loss scaling to something else
                 # problem because pgt_lr is ignored if loss is 0
                 # alpha = opt.pgt_lr
                 # ADD LR SCHEDULER
 
                 plaus_loss = (opt.pgt_lr * plaus_score)
-                plaus_loss_np = plaus_loss.cpu().clone().detach().numpy()
+                # plaus_loss_np = plaus_loss.cpu().clone().detach().numpy()
                 
                 loss = loss - plaus_loss
             else:
@@ -477,7 +477,7 @@ def train(hyp, opt, device, tb_writer=None):
                     'val/box_loss', 'val/obj_loss', 'val/cls_loss',  # val loss
                     'x/lr0', 'x/lr1', 'x/lr2',  # params
                     ] + ['plaus_loss', 'plaus_score']
-            for x, tag in zip(list(mloss[:-1]) + list((results)) + lr + [plaus_loss_np, plaus_score_np,], tags):
+            for x, tag in zip(list(mloss[:-1]) + list((results)) + lr + [plaus_loss, plaus_score,], tags):
                 if tb_writer:
                     tb_writer.add_scalar(tag, x, epoch)  # tensorboard
                 if wandb_logger.wandb:
@@ -618,13 +618,13 @@ if __name__ == '__main__':
     opt.source = '/data/Koutsoubn8/ijcnn_v7data/Real_world_test/images'
     opt.no_trace = True 
     opt.conf_thres = 0.50 
-    # opt.batch_size = 128 
-    opt.batch_size = 16
+    opt.batch_size = 128 
+    # opt.batch_size = 16
     opt.data = 'data/real_world.yaml'
     opt.hyp = 'data/hyp.real_world.yaml'
     opt.save_dir = str('runs/' + opt.name + '_lr' + str(opt.pgt_lr))
-    opt.device = '0'
-    # opt.device = "6,7"
+    # opt.device = '0'
+    opt.device = "0,1,2,3"
     opt.quad = True # Helps for large batch sizes especially for multiple gpu training
     opt.entity = 'nielseni6'
     
