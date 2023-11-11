@@ -84,6 +84,7 @@ def eval_plausibility(imgs, targets, attr_tensor):
     # if len(targets) == 0:
     #     return 0
     # MIGHT NEED TO NORMALIZE OR TAKE ABS VAL OF ATTR
+    # ALSO MIGHT NORMALIZE FOR THE SIZE OF THE BBOX
     eval_totals = 0
     eval_individual_data = []
     targets_ = [[targets[i] for i in range(len(targets)) if int(targets[i][0]) == j] for j in range(int(max(targets[:,0])))]

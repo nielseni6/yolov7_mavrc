@@ -386,7 +386,7 @@ def train(hyp, opt, device, tb_writer=None):
                     # Add attribution maps
                     attribution_map = generate_vanilla_grad(model, imgs, opt, mlc, targets, device=device) # mlc = max label class
                 else:
-                    plaus_loss, plaus_score = 0.0, 0.0
+                    plaus_loss, plaus_score = torch.tensor([0.0]), torch.tensor([0.0])
                 
             if not (opt.pgt_lr == 0):
                 # Calculate Plausibility IoU with attribution maps
@@ -402,7 +402,7 @@ def train(hyp, opt, device, tb_writer=None):
                 
                 loss = loss - plaus_loss
             else:
-                plaus_loss, plaus_score = 0.0, 0.0
+                plaus_loss, plaus_score = torch.tensor([0.0]), torch.tensor([0.0])
 
             #################################################################################
 
@@ -612,19 +612,21 @@ if __name__ == '__main__':
     ############################################################################
     opt = parser.parse_args()
     
-    opt.pgt_lr = 0.025
+    opt.pgt_lr = 0.0
     opt.epochs = 100
     opt.data = check_file(opt.data)  # check file
     opt.source = '/data/Koutsoubn8/ijcnn_v7data/Real_world_test/images'
     opt.no_trace = True 
     opt.conf_thres = 0.50 
     opt.batch_size = 128 
+    # opt.batch_size = 96
     # opt.batch_size = 16
     opt.data = 'data/real_world.yaml'
     opt.hyp = 'data/hyp.real_world.yaml'
     opt.save_dir = str('runs/' + opt.name + '_lr' + str(opt.pgt_lr))
     # opt.device = '0'
     opt.device = "0,1,2,3"
+    # opt.device = "4,5,6,7"
     opt.quad = True # Helps for large batch sizes especially for multiple gpu training
     opt.entity = 'nielseni6'
     
