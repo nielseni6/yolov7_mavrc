@@ -387,10 +387,11 @@ def train(hyp, opt, device, tb_writer=None):
                     attribution_map = generate_vanilla_grad(model, imgs, opt, mlc, targets, device=device) # mlc = max label class
                 else:
                     plaus_loss, plaus_score = torch.tensor([0.0]), torch.tensor([0.0])
-                
+            
+            t0_pgt = time.time()    
             if not (opt.pgt_lr == 0):
                 # Calculate Plausibility IoU with attribution maps
-                plaus_score = eval_plausibility(imgs, targets, attribution_map)
+                plaus_score = eval_plausibility(imgs, targets.to(device), attribution_map, device=device)
                 # plaus_score_np = plaus_score.cpu().clone().detach().numpy()
                 # alpha = float(abs(loss)) * opt.pgt_lr # change this from loss scaling to something else
                 # problem because pgt_lr is ignored if loss is 0
@@ -401,14 +402,19 @@ def train(hyp, opt, device, tb_writer=None):
                 # plaus_loss_np = plaus_loss.cpu().clone().detach().numpy()
                 
                 loss = loss - plaus_loss
+                # print(f'Plausibility eval and loss took {t1_pgt - t0_pgt} seconds')
             else:
                 plaus_loss, plaus_score = torch.tensor([0.0]), torch.tensor([0.0])
-
+            
+            t1_pgt = time.time()
+            # model.zero_grad()
             #################################################################################
 
             # Backward
             scaler.scale(loss).backward()
-
+            t2_pgt = time.time()
+            print(f'Plausibility eval took {t1_pgt - t0_pgt}s and backprop took {t2_pgt - t1_pgt}s')
+            
             # Optimize
             if ni % accumulate == 0:
                 scaler.step(optimizer)  # optimizer.step
@@ -612,7 +618,7 @@ if __name__ == '__main__':
     ############################################################################
     opt = parser.parse_args()
     
-    opt.pgt_lr = 0.0
+    opt.pgt_lr = 0.5
     opt.epochs = 100
     opt.data = check_file(opt.data)  # check file
     opt.source = '/data/Koutsoubn8/ijcnn_v7data/Real_world_test/images'
@@ -639,9 +645,9 @@ if __name__ == '__main__':
     opt.world_size = int(os.environ['WORLD_SIZE']) if 'WORLD_SIZE' in os.environ else 1
     opt.global_rank = int(os.environ['RANK']) if 'RANK' in os.environ else -1
     set_logging(opt.global_rank)
-    #if opt.global_rank in [-1, 0]:
-    #    check_git_status()
-    #    check_requirements()
+    # if opt.global_rank in [-1, 0]:
+    #     check_git_status()
+    #     check_requirements()
     print(opt)
     
     if opt.loss_metric=="NWD":
