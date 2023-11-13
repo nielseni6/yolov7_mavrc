@@ -21,6 +21,7 @@ from torch.cuda import amp
 from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
+from utils.datasets import LoadStreams, LoadImages, LoadImagesAndLabels
 
 import test  # import test.py to get mAP after each epoch
 from models.experimental import attempt_load
@@ -252,7 +253,9 @@ def train(hyp, opt, device, tb_writer=None):
                                             hyp=hyp, augment=True, cache=opt.cache_images, rect=opt.rect, rank=rank,
                                             world_size=opt.world_size, workers=opt.workers,
                                             image_weights=opt.image_weights, quad=opt.quad, prefix=colorstr('train: '))
-    # dataset_w_labels = LoadImagesAndLabels(opt.source, img_size=imgsz, batch_size=1, augment=opt.augment, stride=stride)
+    # dataset_w_labels = LoadImagesAndLabels(train_path, img_size=imgsz, batch_size=batch_size, stride=gs,
+    #                                        augment=True, hyp=hyp, cache=opt.cache_images, rect=opt.rect, 
+    #                                        image_weights=opt.image_weights, prefix=colorstr('train: '))
     
     mlc = np.concatenate(dataset.labels, 0)[:, 0].max()  # max label class
     nb = len(dataloader)  # number of batches
@@ -346,6 +349,14 @@ def train(hyp, opt, device, tb_writer=None):
             ni = i + nb * epoch  # number integrated batches (since train start)
             imgs = imgs.to(device, non_blocking=True).float() / 255.0  # uint8 to float32, 0-255 to 0.0-1.0
             
+            path_labels, labels = [], []
+            for il, path in enumerate(paths):
+                path_ = path.replace('images', 'labels').replace('.jpg', '.txt').replace('../../..', '')
+                label = torch.tensor(np.insert(np.loadtxt(path_, dtype=np.float32), 0, il))
+                labels.append(label)
+                path_labels.append(path_)
+            labels = torch.stack(labels)
+            
             # Warmup
             if ni <= nw:
                 xi = [0, nw]  # x interp
@@ -382,6 +393,11 @@ def train(hyp, opt, device, tb_writer=None):
             # ADD PLAUSIBILITY LOSS FOR VALIDATION #
             # ADD EXPLAINABILITY TO THE MEDIA OUTPUTS ON WANDB #
             #################################################################################
+                # model.eval()
+                # pred_pgt = model(imgs)
+                # pred_pgt = non_max_suppression(pred_pgt, opt.conf_thres, opt.iou_thres, classes=opt.classes, agnostic=opt.agnostic_nms)
+                # model.train()
+                
                 if not (opt.pgt_lr == 0):
                     # Add attribution maps
                     attribution_map = generate_vanilla_grad(model, imgs, opt, mlc, targets, device=device) # mlc = max label class
@@ -391,7 +407,7 @@ def train(hyp, opt, device, tb_writer=None):
             t0_pgt = time.time()    
             if not (opt.pgt_lr == 0):
                 # Calculate Plausibility IoU with attribution maps
-                plaus_score = eval_plausibility(imgs, targets.to(device), attribution_map, device=device)
+                plaus_score = eval_plausibility(imgs, labels.to(device), attribution_map, device=device)
                 # plaus_score_np = plaus_score.cpu().clone().detach().numpy()
                 # alpha = float(abs(loss)) * opt.pgt_lr # change this from loss scaling to something else
                 # problem because pgt_lr is ignored if loss is 0
@@ -633,7 +649,7 @@ if __name__ == '__main__':
     # opt.device = '0'
     opt.device = "0,1,2,3"
     # opt.device = "4,5,6,7"
-    opt.quad = True # Helps for large batch sizes especially for multiple gpu training
+    opt.quad = True # Helps for multiple gpu training
     opt.entity = 'nielseni6'
     
     # Set CUDA device
