@@ -119,7 +119,7 @@ def eval_plausibility(imgs, targets, attr_tensor, device):
                     # imshow(im0[i], "./figs/im0_i")
                     # imshow(seg_box, "./figs/seg_box")
                     attr = VisualizeImageGrayscale(abs(attr_tensor[0].clone().detach()))
-                    seg_box_norm = seg_box / float(torch.max(seg_box))
+                    seg_box_norm = VisualizeImageGrayscale(seg_box)
                     seg_box_t = seg_box_norm[0] # np.transpose(seg_box_norm[0], (2, 0, 1))
                     attr_and_segbox = attr * seg_box_t
                     IoU_num = (torch.sum(attr_and_segbox))
