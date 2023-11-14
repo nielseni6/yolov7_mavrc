@@ -1,0 +1,9 @@
+path: ../../../../data/nielseni6/Real_world_training # dataset root dir
+train: ../../../../data/nielseni6/Real_world_training/images  # train images (relative to 'path') 128 images
+val: ../../../../data/nielseni6/Real_world_test/images  # val images (relative to 'path') 128 images
+test: ../../../../data/nielseni6/Real_world_test/images
+
+
+# Classes
+nc: 2  # Num Clases
+names: ['AIRPLANE', 'DRONE'] # Class Namesz

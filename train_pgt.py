@@ -8,6 +8,7 @@ from copy import deepcopy
 from pathlib import Path
 from threading import Thread
 import wandb
+import socket
 
 import numpy as np
 import torch.distributed as dist
@@ -649,23 +650,35 @@ if __name__ == '__main__':
 
     opt.loss_attr = True 
     opt.out_num_attr = 1 # unused if opt.loss_attr == True 
-    opt.pgt_lr = 0.5 
+    opt.pgt_lr = 0.25 
     opt.epochs = 100 
     opt.data = check_file(opt.data)  # check file 
-    opt.source = '/data/Koutsoubn8/ijcnn_v7data/Real_world_test/images' 
     opt.no_trace = True 
     opt.conf_thres = 0.50 
-    # opt.batch_size = 128 
+    opt.batch_size = 128 
     # opt.batch_size = 96 
-    opt.batch_size = 16 
-    opt.data = 'data/real_world.yaml' 
-    opt.hyp = 'data/hyp.real_world.yaml' 
+    # opt.batch_size = 16 
     opt.save_dir = str('runs/' + opt.name + '_lr' + str(opt.pgt_lr))
-    opt.device = '7'
+    opt.device = '5,6'
     # opt.device = "0,1,2,3"
     # opt.device = "4,5,6,7"
     opt.quad = True # Helps for multiple gpu training
-    opt.entity = 'nielseni6'
+    # opt.cache_images = True
+    
+    
+    opt.entity = os.popen('whoami').read().strip()
+    host_name = socket.gethostname()
+    
+    if ('lambda02' == host_name) or ('lambda03' == host_name):    
+        opt.source = '/data/Koutsoubn8/ijcnn_v7data/Real_world_test/images' 
+        opt.data = 'data/real_world.yaml' 
+        opt.hyp = 'data/hyp.real_world.yaml' 
+    if ('lambda01' == host_name):
+        opt.source = '/data/nielseni6/Real_world_test/images' 
+        opt.data = 'data/real_world_lambda01.yaml' 
+        opt.hyp = 'data/hyp.real_world_lambda01.yaml' 
+
+    # print(host_name, opt.entity)
     
     # Set CUDA device
     os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID" 
