@@ -345,6 +345,7 @@ def train(hyp, opt, device, tb_writer=None):
         if rank in [-1, 0]:
             pbar = tqdm(pbar, total=nb)  # progress bar
         optimizer.zero_grad()
+        plaus_loss_total_train, plaus_score_total_train = torch.tensor([0.0]), torch.tensor([0.0])
         for i, (imgs, targets, paths, _) in pbar:  # batch -------------------------------------------------------------
             ni = i + nb * epoch  # number integrated batches (since train start)
             imgs = imgs.to(device, non_blocking=True).float() / 255.0  # uint8 to float32, 0-255 to 0.0-1.0
@@ -398,9 +399,16 @@ def train(hyp, opt, device, tb_writer=None):
                 # pred_pgt = non_max_suppression(pred_pgt, opt.conf_thres, opt.iou_thres, classes=opt.classes, agnostic=opt.agnostic_nms)
                 # model.train()
                 
+                if opt.loss_attr:
+                    loss_attr = compute_loss_ota
+                else:
+                    loss_attr = None
+                
                 if not (opt.pgt_lr == 0):
                     # Add attribution maps
-                    attribution_map = generate_vanilla_grad(model, imgs, opt, mlc, targets, device=device) # mlc = max label class
+                    attribution_map = generate_vanilla_grad(model, imgs, loss_func=loss_attr, 
+                                                            targets=targets, metric=opt.loss_metric, 
+                                                            out_num = opt.out_num_attr, device=device) # mlc = max label class
                 else:
                     plaus_loss, plaus_score = torch.tensor([0.0]), torch.tensor([0.0])
             
@@ -418,12 +426,15 @@ def train(hyp, opt, device, tb_writer=None):
                 # plaus_loss_np = plaus_loss.cpu().clone().detach().numpy()
                 
                 loss = loss - plaus_loss
+
+                plaus_loss_total_train += plaus_loss
+                plaus_score_total_train += plaus_score
                 # print(f'Plausibility eval and loss took {t1_pgt - t0_pgt} seconds')
             else:
                 plaus_loss, plaus_score = torch.tensor([0.0]), torch.tensor([0.0])
             
             t1_pgt = time.time()
-            # model.zero_grad()
+            model.zero_grad()
             #################################################################################
 
             # Backward
@@ -498,8 +509,8 @@ def train(hyp, opt, device, tb_writer=None):
                     'metrics/precision', 'metrics/recall', 'metrics/mAP_0.5', 'metrics/mAP_0.5:0.95',
                     'val/box_loss', 'val/obj_loss', 'val/cls_loss',  # val loss
                     'x/lr0', 'x/lr1', 'x/lr2',  # params
-                    ] + ['plaus_loss', 'plaus_score']
-            for x, tag in zip(list(mloss[:-1]) + list((results)) + lr + [plaus_loss, plaus_score,], tags):
+                    ] + ['plaus_loss_train', 'plaus_score_train']
+            for x, tag in zip(list(mloss[:-1]) + list((results)) + lr + [plaus_loss_total_train, plaus_score_total_train,], tags):
                 if tb_writer:
                     tb_writer.add_scalar(tag, x, epoch)  # tensorboard
                 if wandb_logger.wandb:
@@ -631,32 +642,36 @@ if __name__ == '__main__':
     parser.add_argument('--agnostic-nms', action='store_true', help='class-agnostic NMS')
     parser.add_argument('--classes', nargs='+', type=int, help='filter by class: --class 0, or --class 0 2 3')
     parser.add_argument('--pgt-lr', type=float, default=0.5, help='learning rate for plausibility gradient')
+    parser.add_argument('--out_num_attr', type=float, default=1, help='Default output for generating attribution maps')
+    parser.add_argument('--loss_attr', action='store_true', help='If true, use loss to generate attribution maps')
     ############################################################################
     opt = parser.parse_args()
-    
-    opt.pgt_lr = 0.5
-    opt.epochs = 100
-    opt.data = check_file(opt.data)  # check file
-    opt.source = '/data/Koutsoubn8/ijcnn_v7data/Real_world_test/images'
+
+    opt.loss_attr = True 
+    opt.out_num_attr = 1 # unused if opt.loss_attr == True 
+    opt.pgt_lr = 0.5 
+    opt.epochs = 100 
+    opt.data = check_file(opt.data)  # check file 
+    opt.source = '/data/Koutsoubn8/ijcnn_v7data/Real_world_test/images' 
     opt.no_trace = True 
     opt.conf_thres = 0.50 
-    opt.batch_size = 128 
-    # opt.batch_size = 96
-    # opt.batch_size = 16
-    opt.data = 'data/real_world.yaml'
-    opt.hyp = 'data/hyp.real_world.yaml'
+    # opt.batch_size = 128 
+    # opt.batch_size = 96 
+    opt.batch_size = 16 
+    opt.data = 'data/real_world.yaml' 
+    opt.hyp = 'data/hyp.real_world.yaml' 
     opt.save_dir = str('runs/' + opt.name + '_lr' + str(opt.pgt_lr))
-    # opt.device = '0'
-    opt.device = "0,1,2,3"
+    opt.device = '7'
+    # opt.device = "0,1,2,3"
     # opt.device = "4,5,6,7"
     opt.quad = True # Helps for multiple gpu training
     opt.entity = 'nielseni6'
     
     # Set CUDA device
-    os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
-    os.environ["CUDA_VISIBLE_DEVICES"] = opt.device
-    # os.environ["CUDA_VISIBLE_DEVICES"] = "4"
-  
+    os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID" 
+    os.environ["CUDA_VISIBLE_DEVICES"] = opt.device 
+    # os.environ["CUDA_VISIBLE_DEVICES"] = "4" 
+    
     # Set DDP variables
     opt.world_size = int(os.environ['WORLD_SIZE']) if 'WORLD_SIZE' in os.environ else 1
     opt.global_rank = int(os.environ['RANK']) if 'RANK' in os.environ else -1

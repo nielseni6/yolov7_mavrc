@@ -10,39 +10,57 @@ from utils.plots import plot_one_box
     
     
 
-def generate_vanilla_grad(model, input_tensor, opt, mlc, targets = None, norm=False, device='cpu'):
+def generate_vanilla_grad(model, input_tensor, loss_func = None, 
+                          targets=None, metric=None, out_num = 1, 
+                          norm=False, device='cpu'):
     """
-    Generates an attribution map using vanilla gradient method.
-
+    Computes the vanilla gradient of the input tensor with respect to the specified output tensor or loss.
+    
     Args:
-        model (torch.nn.Module): The PyTorch model to generate the attribution map for.
-        input_tensor (torch.Tensor): The input tensor to the model.
-        norm (bool, optional): Whether to normalize the attribution map. Defaults to False.
-        device (str, optional): The device to use for the computation. Defaults to 'cpu'.
-
+    - model: the PyTorch model used for computing the gradient
+    - input_tensor: the input tensor for which the gradient is computed
+    - loss: the loss tensor for which the gradient is computed (default: None)
+    - out_num: the index of the output tensor for which the gradient is computed (default: 1)
+    - norm: whether to normalize the attribution map (default: False)
+    - device: the device on which to perform the computation (default: 'cpu')
+    
     Returns:
-        numpy.ndarray: The attribution map.
+    - attribution_map: the attribution map (gradient) of the input tensor
     """
     # maybe add model.train() at the beginning and model.eval() at the end of this function
 
     # Set requires_grad attribute of tensor. Important for computing gradients
     input_tensor.requires_grad = True
     
+    # Zero gradients
+    model.zero_grad()
+
     # Forward pass
     train_out = model(input_tensor) # training outputs (no inference outputs in train mode)
 
     num_classes = 2
     
-    # Zero gradients
-    model.zero_grad()
-    
     # train_out[1] = torch.Size([4, 3, 80, 80, 7]) HxWx(#anchorxC) cls (class probabilities)
     # train_out[0] = torch.Size([4, 3, 160, 160, 7]) HxWx(#anchorx4) reg (location and scaling)
     # train_out[2] = torch.Size([4, 3, 40, 40, 7]) HxWx(#anchorx1) obj (objectness score or confidence)
     
-    gradients = torch.autograd.grad(train_out[1], input_tensor, 
-                                    grad_outputs=torch.ones_like(train_out[1]), 
-                                    retain_graph=True, create_graph=True)
+    if loss_func is None:
+        grad_wrt = train_out[out_num]
+        grad_wrt_outputs = torch.ones_like(grad_wrt)
+        # gradients = torch.autograd.grad(grad_wrt, input_tensor, 
+        #                                 grad_outputs=grad_wrt_outputs, 
+        #                                 retain_graph=True, create_graph=True)
+    else:
+        # print("Loss being used for attribution map, out_num ignored")
+        loss, loss_items = loss_func(train_out, targets.to(device), input_tensor, metric=metric)  # loss scaled by batch_size
+        grad_wrt = loss
+        grad_wrt_outputs = None
+        # loss.backward(retain_graph=True, create_graph=True)
+        # gradients = input_tensor.grad
+    
+    gradients = torch.autograd.grad(grad_wrt, input_tensor, 
+                                        grad_outputs=grad_wrt_outputs, 
+                                        retain_graph=True, create_graph=True)
 
     # Convert gradients to numpy array
     gradients = gradients[0].detach().cpu().numpy()

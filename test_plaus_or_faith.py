@@ -533,7 +533,7 @@ def test(opt,
                             # print("before",type(im0),im0.shape)
                             im0=np.float32(im0) / 255
                             im0=cv2.resize(im0,(img.shape[3],img.shape[2]))
-                        
+                            
                             im0 = show_cam_on_image(im0, grayscale_cam[0, :], use_rgb=True)
                             Image.fromarray(im0).save("eigenout_d.png")
                             im0=cv2.cvtColor(im0, cv2.COLOR_RGB2BGR)
