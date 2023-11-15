@@ -111,7 +111,7 @@ def eval_plausibility(imgs, targets, attr_tensor, device):
             eval_individual_data.append([torch.tensor(0).to(device),])
         else:
             IoU_list = []
-            xyxy_pred = targets_[i][0][2:] # * torch.tensor([im0.shape[2], im0.shape[1], im0.shape[2], im0.shape[1]])
+            xyxy_pred = targets[i][2:] # * torch.tensor([im0.shape[2], im0.shape[1], im0.shape[2], im0.shape[1]])
             xyxy_center = corners_coords(xyxy_pred) * torch.tensor([im0.shape[1], im0.shape[2], im0.shape[1], im0.shape[2]])
             c1, c2 = (int(xyxy_center[0]), int(xyxy_center[1])), (int(xyxy_center[2]), int(xyxy_center[3]))
             attr = normalize_tensor(abs(attr_tensor[i].clone().detach()))
