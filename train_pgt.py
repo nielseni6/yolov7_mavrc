@@ -471,6 +471,8 @@ def train(hyp, opt, device, tb_writer=None):
                                                   save_dir.glob('train*.jpg') if x.exists()]})
 
             # end batch ------------------------------------------------------------------------------------------------
+        plaus_loss_total_train /= float(i)
+        plaus_score_total_train /= float(i)
         # end epoch ----------------------------------------------------------------------------------------------------
 
         # Scheduler
@@ -646,24 +648,25 @@ if __name__ == '__main__':
     parser.add_argument('--out_num_attr', type=float, default=1, help='Default output for generating attribution maps')
     parser.add_argument('--loss_attr', action='store_true', help='If true, use loss to generate attribution maps')
     ############################################################################
-    opt = parser.parse_args()
+    opt = parser.parse_args() 
 
-    opt.loss_attr = True 
+    # opt.loss_attr = True 
     opt.out_num_attr = 1 # unused if opt.loss_attr == True 
-    opt.pgt_lr = 10.0 
+    opt.pgt_lr = 0.5 
     opt.epochs = 100 
     opt.data = check_file(opt.data)  # check file 
     opt.no_trace = True 
     opt.conf_thres = 0.50 
-    # opt.batch_size = 128 
-    opt.batch_size = 64 
+    opt.batch_size = 128 
+    # opt.batch_size = 64 
     # opt.batch_size = 16 
     opt.save_dir = str('runs/' + opt.name + '_lr' + str(opt.pgt_lr))
-    opt.device = '2'
-    # opt.device = "0,1,2,3"
-    # opt.device = "4,5,6,7"
-    # opt.quad = True # Helps for multiple gpu training
-    # opt.cache_images = True
+    opt.device = '0,1' 
+    # opt.device = '6,7' 
+    # opt.device = "0,1,2,3" 
+    # opt.device = "4,5,6,7" 
+    # opt.quad = True # Helps for multiple gpu training 
+    # opt.cache_images = True 
     
     
     opt.entity = os.popen('whoami').read().strip()
