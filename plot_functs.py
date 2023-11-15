@@ -12,7 +12,7 @@ def VisualizeNumpyImageGrayscale(image_3d):
     vmax = np.max(image_2d)
     return (image_2d / vmax)
 
-def VisualizeImageGrayscale(image_3d): 
+def normalize_tensor(image_3d): 
     r"""Returns a 3D tensor as a grayscale normalized between 0 and 1 2D tensor.
     """
     vmin = torch.min(image_3d)

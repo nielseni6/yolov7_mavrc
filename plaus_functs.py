@@ -111,33 +111,29 @@ def eval_plausibility(imgs, targets, attr_tensor, device):
             eval_individual_data.append([torch.tensor(0).to(device),])
         else:
             IoU_list = []
-            for targs in targets_:
-                for j in range(len(targs)):
-                    xyxy_pred = targs[j][2:] # * torch.tensor([im0.shape[2], im0.shape[1], im0.shape[2], im0.shape[1]])
-                    seg_box = torch.tensor(np.zeros_like(im0.detach().cpu(), dtype=np.float32)).to(device) # zeros with white pixels inside bbox
-                    seg_box = plot_one_box_seg(xyxy_pred.detach().cpu(), seg_box, label=None, color=(255,255,255), line_thickness=-1)
-                    # imshow(im0[i], "./figs/im0_i")
-                    # imshow(seg_box, "./figs/seg_box")
-                    attr = VisualizeImageGrayscale(abs(attr_tensor[0].clone().detach()))
-                    seg_box_norm = VisualizeImageGrayscale(seg_box)
-                    seg_box_t = seg_box_norm[0] # np.transpose(seg_box_norm[0], (2, 0, 1))
-                    attr_and_segbox = attr * seg_box_t
-                    IoU_num = (torch.sum(attr_and_segbox))
-                    IoU_denom = (torch.sum(attr))
-                    IoU = IoU_num / IoU_denom
-                    IoU_list.append(IoU)
+            for targs in targets_: # Change targets to single tensor and process as batch
+                # Only select pixels in region NO need to draw white bbox in center of image
+                xyxy_pred = targs[0][2:] # * torch.tensor([im0.shape[2], im0.shape[1], im0.shape[2], im0.shape[1]])
+                xyxy_center = corners_coords(xyxy_pred) * torch.tensor([im0.shape[1], im0.shape[2], im0.shape[1], im0.shape[2]])
+                c1, c2 = (int(xyxy_center[0]), int(xyxy_center[1])), (int(xyxy_center[2]), int(xyxy_center[3]))
+                attr = normalize_tensor(abs(attr_tensor[0].clone().detach()))
+                IoU_num = (torch.sum(attr[:,c1[1]:c2[1], c1[0]:c2[0]]))
+                IoU_denom = (torch.sum(attr))
+                IoU = IoU_num / IoU_denom
+                IoU_list.append(IoU)
             eval_totals += torch.mean(torch.tensor(IoU_list))
             eval_individual_data.append(IoU_list)
 
     return torch.tensor(eval_totals).requires_grad_(True)
 
+def corners_coords(center_xywh):
+    center_x, center_y, w, h = center_xywh
+    x = center_x - w/2
+    y = center_y - h/2
+    return torch.tensor([x, y, x+w, y+h])
+    
 def plot_one_box_seg(x, img, color=None, label=None, line_thickness=-1, center_coords = True):
-    def corners_coords(center_xywh):
-        center_x, center_y, w, h = center_xywh
-        x = center_x - w/2
-        y = center_y - h/2
-        return np.array([x, y, x+w, y+h])
-
+    
     if center_coords:
         x = corners_coords(x) * np.array([img.shape[1], img.shape[2], img.shape[1], img.shape[2]])
     # Plots one bounding box on image img

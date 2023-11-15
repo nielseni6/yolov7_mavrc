@@ -44,14 +44,6 @@ class TracePrints(object):
     self.stdout.write("Writing %r\n" % s)
     traceback.print_stack(file=self.stdout)
 
-def VisualizeImageGrayscale(image_3d):
-  r"""Returns a 3D tensor as a grayscale normalized between 0 and 1 2D tensor.
-  """
-  vmin = torch.min(image_3d)
-  image_2d = image_3d - vmin
-  vmax = torch.max(image_2d)
-  return (image_2d / vmax)
-
 def VisualizeNumpyImageGrayscale(image_3d):
   r"""Returns a 3D tensor as a grayscale normalized between 0 and 1 2D tensor.
   """

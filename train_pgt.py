@@ -346,7 +346,7 @@ def train(hyp, opt, device, tb_writer=None):
         if rank in [-1, 0]:
             pbar = tqdm(pbar, total=nb)  # progress bar
         optimizer.zero_grad()
-        plaus_loss_total_train, plaus_score_total_train = torch.tensor([0.0]), torch.tensor([0.0])
+        plaus_loss_total_train, plaus_score_total_train = 0.0, 0.0
         for i, (imgs, targets, paths, _) in pbar:  # batch -------------------------------------------------------------
             ni = i + nb * epoch  # number integrated batches (since train start)
             imgs = imgs.to(device, non_blocking=True).float() / 255.0  # uint8 to float32, 0-255 to 0.0-1.0
@@ -427,9 +427,9 @@ def train(hyp, opt, device, tb_writer=None):
                 # plaus_loss_np = plaus_loss.cpu().clone().detach().numpy()
                 
                 loss = loss - plaus_loss
-
-                plaus_loss_total_train += plaus_loss
-                plaus_score_total_train += plaus_score
+                
+                plaus_loss_total_train += float(plaus_loss)
+                plaus_score_total_train += float(plaus_score)
                 # print(f'Plausibility eval and loss took {t1_pgt - t0_pgt} seconds')
             else:
                 plaus_loss, plaus_score = torch.tensor([0.0]), torch.tensor([0.0])
@@ -650,16 +650,16 @@ if __name__ == '__main__':
 
     opt.loss_attr = True 
     opt.out_num_attr = 1 # unused if opt.loss_attr == True 
-    opt.pgt_lr = 1.0 
+    opt.pgt_lr = 10.0 
     opt.epochs = 100 
     opt.data = check_file(opt.data)  # check file 
     opt.no_trace = True 
     opt.conf_thres = 0.50 
-    opt.batch_size = 128 
-    # opt.batch_size = 96 
+    # opt.batch_size = 128 
+    opt.batch_size = 64 
     # opt.batch_size = 16 
     opt.save_dir = str('runs/' + opt.name + '_lr' + str(opt.pgt_lr))
-    opt.device = '0'
+    opt.device = '2'
     # opt.device = "0,1,2,3"
     # opt.device = "4,5,6,7"
     # opt.quad = True # Helps for multiple gpu training
