@@ -111,18 +111,16 @@ def eval_plausibility(imgs, targets, attr_tensor, device):
             eval_individual_data.append([torch.tensor(0).to(device),])
         else:
             IoU_list = []
-            for targs in targets_: # Change targets to single tensor and process as batch
-                # Only select pixels in region NO need to draw white bbox in center of image
-                xyxy_pred = targs[0][2:] # * torch.tensor([im0.shape[2], im0.shape[1], im0.shape[2], im0.shape[1]])
-                xyxy_center = corners_coords(xyxy_pred) * torch.tensor([im0.shape[1], im0.shape[2], im0.shape[1], im0.shape[2]])
-                c1, c2 = (int(xyxy_center[0]), int(xyxy_center[1])), (int(xyxy_center[2]), int(xyxy_center[3]))
-                attr = normalize_tensor(abs(attr_tensor[0].clone().detach()))
-                IoU_num = (torch.sum(attr[:,c1[1]:c2[1], c1[0]:c2[0]]))
-                IoU_denom = (torch.sum(attr))
-                IoU = IoU_num / IoU_denom
-                IoU_list.append(IoU)
-            eval_totals += torch.mean(torch.tensor(IoU_list))
-            eval_individual_data.append(IoU_list)
+            xyxy_pred = targets_[i][0][2:] # * torch.tensor([im0.shape[2], im0.shape[1], im0.shape[2], im0.shape[1]])
+            xyxy_center = corners_coords(xyxy_pred) * torch.tensor([im0.shape[1], im0.shape[2], im0.shape[1], im0.shape[2]])
+            c1, c2 = (int(xyxy_center[0]), int(xyxy_center[1])), (int(xyxy_center[2]), int(xyxy_center[3]))
+            attr = normalize_tensor(abs(attr_tensor[i].clone().detach()))
+            IoU_num = (torch.sum(attr[:,c1[1]:c2[1], c1[0]:c2[0]]))
+            IoU_denom = (torch.sum(attr))
+            IoU = IoU_num / IoU_denom
+            IoU_list.append(IoU)
+        eval_totals += torch.mean(torch.tensor(IoU_list))
+        eval_individual_data.append(IoU_list)
 
     return torch.tensor(eval_totals).requires_grad_(True)
 
