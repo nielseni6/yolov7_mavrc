@@ -346,7 +346,10 @@ def train(hyp, opt, device, tb_writer=None):
         if rank in [-1, 0]:
             pbar = tqdm(pbar, total=nb)  # progress bar
         optimizer.zero_grad()
+        
+        
         plaus_loss_total_train, plaus_score_total_train = 0.0, 0.0
+        plaus_num_nan = 0
         for i, (imgs, targets, paths, _) in pbar:  # batch -------------------------------------------------------------
             ni = i + nb * epoch  # number integrated batches (since train start)
             imgs = imgs.to(device, non_blocking=True).float() / 255.0  # uint8 to float32, 0-255 to 0.0-1.0
@@ -402,46 +405,50 @@ def train(hyp, opt, device, tb_writer=None):
                 
                 if opt.loss_attr:
                     loss_attr = compute_loss_ota
+                    opt.out_num_attrs = [None,]
                 else:
                     loss_attr = None
                 
-                if not (opt.pgt_lr == 0):
-                    # Add attribution maps
-                    attribution_map = generate_vanilla_grad(model, imgs, loss_func=loss_attr, 
-                                                            targets=targets, metric=opt.loss_metric, 
-                                                            out_num = opt.out_num_attr, device=device) # mlc = max label class
-                else:
-                    plaus_loss, plaus_score = torch.tensor([0.0]), torch.tensor([0.0])
-            
-            t0_pgt = time.time()    
-            if not (opt.pgt_lr == 0):
-                # Calculate Plausibility IoU with attribution maps
-                plaus_score = eval_plausibility(imgs, labels.to(device), attribution_map, device=device)
-                # plaus_score_np = plaus_score.cpu().clone().detach().numpy()
-                # alpha = float(abs(loss)) * opt.pgt_lr # change this from loss scaling to something else
-                # problem because pgt_lr is ignored if loss is 0
-                # alpha = opt.pgt_lr
-                # ADD LR SCHEDULER
+                for out_num_attr in opt.out_num_attrs:
+                    t0_pgt = time.time()
+                    if not (opt.pgt_lr == 0):
+                        # Add attribution maps
+                        attribution_map = generate_vanilla_grad(model, imgs, loss_func=loss_attr, 
+                                                                targets=targets, metric=opt.loss_metric, 
+                                                                out_num = out_num_attr, device=device) # mlc = max label class
+                        t1_pgt = time.time()
+                        # Calculate Plausibility IoU with attribution maps
+                        plaus_score = eval_plausibility(imgs, labels.to(device), attribution_map, device=device)
+                        # plaus_score_np = plaus_score.cpu().clone().detach().numpy()
+                        # alpha = float(abs(loss)) * opt.pgt_lr # change this from loss scaling to something else
+                        # problem because pgt_lr is ignored if loss is 0
+                        # alpha = opt.pgt_lr
+                        # ADD LR SCHEDULER
 
-                plaus_loss = (opt.pgt_lr * plaus_score)
-                # plaus_loss_np = plaus_loss.cpu().clone().detach().numpy()
-                
-                loss = loss - plaus_loss
-                
-                plaus_loss_total_train += float(plaus_loss)
-                plaus_score_total_train += float(plaus_score)
-                # print(f'Plausibility eval and loss took {t1_pgt - t0_pgt} seconds')
-            else:
-                plaus_loss, plaus_score = torch.tensor([0.0]), torch.tensor([0.0])
-            
-            t1_pgt = time.time()
+                        plaus_loss = (opt.pgt_lr * plaus_score)
+                        # plaus_loss_np = plaus_loss.cpu().clone().detach().numpy()
+                        
+                        loss = loss - plaus_loss
+                        
+                        ploss = (float(plaus_loss) / float(len(opt.out_num_attrs)))
+                        pscore = (float(plaus_score) / float(len(opt.out_num_attrs)))
+                        plaus_loss_total_train += ploss if not math.isnan(ploss) else 0.0
+                        plaus_score_total_train += pscore if not math.isnan(pscore) else 0.0
+                        plaus_num_nan += int(math.isnan(pscore))
+                        # print(f'Plausibility eval and loss took {t1_pgt - t0_pgt} seconds')
+                    else:
+                        plaus_loss, plaus_score = torch.tensor([0.0]), torch.tensor([0.0])
+                    
+                    t2_pgt = time.time()
             model.zero_grad()
             #################################################################################
 
             # Backward
             scaler.scale(loss).backward()
-            t2_pgt = time.time()
-            print(f'Plausibility eval took {t1_pgt - t0_pgt}s and backprop took {t2_pgt - t1_pgt}s')
+            t3_pgt = time.time()
+            if (i % 5) == 0:
+                # print(f'Attribution generation took {t1_pgt - t0_pgt}s')
+                print(f'Plausibility eval took {t2_pgt - t0_pgt}s and backprop took {t3_pgt - t2_pgt}s')
             
             # Optimize
             if ni % accumulate == 0:
@@ -512,8 +519,8 @@ def train(hyp, opt, device, tb_writer=None):
                     'metrics/precision', 'metrics/recall', 'metrics/mAP_0.5', 'metrics/mAP_0.5:0.95',
                     'val/box_loss', 'val/obj_loss', 'val/cls_loss',  # val loss
                     'x/lr0', 'x/lr1', 'x/lr2',  # params
-                    ] + ['plaus_loss_train', 'plaus_score_train']
-            for x, tag in zip(list(mloss[:-1]) + list((results)) + lr + [plaus_loss_total_train, plaus_score_total_train,], tags):
+                    ] + ['plaus_loss_train', 'plaus_score_train', 'plaus_num_nan',]
+            for x, tag in zip(list(mloss[:-1]) + list((results)) + lr + [plaus_loss_total_train, plaus_score_total_train, plaus_num_nan,], tags):
                 if tb_writer:
                     tb_writer.add_scalar(tag, x, epoch)  # tensorboard
                 if wandb_logger.wandb:
@@ -645,14 +652,16 @@ if __name__ == '__main__':
     parser.add_argument('--agnostic-nms', action='store_true', help='class-agnostic NMS')
     parser.add_argument('--classes', nargs='+', type=int, help='filter by class: --class 0, or --class 0 2 3')
     parser.add_argument('--pgt-lr', type=float, default=0.5, help='learning rate for plausibility gradient')
-    parser.add_argument('--out_num_attr', type=float, default=1, help='Default output for generating attribution maps')
+    # parser.add_argument('--out_num_attr', type=float, default=1, help='Default output for generating attribution maps')
+    parser.add_argument('--out_num_attrs', nargs='+', type=int, default=[1,], help='Default output for generating attribution maps')
     parser.add_argument('--loss_attr', action='store_true', help='If true, use loss to generate attribution maps')
     ############################################################################
     opt = parser.parse_args() 
 
     # opt.loss_attr = True 
-    opt.out_num_attr = 1 # unused if opt.loss_attr == True 
-    opt.pgt_lr = 1.0 
+    # opt.out_num_attrs = [0,1,2,] # unused if opt.loss_attr == True 
+    opt.out_num_attrs = [1,]
+    opt.pgt_lr = 0.6 
     opt.epochs = 100 
     opt.data = check_file(opt.data)  # check file 
     opt.no_trace = True 
