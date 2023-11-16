@@ -1,31 +1,25 @@
 import torch
 import numpy as np
-# from plot_bboxes import plot_one_box_PIL_, plot_one_box_seg
-from utils.general import coco80_to_coco91_class, check_dataset, check_file, check_img_size, check_requirements, \
-    box_iou, non_max_suppression, scale_coords, xyxy2xywh, xywh2xyxy, set_logging, increment_path, colorstr
-import cv2
-import random
-from plot_functs import *
-from utils.plots import plot_one_box
-    
-    
+from plot_functs import *    
 
 def generate_vanilla_grad(model, input_tensor, loss_func = None, 
                           targets=None, metric=None, out_num = 1, 
-                          norm=False, device='cpu'):
+                          norm=False, device='cpu'):    
     """
-    Computes the vanilla gradient of the input tensor with respect to the specified output tensor or loss.
-    
+    Computes the vanilla gradient of the input tensor with respect to the output of the given model.
+
     Args:
-    - model: the PyTorch model used for computing the gradient
-    - input_tensor: the input tensor for which the gradient is computed
-    - loss: the loss tensor for which the gradient is computed (default: None)
-    - out_num: the index of the output tensor for which the gradient is computed (default: 1)
-    - norm: whether to normalize the attribution map (default: False)
-    - device: the device on which to perform the computation (default: 'cpu')
-    
+        model (torch.nn.Module): The model to compute the gradient with respect to.
+        input_tensor (torch.Tensor): The input tensor to compute the gradient for.
+        loss_func (callable, optional): The loss function to use. If None, the gradient is computed with respect to the output tensor.
+        targets (torch.Tensor, optional): The target tensor to use with the loss function. Defaults to None.
+        metric (callable, optional): The metric function to use with the loss function. Defaults to None.
+        out_num (int, optional): The index of the output tensor to compute the gradient with respect to. Defaults to 1.
+        norm (bool, optional): Whether to normalize the attribution map. Defaults to False.
+        device (str, optional): The device to use for computation. Defaults to 'cpu'.
+
     Returns:
-    - attribution_map: the attribution map (gradient) of the input tensor
+        torch.Tensor: The attribution map computed as the gradient of the input tensor with respect to the output tensor.
     """
     # maybe add model.train() at the beginning and model.eval() at the end of this function
 
@@ -37,8 +31,6 @@ def generate_vanilla_grad(model, input_tensor, loss_func = None,
 
     # Forward pass
     train_out = model(input_tensor) # training outputs (no inference outputs in train mode)
-
-    num_classes = 2
     
     # train_out[1] = torch.Size([4, 3, 80, 80, 7]) HxWx(#anchorxC) cls (class probabilities)
     # train_out[0] = torch.Size([4, 3, 160, 160, 7]) HxWx(#anchorx4) reg (location and scaling)
@@ -47,11 +39,7 @@ def generate_vanilla_grad(model, input_tensor, loss_func = None,
     if loss_func is None:
         grad_wrt = train_out[out_num]
         grad_wrt_outputs = torch.ones_like(grad_wrt)
-        # gradients = torch.autograd.grad(grad_wrt, input_tensor, 
-        #                                 grad_outputs=grad_wrt_outputs, 
-        #                                 retain_graph=True, create_graph=True)
     else:
-        # print("Loss being used for attribution map, out_num ignored")
         loss, loss_items = loss_func(train_out, targets.to(device), input_tensor, metric=metric)  # loss scaled by batch_size
         grad_wrt = loss
         grad_wrt_outputs = None
@@ -130,18 +118,3 @@ def corners_coords(center_xywh):
     y = center_y - h/2
     return torch.tensor([x, y, x+w, y+h])
     
-def plot_one_box_seg(x, img, color=None, label=None, line_thickness=-1, center_coords = True):
-    
-    if center_coords:
-        x = corners_coords(x) * np.array([img.shape[1], img.shape[2], img.shape[1], img.shape[2]])
-    # Plots one bounding box on image img
-    tl = line_thickness or round(0.002 * (img.shape[2] + img.shape[1]) / 2) + 1  # line/font thickness
-    color = color or [random.randint(0, 255) for _ in range(3)]
-    c1, c2 = (int(x[0]), int(x[1])), (int(x[2]), int(x[3]))
-    for i in range(img.shape[0]):
-        img[i,c1[1]:c2[1], c1[0]:c2[0]] = color[i]
-    return img
-#     test_im = cv2.rectangle(img, c1, c2, color, thickness=tl, lineType=cv2.LINE_AA)
-#     # imshow(test_im, "./figs/test_im")
-#     # imshow(img, "./figs/img")
-#     return test_im
