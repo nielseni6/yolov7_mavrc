@@ -418,13 +418,11 @@ def train(hyp, opt, device, tb_writer=None):
                                                                 out_num = out_num_attr, device=device) # mlc = max label class
                         t1_pgt = time.time()
                         # Calculate Plausibility IoU with attribution maps
-                        plaus_score = eval_plausibility(imgs, labels.to(device), attribution_map, device=device)
-                        # plaus_score_np = plaus_score.cpu().clone().detach().numpy()
-                        # alpha = float(abs(loss)) * opt.pgt_lr # change this from loss scaling to something else
-                        # problem because pgt_lr is ignored if loss is 0
-                        # alpha = opt.pgt_lr
+                        plaus_score, plaus_num_nan = eval_plausibility(imgs, labels.to(device), 
+                                                                       attribution_map, device=device, 
+                                                                       debug=True)
                         # ADD LR SCHEDULER
-
+                        
                         plaus_loss = (opt.pgt_lr * plaus_score)
                         # plaus_loss_np = plaus_loss.cpu().clone().detach().numpy()
                         
@@ -434,7 +432,7 @@ def train(hyp, opt, device, tb_writer=None):
                         pscore = (float(plaus_score) / float(len(opt.out_num_attrs)))
                         plaus_loss_total_train += ploss if not math.isnan(ploss) else 0.0
                         plaus_score_total_train += pscore if not math.isnan(pscore) else 0.0
-                        plaus_num_nan += int(math.isnan(pscore))
+                        # plaus_num_nan += int(math.isnan(pscore))
                         # print(f'Plausibility eval and loss took {t1_pgt - t0_pgt} seconds')
                     else:
                         plaus_loss, plaus_score = torch.tensor([0.0]), torch.tensor([0.0])
@@ -661,7 +659,7 @@ if __name__ == '__main__':
     # opt.loss_attr = True 
     # opt.out_num_attrs = [0,1,2,] # unused if opt.loss_attr == True 
     opt.out_num_attrs = [1,]
-    opt.pgt_lr = 0.4 
+    opt.pgt_lr = 0.65 
     opt.epochs = 100 
     opt.data = check_file(opt.data)  # check file 
     opt.no_trace = True 
@@ -670,7 +668,7 @@ if __name__ == '__main__':
     # opt.batch_size = 64 
     # opt.batch_size = 16 
     opt.save_dir = str('runs/' + opt.name + '_lr' + str(opt.pgt_lr)) 
-    opt.device = '0,1' 
+    opt.device = '6' 
     # opt.device = '6,7' 
     # opt.device = "0,1,2,3" 
     # opt.device = "4,5,6,7" 

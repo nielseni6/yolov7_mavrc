@@ -1,6 +1,7 @@
 import torch
 import numpy as np
-from plot_functs import *    
+from plot_functs import * 
+import math   
 
 def generate_vanilla_grad(model, input_tensor, loss_func = None, 
                           targets=None, metric=None, out_num = 1, 
@@ -17,7 +18,7 @@ def generate_vanilla_grad(model, input_tensor, loss_func = None,
         out_num (int, optional): The index of the output tensor to compute the gradient with respect to. Defaults to 1.
         norm (bool, optional): Whether to normalize the attribution map. Defaults to False.
         device (str, optional): The device to use for computation. Defaults to 'cpu'.
-
+    
     Returns:
         torch.Tensor: The attribution map computed as the gradient of the input tensor with respect to the output tensor.
     """
@@ -72,7 +73,7 @@ def generate_vanilla_grad(model, input_tensor, loss_func = None,
     return torch.tensor(attribution_map, dtype=torch.float32, device=device)
 
 
-def eval_plausibility(imgs, targets, attr_tensor, device):
+def eval_plausibility(imgs, targets, attr_tensor, device, debug=False):
     """
     Evaluate the plausibility of an object detection prediction by computing the Intersection over Union (IoU) between
     the predicted bounding box and the ground truth bounding box.
@@ -92,6 +93,7 @@ def eval_plausibility(imgs, targets, attr_tensor, device):
     # MIGHT NEED TO NORMALIZE OR TAKE ABS VAL OF ATTR
     # ALSO MIGHT NORMALIZE FOR THE SIZE OF THE BBOX
     eval_totals = 0
+    plaus_num_nan = 0
     eval_individual_data = []
     targets_ = [[targets[i] for i in range(len(targets)) if int(targets[i][0]) == j] for j in range(int(max(targets[:,0])))]
     for i, im0 in enumerate(imgs):
@@ -104,13 +106,23 @@ def eval_plausibility(imgs, targets, attr_tensor, device):
             c1, c2 = (int(xyxy_center[0]), int(xyxy_center[1])), (int(xyxy_center[2]), int(xyxy_center[3]))
             attr = normalize_tensor(abs(attr_tensor[i].clone().detach()))
             IoU_num = (torch.sum(attr[:,c1[1]:c2[1], c1[0]:c2[0]]))
-            IoU_denom = (torch.sum(attr))
-            IoU = IoU_num / IoU_denom
+            # if torch.isinf(IoU_num):
+            #     IoU_num = torch.finfo(torch.float32).max
+            IoU_denom = torch.sum(attr)
+            # if torch.isinf(IoU_denom):
+            #     IoU_denom = torch.finfo(torch.float32).max
+            IoU_ = (IoU_num / IoU_denom)
+            IoU = IoU_ if not math.isnan(IoU_) else 0.0
+            plaus_num_nan += 1 if math.isnan(IoU_) else 0
             IoU_list.append(IoU)
-        eval_totals += torch.mean(torch.tensor(IoU_list))
+        list_mean = torch.mean(torch.tensor(IoU_list))
+        eval_totals += list_mean if not math.isnan(list_mean) else 0.0
         eval_individual_data.append(IoU_list)
 
-    return torch.tensor(eval_totals).requires_grad_(True)
+    if debug:
+        return torch.tensor(eval_totals).requires_grad_(True), plaus_num_nan
+    else:
+        return torch.tensor(eval_totals).requires_grad_(True)
 
 def corners_coords(center_xywh):
     center_x, center_y, w, h = center_xywh
