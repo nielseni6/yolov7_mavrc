@@ -111,11 +111,12 @@ def eval_plausibility(imgs, targets, attr_tensor, device, debug=False):
             IoU_num = (torch.sum(attr[:,c1[1]:c2[1], c1[0]:c2[0]]))
             
             IoU_ = (IoU_num / IoU_denom)
-            isnan = math.isnan(IoU_)
-            IoU = IoU_ if not isnan else 0.0
-            plaus_num_nan += int(isnan)
-            # if isnan:
-            #     print("NaN IoU")
+            if debug:
+                isnan = math.isnan(IoU_)
+                IoU = IoU_ if not isnan else 0.0
+                plaus_num_nan += int(isnan)
+            else:
+                IoU = IoU_
             IoU_list.append(IoU)
         list_mean = torch.mean(torch.tensor(IoU_list))
         eval_totals += list_mean if not math.isnan(list_mean) else 0.0
