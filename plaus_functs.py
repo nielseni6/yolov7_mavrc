@@ -96,7 +96,7 @@ def eval_plausibility(imgs, targets, attr_tensor, device, debug=False):
     eval_totals = 0
     plaus_num_nan = 0
     eval_individual_data = []
-    targets_ = [[targets[i] for i in range(len(targets)) if int(targets[i][0]) == j] for j in range(int(max(targets[:,0])))]
+    # targets_ = [[targets[i] for i in range(len(targets)) if int(targets[i][0]) == j] for j in range(int(max(targets[:,0])))]
     for i, im0 in enumerate(imgs):
         if len(targets[i]) == 0:
             eval_individual_data.append([torch.tensor(0).to(device),])
@@ -105,16 +105,15 @@ def eval_plausibility(imgs, targets, attr_tensor, device, debug=False):
             xyxy_pred = targets[i][2:] # * torch.tensor([im0.shape[2], im0.shape[1], im0.shape[2], im0.shape[1]])
             xyxy_center = corners_coords(xyxy_pred) * torch.tensor([im0.shape[1], im0.shape[2], im0.shape[1], im0.shape[2]])
             c1, c2 = (int(xyxy_center[0]), int(xyxy_center[1])), (int(xyxy_center[2]), int(xyxy_center[3]))
-            attr = torch.nan_to_num(normalize_tensor(torch.abs(attr_tensor[i].clone().detach())))
-            
-            IoU_denom = torch.sum(attr)
+            attr = (normalize_tensor(torch.abs(attr_tensor[i].clone().detach())))
+            attr = torch.nan_to_num(attr, nan=0.0)
             IoU_num = (torch.sum(attr[:,c1[1]:c2[1], c1[0]:c2[0]]))
+            IoU_denom = torch.sum(attr)
             
             IoU_ = (IoU_num / IoU_denom)
             if debug:
-                isnan = math.isnan(IoU_)
-                IoU = IoU_ if not isnan else 0.0
-                plaus_num_nan += int(isnan)
+                IoU = IoU_ if not math.isnan(IoU_) else 0.0
+                plaus_num_nan += 1 if math.isnan(IoU_) else 0
             else:
                 IoU = IoU_
             IoU_list.append(IoU)
@@ -126,6 +125,7 @@ def eval_plausibility(imgs, targets, attr_tensor, device, debug=False):
         return torch.tensor(eval_totals).requires_grad_(True), plaus_num_nan
     else:
         return torch.tensor(eval_totals).requires_grad_(True)
+
 
 def corners_coords(center_xywh):
     center_x, center_y, w, h = center_xywh
