@@ -659,7 +659,7 @@ if __name__ == '__main__':
     # opt.loss_attr = True 
     # opt.out_num_attrs = [0,1,2,] # unused if opt.loss_attr == True 
     opt.out_num_attrs = [1,] 
-    opt.pgt_lr = 0.5 
+    opt.pgt_lr = 0.7 
     opt.epochs = 100 
     opt.data = check_file(opt.data)  # check file 
     opt.no_trace = True 
@@ -668,7 +668,7 @@ if __name__ == '__main__':
     # opt.batch_size = 32 
     # opt.batch_size = 16 
     opt.save_dir = str('runs/' + opt.name + '_lr' + str(opt.pgt_lr)) 
-    opt.device = '2' 
+    opt.device = '1,3' 
     # opt.device = '6,7' 
     # opt.device = "0,1,2,3" 
     # opt.device = "4,5,6,7" 

@@ -106,7 +106,8 @@ def eval_plausibility(imgs, targets, attr_tensor, device, debug=False):
             xyxy_center = corners_coords(xyxy_pred) * torch.tensor([im0.shape[1], im0.shape[2], im0.shape[1], im0.shape[2]])
             c1, c2 = (int(xyxy_center[0]), int(xyxy_center[1])), (int(xyxy_center[2]), int(xyxy_center[3]))
             attr = (normalize_tensor(torch.abs(attr_tensor[i].clone().detach())))
-            attr = torch.nan_to_num(attr, nan=0.0)
+            if torch.isnan(attr).any():
+                attr = torch.nan_to_num(attr, nan=0.0)
             IoU_num = (torch.sum(attr[:,c1[1]:c2[1], c1[0]:c2[0]]))
             IoU_denom = torch.sum(attr)
             
