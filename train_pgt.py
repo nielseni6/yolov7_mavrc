@@ -37,6 +37,7 @@ from utils.loss import ComputeLoss, ComputeLossOTA
 from utils.plots import plot_images, plot_labels, plot_results, plot_evolution
 from utils.torch_utils import ModelEMA, select_device, intersect_dicts, torch_distributed_zero_first, is_parallel
 from utils.wandb_logging.wandb_utils import WandbLogger, check_wandb_resume
+import sys
 
 from plaus_functs import generate_vanilla_grad, eval_plausibility
 
@@ -655,7 +656,8 @@ if __name__ == '__main__':
     parser.add_argument('--loss_attr', action='store_true', help='If true, use loss to generate attribution maps')
     ############################################################################
     opt = parser.parse_args() 
-
+    print(opt)
+    
     # opt.loss_attr = True 
     # opt.out_num_attrs = [0,1,2,] # unused if opt.loss_attr == True 
     opt.out_num_attrs = [1,] 
@@ -668,13 +670,16 @@ if __name__ == '__main__':
     # opt.batch_size = 32 
     # opt.batch_size = 16 
     opt.save_dir = str('runs/' + opt.name + '_lr' + str(opt.pgt_lr)) 
-    opt.device = '1,3' 
+    opt.device = '6,7' 
     # opt.device = '6,7' 
     # opt.device = "0,1,2,3" 
     # opt.device = "4,5,6,7" 
     opt.quad = True # Helps for multiple gpu training 
     # opt.cache_images = True 
     
+    seed = random.randrange(sys.maxsize)
+    rng = random.Random(seed)
+    print(f'Seed: {seed}')
     
     opt.entity = os.popen('whoami').read().strip()
     host_name = socket.gethostname()
@@ -693,7 +698,6 @@ if __name__ == '__main__':
     # Set CUDA device
     os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID" 
     os.environ["CUDA_VISIBLE_DEVICES"] = opt.device 
-    # os.environ["CUDA_VISIBLE_DEVICES"] = "4" 
     
     # Set DDP variables
     opt.world_size = int(os.environ['WORLD_SIZE']) if 'WORLD_SIZE' in os.environ else 1

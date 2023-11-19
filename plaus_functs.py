@@ -23,7 +23,10 @@ def generate_vanilla_grad(model, input_tensor, loss_func = None,
     Returns:
         torch.Tensor: The attribution map computed as the gradient of the input tensor with respect to the output tensor.
     """
-    # maybe add model.train() at the beginning and model.eval() at the end of this function
+    # Set model.train() at the beginning and revert back to original mode (model.eval() or model.train()) at the end
+    train_mode = model.training
+    if not train_mode:
+        model.train()
 
     # Set requires_grad attribute of tensor. Important for computing gradients
     input_tensor.requires_grad = True
@@ -68,8 +71,9 @@ def generate_vanilla_grad(model, input_tensor, loss_func = None,
         # Sum across color channels
         attribution_map = gradients
 
-    # Set model back to training mode
-    # model.train()
+    # Set model back to original mode
+    if not train_mode:
+        model.eval()
     
     return torch.tensor(attribution_map, dtype=torch.float32, device=device)
 
@@ -125,7 +129,7 @@ def eval_plausibility(imgs, targets, attr_tensor, device, debug=False):
     if debug:
         return torch.tensor(eval_totals).requires_grad_(True), plaus_num_nan
     else:
-        return torch.tensor(eval_totals).requires_grad_(True)
+        return torch.tensor(eval_totals).requires_grad_(True), eval_individual_data
 
 
 def corners_coords(center_xywh):

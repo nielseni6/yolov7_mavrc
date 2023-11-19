@@ -34,6 +34,7 @@ from plot_bboxes import plot_one_box_PIL_, plot_one_box_seg
 import visualize_plaus_faith
 from plaus_functs import generate_vanilla_grad, eval_plausibility
 from plot_functs import *
+from plot_functs import normalize_tensor
 
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -83,8 +84,7 @@ def test(opt,
          ):
     # Initialize/load model and set device
 
-    opt.device = 'cpu'
-    device = 'cpu'
+    device = opt.device
     training = model is not None
     if training:  # called by train.py
         device = next(model.parameters()).device  # get model device
@@ -272,6 +272,7 @@ def test(opt,
     old_img_b = 1
 
     model, imgsz, stride = load_model(imgsz) # load model
+    model.to(device)
     model_unseg = model
     img_num = 0
     dataset.__iter__()
@@ -374,7 +375,7 @@ def test(opt,
                         plot_one_box_seg(xyxy_gnd, seg_box, label=None, color=(255,255,255), line_thickness=-1)
                         # seg_box = plot_one_box_PIL_(seg_box, color=(255,255,255), 
                         #                         img_size = 480, xyxy=labels)
-                        print("plot_one_box_seg")
+                        # print("plot_one_box_seg")
                     
                     npimg = VisualizeNumpyImageGrayscale(im0)
                     npimg = np.transpose(npimg, (2, 0, 1))
@@ -456,43 +457,38 @@ def test(opt,
                             
                             if cam == 'eigen':
                                 cam_ = EigenCAM(model, target_layers, use_cuda=False)          # exit()
-                                grayscale_cam = cam_(input_tensor=img,targets=targets,eigen_smooth=True,aug_smooth=False)
+                                attribution_map = cam_(input_tensor=img,targets=targets,eigen_smooth=True,aug_smooth=False)
                                 
                             if cam == 'gradcam':
                                 cam_ = GradCAM(model_seg, target_layers, use_cuda=False) # model_seg
-                                # grayscale_cam = cam_(input_tensor=img.requires_grad_(True),targets=targets,eigen_smooth=False,aug_smooth=False)
+                                # attribution_map = cam_(input_tensor=img.requires_grad_(True),targets=targets,eigen_smooth=False,aug_smooth=False)
                                 # print('pre-cam')
                                 
-                                grayscale_cam = cam_(input_tensor=img.requires_grad_(True),
+                                attribution_map = cam_(input_tensor=img.requires_grad_(True),
                                                     targets=targets)#[0, :]
                                 # print('post-cam')
                                 print("gradcam complete")
                             if cam == "eigengrad": 
                                 cam_ = EigenGradCAM(model_seg, target_layers, use_cuda=False) # model_seg
-                                grayscale_cam = cam_(input_tensor=img.requires_grad_(True), targets=targets,
+                                attribution_map = cam_(input_tensor=img.requires_grad_(True), targets=targets,
                                                     eigen_smooth=True,aug_smooth=False)
                             if cam == "fullgrad": 
                                 cam_ = FullGrad(model_seg, target_layers, use_cuda=False) # model_seg
-                                grayscale_cam = cam_(input_tensor=img.requires_grad_(True), targets=targets)
+                                attribution_map = cam_(input_tensor=img.requires_grad_(True), targets=targets)
                             if cam == "score":
                                 cam_ = ScoreCAM(model_seg, target_layers, use_cuda=False) # model_seg
-                                grayscale_cam = cam_(input_tensor=img.requires_grad_(True), targets=targets)
+                                attribution_map = cam_(input_tensor=img.requires_grad_(True), targets=targets)
                             if cam == 'vanilla_grad':
-                                grayscale_cam = generate_vanilla_grad(model, img, labels, device)
-                            #    grayscale_cam = returnGrad(img = img, labels = labels, 
-                            #                               model = model_unseg, compute_loss = compute_loss, 
-                            #                               loss_metric = loss_metric, augment = opt.augment, 
-                            #                               device = device)
-                            #    grayscale_cam = torch.autograd.grad(det_non_norm.requires_grad_(requires_grad=True), img.requires_grad_(True), 
-                            #                              retain_graph=True, create_graph=True)
+                                attribution_map = generate_vanilla_grad(model, img, 
+                                                                out_num = opt.out_num_attr, device=device) # mlc = max label class
                             imshape = (img.shape)
                             if cam == "random":
                                 if opt.eval_method == 'plausibility':
                                     rand_grad = torch.tensor(np.float32(np.random.rand(1, opt.img_size, opt.img_size)))
                                 else:
                                     rand_grad = torch.tensor(np.float32(np.random.rand(imshape[0],imshape[1],imshape[2],imshape[3])))
-                                # grayscale_cam = torch.tensor(np.float32(np.random.rand(img.shape)))
-                                grayscale_cam = np.array(rand_grad * 0.07)
+                                # attribution_map = torch.tensor(np.float32(np.random.rand(img.shape)))
+                                attribution_map = np.array(rand_grad * 0.07)
                                 
                             print(cam)
                             # else:  # default now ScoreCAM (might change to gradient)
@@ -501,26 +497,26 @@ def test(opt,
                             # Generate random placeholder attribution
                             rand_attr = torch.tensor(np.float32(np.random.rand(imshape[0],imshape[1],imshape[2],imshape[3])))# * scale
                             
-                            gray_cam_tensor = torch.tensor(grayscale_cam)
-                            # print(str(grayscale_cam.shape[1] == 3))
-                            if grayscale and not (grayscale_cam.shape[1] == 3):
+                            attr_tensor = torch.tensor(attribution_map)
+                            # print(str(attribution_map.shape[1] == 3))
+                            if grayscale and not (attribution_map.shape[1] == 3):
                                 # gmap = torch.sum(rand_grad, dim = 1)
-                                rand_attr[0][0] = gray_cam_tensor[0]
-                                rand_attr[0][1] = gray_cam_tensor[0]
-                                rand_attr[0][2] = gray_cam_tensor[0]
+                                rand_attr[0][0] = attr_tensor[0]
+                                rand_attr[0][1] = attr_tensor[0]
+                                rand_attr[0][2] = attr_tensor[0]
 
                                 attr_multi_channel = rand_attr
                             else:
-                                attr_multi_channel = gray_cam_tensor
-                                gray_cam_tensor = torch.mean(gray_cam_tensor, axis=1)
-                                grayscale_cam = np.array(gray_cam_tensor)
+                                attr_multi_channel = attr_tensor
+                                attr_tensor = torch.mean(attr_tensor, axis=1)
+                                attribution_map = np.array(attr_tensor)
 
                             results.append((attr_multi_channel, img, labels, cam))
                             if cam_num == 0:
                                 samples_w_obj += 1
                                 print("Processing object detected image ", samples_w_obj, "...       img_num:", img_num)
 
-                            # grayscale_cam = grayscale_cam[0, :] #.clone().detach().requires_grad_()
+                            # attribution_map = attribution_map[0, :] #.clone().detach().requires_grad_()
                             
                             save_path_attr = 'figs/imshowfig_'
                             save_path_attr = str(str(save_path_attr) + cam)
@@ -534,14 +530,14 @@ def test(opt,
                             im0=np.float32(im0) / 255
                             im0=cv2.resize(im0,(img.shape[3],img.shape[2]))
                             
-                            im0 = show_cam_on_image(im0, grayscale_cam[0, :], use_rgb=True)
+                            im0 = show_cam_on_image(im0, attribution_map[0, :], use_rgb=True)
                             Image.fromarray(im0).save("eigenout_d.png")
                             im0=cv2.cvtColor(im0, cv2.COLOR_RGB2BGR)
                             # print(type(im0),im0.shape)
                             im0=cv2.resize(im0,(im0copy.shape[1],im0copy.shape[0]))
                             # normalize=False
                             # if normalize:
-                            #     renormalize_cam_in_bounding_boxes(xyxy, colors,im0copy, grayscale_cam)
+                            #     renormalize_cam_in_bounding_boxes(xyxy, colors,im0copy, attribution_map)
                             #     Image.fromarray(renormalized_cam_image).save("eignenorm_out_d.png")
                             #     print(renormalized_cam_image.shape)
                 else:
@@ -585,11 +581,11 @@ def test(opt,
                     model.zero_grad()
                     # img = results[j][1]
                     # attr_multi_channel = results[j][0]
-                    # convert grayscale_cam to three channel
+                    # convert attribution_map to three channel
                     # img_norm = (img / 255.0)
                     img_norm = img
                     attr_mean = torch.mean(attr_multi_channel)
-                    attr_multi_channel_norm = VisualizeImageGrayscale(attr_multi_channel)
+                    attr_multi_channel_norm = normalize_tensor(attr_multi_channel)
                     if opt.eval_method == 'evalattai':
                         attr_multi_channel_norm = attr_multi_channel_norm * torch.mean(attr_multi_channel_norm**2.0)
                         # attr_multi_channel_norm = attr_multi_channel_norm * (1 / torch.var(attr_multi_channel_norm))
@@ -606,10 +602,10 @@ def test(opt,
                     snr_attr = calculate_snr(img_norm, attr_multi_channel, dB=False)
                     # print("SNR of", cam, ': ', snr_attr)
                     snr_totals[int(ite)] += float(snr_attr)
-                    snr_attr_norm = calculate_snr(img_norm, VisualizeImageGrayscale(attr_multi_channel), dB=False)
+                    snr_attr_norm = calculate_snr(img_norm, normalize_tensor(attr_multi_channel), dB=False)
                     print("Norm SNR of", cam, ': ', snr_attr_norm)
                     snr_totals_norm[int(ite)] += float(snr_attr_norm)
-                    img_norm = VisualizeImageGrayscale(img) # might want to normalize
+                    img_norm = normalize_tensor(img) # might want to normalize
                     # print('torch.max(attr_multi_channel):', torch.max(attr_multi_channel))
                     # print('torch.max(img):', torch.max(img))
                     formatted_img = pert_func.attack_data_format(img_norm, attr_multi_channel_norm, 
@@ -642,23 +638,25 @@ def test(opt,
                             eval_totals[int(ite)] += float(torch.sum(loss))
                             eval_individual_data[int(ite)].append(float(torch.sum(loss)))
                         if opt.eval_method == 'plausibility':
-                            # MIGHT NEED TO NORMALIZE OR TAKE ABS VAL OF ATTR
-                            seg_box = np.zeros_like(im0, dtype=np.float32)# zeros with white pixels inside bbox
-                            xyxy_gnd = targets[0][2:]
-                            plot_one_box_seg(xyxy_gnd, seg_box, label=None, color=(255,255,255), line_thickness=-1)
-                            # attr = np.transpose((attr_multi_channel[0].numpy()), (1, 2, 0))
-                            attr = (attr_multi_channel_norm[0].numpy())
-                            seg_box_norm = seg_box / float(np.max(seg_box))#255.0 #np.max(seg_box)
-                            seg_box_t = np.transpose(seg_box_norm, (2, 0, 1))
-                            attr_and_segbox = attr * seg_box_t
-                            # imshow((VisualizeNumpyImageGrayscale(attr_and_segbox)), save_path='figs/bugtest/attr_and_segbox')
-                            # attr_and_segbox_dot = np.dot(attr,seg_box_t)
-                            # imshow((VisualizeNumpyImageGrayscale(attr_and_segbox_dot)), save_path='attr_and_segbox_dot')
-                            IoU_num = float(np.sum(attr_and_segbox))
-                            IoU_denom = float(torch.sum(attr_multi_channel_norm))
-                            IoU = IoU_num / IoU_denom
-                            eval_totals[int(ite)] += IoU
-                            eval_individual_data[int(ite)].append(IoU)
+                            
+                            plaus_score, eval_individual_data[int(ite)] = eval_plausibility(img, targets, attr_multi_channel, device)
+                            # # MIGHT NEED TO NORMALIZE OR TAKE ABS VAL OF ATTR
+                            # seg_box = np.zeros_like(im0, dtype=np.float32)# zeros with white pixels inside bbox
+                            # xyxy_gnd = targets[0][2:]
+                            # plot_one_box_seg(xyxy_gnd, seg_box, label=None, color=(255,255,255), line_thickness=-1)
+                            # # attr = np.transpose((attr_multi_channel[0].numpy()), (1, 2, 0))
+                            # attr = (attr_multi_channel_norm[0].numpy())
+                            # seg_box_norm = seg_box / float(np.max(seg_box))#255.0 #np.max(seg_box)
+                            # seg_box_t = np.transpose(seg_box_norm, (2, 0, 1))
+                            # attr_and_segbox = attr * seg_box_t
+                            # # imshow((VisualizeNumpyImageGrayscale(attr_and_segbox)), save_path='figs/bugtest/attr_and_segbox')
+                            # # attr_and_segbox_dot = np.dot(attr,seg_box_t)
+                            # # imshow((VisualizeNumpyImageGrayscale(attr_and_segbox_dot)), save_path='attr_and_segbox_dot')
+                            # IoU_num = float(np.sum(attr_and_segbox))
+                            # IoU_denom = float(torch.sum(attr_multi_channel_norm))
+                            # IoU = IoU_num / IoU_denom
+                            eval_totals[int(ite)] += plaus_score
+                            # eval_individual_data[int(ite)].append(IoU)
                         
                         num_sampled += 1
                         
@@ -950,10 +948,11 @@ if __name__ == '__main__':
     print(opt)
     #check_requirements()
 
-    opt.cam_list = ["random", "fullgrad", "gradcam", "eigen", "eigengrad",'vanilla_grad',]
+    opt.out_num_attr = 1
+    # opt.cam_list = ["random", "fullgrad", "gradcam", "eigen", "eigengrad",'vanilla_grad',]
     # opt.cam_list = ["fullgrad", "gradcam", "eigen"]
     # opt.cam_list = ["random","gradcam",]
-    # opt.cam_list = ["random",'vanilla_grad',]
+    opt.cam_list = ["random",'vanilla_grad',]
     # opt.cam_list = ["random",]
     # opt.cam_list = ["gradcam",]
     opt.source = '/data/Koutsoubn8/ijcnn_v7data/Real_world_test/images'
@@ -965,17 +964,23 @@ if __name__ == '__main__':
     opt.hyp = 'data/hyp.real_world.yaml'
     opt.img_size = 480 
     opt.name = 'test_VG_targets[1]' 
-    opt.weights = 'weights/yolov7-tiny.pt' 
+    # opt.weights = 'weights/yolov7-tiny.pt' 
+    opt.weights = 'weights/best-pgt53-yolov7-drone.pt'
     opt.task = 'val'
     opt.n_samples = 100
     # opt.n_samples = 100
     opt.save_img = True
     # opt.classes = 2
     opt.only_detect_true = True
-    opt.eval_method = 'evalattai'
-    # opt.eval_method = 'plausibility'
+    # opt.eval_method = 'evalattai'
+    opt.eval_method = 'plausibility'
     # opt.save_dir = 'runs/test1'
+    opt.device = '0'
     opt.save_dir = str('runs/' + opt.name)
+    
+    # Set CUDA device
+    os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID" 
+    os.environ["CUDA_VISIBLE_DEVICES"] = opt.device 
     
     if (opt.eval_method != 'evalattai') and (opt.eval_method != 'plausibility'):
         raise Exception('eval_method must be evalattai or plausibility')
