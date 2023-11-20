@@ -273,6 +273,8 @@ def test(opt,
 
     model, imgsz, stride = load_model(imgsz) # load model
     model.to(device)
+    if half:
+        model.half()
     model_unseg = model
     img_num = 0
     dataset.__iter__()
@@ -386,7 +388,7 @@ def test(opt,
                     # print("Saving image as ", imsave_path)
                                         
                     imshow_img(seg_box, str("./figs/test_bbox"))
-                    imshow(img[0].numpy(), str("./figs/test_img"))
+                    imshow(img[0].cpu().float().numpy(), str("./figs/test_img"))
                     print("Saving image as ", imsave_path) # Save path for im0
                     
                 if len(det) or not opt.only_detect_true:
@@ -509,7 +511,7 @@ def test(opt,
                             else:
                                 attr_multi_channel = attr_tensor
                                 attr_tensor = torch.mean(attr_tensor, axis=1)
-                                attribution_map = np.array(attr_tensor)
+                                attribution_map = attr_tensor.cpu().detach().numpy()
 
                             results.append((attr_multi_channel, img, labels, cam))
                             if cam_num == 0:
@@ -520,7 +522,7 @@ def test(opt,
                             
                             save_path_attr = 'figs/imshowfig_'
                             save_path_attr = str(str(save_path_attr) + cam)
-                            imshow((VisualizeNumpyImageGrayscale(attr_multi_channel[0].numpy())), save_path=save_path_attr)
+                            imshow((VisualizeNumpyImageGrayscale(attr_multi_channel[0].detach().cpu().numpy())), save_path=save_path_attr)
                             print("Saving attr image as ", save_path_attr)
                             
                             # im0=Image.open(source).convert("L")
