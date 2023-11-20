@@ -348,10 +348,12 @@ def train(hyp, opt, device, tb_writer=None):
             pbar = tqdm(pbar, total=nb)  # progress bar
         optimizer.zero_grad()
         
+        #################################################################################
         # Set PGT learning rate scheduler
         if (((epoch - start_epoch) % opt.pgt_lr_decay_step) == 0) and (epoch != start_epoch):
             opt.pgt_lr *= opt.pgt_lr_decay
             print(f'PGT learning rate decayed to {opt.pgt_lr} at epoch {epoch}')
+        #################################################################################
             
         plaus_loss_total_train, plaus_score_total_train = 0.0, 0.0
         plaus_num_nan = 0
@@ -403,10 +405,6 @@ def train(hyp, opt, device, tb_writer=None):
             # ADD PLAUSIBILITY LOSS FOR VALIDATION #
             # ADD EXPLAINABILITY TO THE MEDIA OUTPUTS ON WANDB #
             #################################################################################
-                # model.eval()
-                # pred_pgt = model(imgs)
-                # pred_pgt = non_max_suppression(pred_pgt, opt.conf_thres, opt.iou_thres, classes=opt.classes, agnostic=opt.agnostic_nms)
-                # model.train()
                 
                 if opt.loss_attr:
                     loss_attr = compute_loss_ota
@@ -437,7 +435,6 @@ def train(hyp, opt, device, tb_writer=None):
                         pscore = (float(plaus_score) / float(len(opt.out_num_attrs)))
                         plaus_loss_total_train += ploss if not math.isnan(ploss) else 0.0
                         plaus_score_total_train += pscore if not math.isnan(pscore) else 0.0
-                        # plaus_num_nan += int(math.isnan(pscore))
                         # print(f'Plausibility eval and loss took {t1_pgt - t0_pgt} seconds')
                     else:
                         plaus_loss, plaus_score = torch.tensor([0.0]), torch.tensor([0.0])
@@ -591,7 +588,7 @@ def train(hyp, opt, device, tb_writer=None):
                                           plots=False,
                                           is_coco=is_coco,
                                           v5_metric=opt.v5_metric)
-
+        
         # Strip optimizers
         final = best if best.exists() else last  # final model
         for f in last, best:
@@ -665,9 +662,9 @@ if __name__ == '__main__':
     # opt.loss_attr = True 
     # opt.out_num_attrs = [0,1,2,] # unused if opt.loss_attr == True 
     opt.out_num_attrs = [1,] 
-    opt.pgt_lr = 0.7 
-    opt.pgt_lr_decay = 0.9
-    opt.pgt_lr_decay_step = 25
+    opt.pgt_lr = 1.0 
+    opt.pgt_lr_decay = 0.9 # float(7.0/9.0)
+    opt.pgt_lr_decay_step = 20
     opt.epochs = 300 
     opt.data = check_file(opt.data)  # check file 
     opt.no_trace = True 
@@ -675,13 +672,14 @@ if __name__ == '__main__':
     opt.batch_size = 64 
     # opt.batch_size = 32 
     opt.save_dir = str('runs/' + opt.name + '_lr' + str(opt.pgt_lr)) 
-    opt.device = '0,1' 
+    opt.device = '1' 
     # opt.device = "0,1,2,3" 
     # opt.device = "4,5,6,7" 
     # opt.quad = True # Helps for multiple gpu training 
     
     opt.seed = random.randrange(sys.maxsize)
     rng = random.Random(opt.seed)
+    torch.manual_seed(opt.seed)
     print(f'Seed: {opt.seed}')
     
     opt.entity = os.popen('whoami').read().strip()
@@ -736,11 +734,6 @@ if __name__ == '__main__':
         opt.img_size.extend([opt.img_size[-1]] * (2 - len(opt.img_size)))  # extend to 2 sizes (train, test)
         opt.name = 'evolve' if opt.evolve else opt.name
         opt.save_dir = increment_path(Path(opt.project) / opt.name, exist_ok=opt.exist_ok | opt.evolve)  # increment run
-
-    # api = wandb.Api()
-    # run = api.run("nielseni6/pgt-yolo-v7/")
-    # run.config["key"] = 'c78ac3818bb6f33a9aded2783a08e97424ba315f'
-    # run.update()
 
     # DDP mode
     opt.total_batch_size = opt.batch_size

@@ -975,7 +975,7 @@ if __name__ == '__main__':
     # opt.eval_method = 'evalattai'
     opt.eval_method = 'plausibility'
     # opt.save_dir = 'runs/test1'
-    opt.device = '0'
+    opt.device = '3'
     opt.save_dir = str('runs/' + opt.name)
     
     # Set CUDA device
