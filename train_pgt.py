@@ -682,6 +682,7 @@ if __name__ == '__main__':
     
     opt.seed = random.randrange(sys.maxsize)
     rng = random.Random(opt.seed)
+    torch.manual_seed(opt.seed)
     print(f'Seed: {opt.seed}')
     
     opt.entity = os.popen('whoami').read().strip()
