@@ -351,6 +351,7 @@ def train(hyp, opt, device, tb_writer=None):
         # Set PGT learning rate scheduler
         if (((epoch - start_epoch) % opt.pgt_lr_decay_step) == 0) and (epoch != start_epoch):
             opt.pgt_lr *= opt.pgt_lr_decay
+            print(f'PGT learning rate decayed to {opt.pgt_lr} at epoch {epoch}')
             
         plaus_loss_total_train, plaus_score_total_train = 0.0, 0.0
         plaus_num_nan = 0
@@ -665,8 +666,8 @@ if __name__ == '__main__':
     # opt.out_num_attrs = [0,1,2,] # unused if opt.loss_attr == True 
     opt.out_num_attrs = [1,] 
     opt.pgt_lr = 0.7 
-    opt.pgt_lr_decay = 0.1
-    opt.pgt_lr_decay_step = 50
+    opt.pgt_lr_decay = 0.9
+    opt.pgt_lr_decay_step = 25
     opt.epochs = 300 
     opt.data = check_file(opt.data)  # check file 
     opt.no_trace = True 
@@ -674,7 +675,7 @@ if __name__ == '__main__':
     opt.batch_size = 64 
     # opt.batch_size = 32 
     opt.save_dir = str('runs/' + opt.name + '_lr' + str(opt.pgt_lr)) 
-    opt.device = '5,6' 
+    opt.device = '0,1' 
     # opt.device = "0,1,2,3" 
     # opt.device = "4,5,6,7" 
     # opt.quad = True # Helps for multiple gpu training 
