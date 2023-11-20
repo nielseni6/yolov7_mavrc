@@ -320,7 +320,7 @@ def train(hyp, opt, device, tb_writer=None):
     torch.save(model, wdir / 'init.pt')
     for epoch in range(start_epoch, epochs):  # epoch ------------------------------------------------------------------
         model.train()
-
+        
         # Update image weights (optional)
         if opt.image_weights:
             # Generate indices
@@ -348,7 +348,10 @@ def train(hyp, opt, device, tb_writer=None):
             pbar = tqdm(pbar, total=nb)  # progress bar
         optimizer.zero_grad()
         
-        
+        # Set PGT learning rate scheduler
+        if (((epoch - start_epoch) % opt.pgt_lr_decay_step) == 0) and (epoch != start_epoch):
+            opt.pgt_lr *= opt.pgt_lr_decay
+            
         plaus_loss_total_train, plaus_score_total_train = 0.0, 0.0
         plaus_num_nan = 0
         for i, (imgs, targets, paths, _) in pbar:  # batch -------------------------------------------------------------
@@ -662,24 +665,23 @@ if __name__ == '__main__':
     # opt.out_num_attrs = [0,1,2,] # unused if opt.loss_attr == True 
     opt.out_num_attrs = [1,] 
     opt.pgt_lr = 0.7 
-    opt.epochs = 100 
+    opt.pgt_lr_decay = 0.1
+    opt.pgt_lr_decay_step = 50
+    opt.epochs = 300 
     opt.data = check_file(opt.data)  # check file 
     opt.no_trace = True 
     opt.conf_thres = 0.50 
     opt.batch_size = 64 
     # opt.batch_size = 32 
-    # opt.batch_size = 16 
     opt.save_dir = str('runs/' + opt.name + '_lr' + str(opt.pgt_lr)) 
-    opt.device = '6,7' 
-    # opt.device = '6,7' 
+    opt.device = '5,6' 
     # opt.device = "0,1,2,3" 
     # opt.device = "4,5,6,7" 
-    opt.quad = True # Helps for multiple gpu training 
-    # opt.cache_images = True 
+    # opt.quad = True # Helps for multiple gpu training 
     
-    seed = random.randrange(sys.maxsize)
-    rng = random.Random(seed)
-    print(f'Seed: {seed}')
+    opt.seed = random.randrange(sys.maxsize)
+    rng = random.Random(opt.seed)
+    print(f'Seed: {opt.seed}')
     
     opt.entity = os.popen('whoami').read().strip()
     host_name = socket.gethostname()
