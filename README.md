@@ -2,7 +2,8 @@
 
 Main script to run is test_plaus_or_faith.py. Plausibility Guided Training implemented (run train_pgt.py). Accuracy of training not yet tested.
 
-# Turret Gunner Survivability and Simulation Environment Project
+# Turret Gunner Survivability and Simulation Environment Project (Main Code)
+
 
 This project is a collaborative effort between the Machine Learning, AI, and Virtual Reality Center at Rowan University and the Picatinny Arsenal. We, the AI team at Rowan, have been tasked with developing a drone detection algorithm that enhances the survivability of turret gunners. 
 
