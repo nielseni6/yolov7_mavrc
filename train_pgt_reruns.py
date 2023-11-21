@@ -43,7 +43,10 @@ from plaus_functs import generate_vanilla_grad, eval_plausibility
 
 logger = logging.getLogger(__name__)
 # import torch
-torch.manual_seed(8)
+# torch.manual_seed(8)
+# torch.cuda.manual_seed(8)
+
+
 
 def train(hyp, opt, device, tb_writer=None):
     logger.info(colorstr('hyperparameters: ') + ', '.join(f'{k}={v}' for k, v in hyp.items()))
@@ -560,7 +563,24 @@ def train(hyp, opt, device, tb_writer=None):
                         wandb_logger.log_model(
                             last.parent, opt, epoch, fi, best_model=best_fitness == fi)
                 del ckpt
-            
+
+            # Define early_terminate callback
+            def early_terminate(epoch, metrics):
+                if metrics < 0.3 and epoch >= 3:
+                    return True
+                else:
+                    return False
+                    # wandb.run.stop(reason="Early stopping due to low accuracy")
+                    # sys.exit(0)
+        
+            # Early terminate if accuracy is below 0.3 after 3 epochs
+            if opt.sweep:
+                rerun = early_terminate(epoch, np.mean(maps))
+                if rerun:
+                    wandb.run.stop(reason="Early stopping due to low accuracy")
+                    return 'rerun'
+                    # sys.exit(0)
+                
         # end epoch ----------------------------------------------------------------------------------------------------
     # end training
     if rank in [-1, 0]:
@@ -607,75 +627,8 @@ def train(hyp, opt, device, tb_writer=None):
     return results
 
 
-if __name__ == '__main__':
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--weights', type=str, default='weights/yolov7-tiny.pt', help='initial weights path')
-    parser.add_argument('--cfg', type=str, default='', help='model.yaml path')
-    parser.add_argument('--data', type=str, default='data/real_world.yaml', help='data.yaml path')
-    parser.add_argument('--hyp', type=str, default='data/hyp.real_world.yaml', help='hyperparameters path')
-    parser.add_argument('--epochs', type=int, default=300)
-    parser.add_argument('--batch-size', type=int, default=16, help='total batch size for all GPUs')
-    parser.add_argument('--img-size', nargs='+', type=int, default=[640, 640], help='[train, test] image sizes')
-    parser.add_argument('--rect', action='store_true', help='rectangular training')
-    parser.add_argument('--resume', nargs='?', const=True, default=False, help='resume most recent training')
-    parser.add_argument('--nosave', action='store_true', help='only save final checkpoint')
-    parser.add_argument('--notest', action='store_true', help='only test final epoch')
-    parser.add_argument('--noautoanchor', action='store_true', help='disable autoanchor check')
-    parser.add_argument('--evolve', action='store_true', help='evolve hyperparameters')
-    parser.add_argument('--bucket', type=str, default='', help='gsutil bucket')
-    parser.add_argument('--cache-images', action='store_true', help='cache images for faster training')
-    parser.add_argument('--image-weights', action='store_true', help='use weighted image selection for training')
-    parser.add_argument('--device', default='', help='cuda device, i.e. 0 or 0,1,2,3 or cpu')
-    parser.add_argument('--multi-scale', action='store_true', help='vary img-size +/- 50%%')
-    parser.add_argument('--single-cls', action='store_true', help='train multi-class data as single-class')
-    parser.add_argument('--adam', action='store_true', help='use torch.optim.Adam() optimizer')
-    parser.add_argument('--sync-bn', action='store_true', help='use SyncBatchNorm, only available in DDP mode')
-    parser.add_argument('--local_rank', type=int, default=-1, help='DDP parameter, do not modify')
-    parser.add_argument('--workers', type=int, default=8, help='maximum number of dataloader workers')
-    parser.add_argument('--project', default='runs/pgt/train-pgt-yolov7', help='save to project/name')
-    parser.add_argument('--entity', default=None, help='W&B entity')
-    parser.add_argument('--name', default='pgt', help='save to project/name')
-    parser.add_argument('--exist-ok', action='store_true', help='existing project/name ok, do not increment')
-    parser.add_argument('--quad', action='store_true', help='quad dataloader')
-    parser.add_argument('--linear-lr', action='store_true', help='linear LR')
-    parser.add_argument('--label-smoothing', type=float, default=0.0, help='Label smoothing epsilon')
-    parser.add_argument('--upload_dataset', action='store_true', help='Upload dataset as W&B artifact table')
-    parser.add_argument('--bbox_interval', type=int, default=-1, help='Set bounding-box image logging interval for W&B')
-    parser.add_argument('--save_period', type=int, default=-1, help='Log model after every "save_period" epoch')
-    parser.add_argument('--artifact_alias', type=str, default="latest", help='version of dataset artifact to be used')
-    parser.add_argument('--freeze', nargs='+', type=int, default=[0], help='Freeze layers: backbone of yolov7=50, first3=0 1 2')
-    parser.add_argument('--v5-metric', action='store_true', help='assume maximum recall as 1.0 in AP calculation')
-    parser.add_argument('--loss_metric', type=str, default="CIoU",help='metric to minimize: CIoU, NWD')
-    ############################################################################
-    parser.add_argument('--conf-thres', type=float, default=0.001, help='object confidence threshold')
-    parser.add_argument('--iou-thres', type=float, default=0.65, help='IOU threshold for NMS')
-    parser.add_argument('--agnostic-nms', action='store_true', help='class-agnostic NMS')
-    parser.add_argument('--classes', nargs='+', type=int, help='filter by class: --class 0, or --class 0 2 3')
-    parser.add_argument('--pgt-lr', type=float, default=0.5, help='learning rate for plausibility gradient')
-    # parser.add_argument('--out_num_attr', type=float, default=1, help='Default output for generating attribution maps')
-    parser.add_argument('--out_num_attrs', nargs='+', type=int, default=[1,], help='Default output for generating attribution maps')
-    parser.add_argument('--loss_attr', action='store_true', help='If true, use loss to generate attribution maps')
-    ############################################################################
-    opt = parser.parse_args() 
-    print(opt)
-    
-    # opt.loss_attr = True 
-    # opt.out_num_attrs = [0,1,2,] # unused if opt.loss_attr == True 
-    opt.out_num_attrs = [1,] 
-    opt.pgt_lr = 1.0 
-    opt.pgt_lr_decay = 0.9 # float(7.0/9.0)
-    opt.pgt_lr_decay_step = 20
-    opt.epochs = 300 
-    opt.data = check_file(opt.data)  # check file 
-    opt.no_trace = True 
-    opt.conf_thres = 0.50 
-    opt.batch_size = 64 
-    # opt.batch_size = 32 
-    opt.save_dir = str('runs/' + opt.name + '_lr' + str(opt.pgt_lr)) 
-    opt.device = '3' 
-    # opt.device = "0,1,2,3" 
-    # opt.device = "4,5,6,7" 
-    opt.quad = True # Helps for multiple gpu training 
+def pgt_start(opt):
+
     
     opt.seed = random.randrange(sys.maxsize)
     rng = random.Random(opt.seed)
@@ -758,7 +711,9 @@ if __name__ == '__main__':
             prefix = colorstr('tensorboard: ')
             logger.info(f"{prefix}Start with 'tensorboard --logdir {opt.project}', view at http://localhost:6006/")
             tb_writer = SummaryWriter(opt.save_dir)  # Tensorboard
-        train(hyp, opt, device, tb_writer)
+        rerun = train(hyp, opt, device, tb_writer)
+        if rerun == 'rerun':
+            return rerun
 
     # Evolve hyperparameters (optional)
     else:
@@ -848,3 +803,76 @@ if __name__ == '__main__':
         plot_evolution(yaml_file)
         print(f'Hyperparameter evolution complete. Best results saved as: {yaml_file}\n'
               f'Command to train a new model with these hyperparameters: $ python train.py --hyp {yaml_file}')
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--weights', type=str, default='weights/yolov7-tiny.pt', help='initial weights path')
+    parser.add_argument('--cfg', type=str, default='', help='model.yaml path')
+    parser.add_argument('--data', type=str, default='data/real_world.yaml', help='data.yaml path')
+    parser.add_argument('--hyp', type=str, default='data/hyp.real_world.yaml', help='hyperparameters path')
+    parser.add_argument('--epochs', type=int, default=300)
+    parser.add_argument('--batch-size', type=int, default=16, help='total batch size for all GPUs')
+    parser.add_argument('--img-size', nargs='+', type=int, default=[640, 640], help='[train, test] image sizes')
+    parser.add_argument('--rect', action='store_true', help='rectangular training')
+    parser.add_argument('--resume', nargs='?', const=True, default=False, help='resume most recent training')
+    parser.add_argument('--nosave', action='store_true', help='only save final checkpoint')
+    parser.add_argument('--notest', action='store_true', help='only test final epoch')
+    parser.add_argument('--noautoanchor', action='store_true', help='disable autoanchor check')
+    parser.add_argument('--evolve', action='store_true', help='evolve hyperparameters')
+    parser.add_argument('--bucket', type=str, default='', help='gsutil bucket')
+    parser.add_argument('--cache-images', action='store_true', help='cache images for faster training')
+    parser.add_argument('--image-weights', action='store_true', help='use weighted image selection for training')
+    parser.add_argument('--device', default='', help='cuda device, i.e. 0 or 0,1,2,3 or cpu')
+    parser.add_argument('--multi-scale', action='store_true', help='vary img-size +/- 50%%')
+    parser.add_argument('--single-cls', action='store_true', help='train multi-class data as single-class')
+    parser.add_argument('--adam', action='store_true', help='use torch.optim.Adam() optimizer')
+    parser.add_argument('--sync-bn', action='store_true', help='use SyncBatchNorm, only available in DDP mode')
+    parser.add_argument('--local_rank', type=int, default=-1, help='DDP parameter, do not modify')
+    parser.add_argument('--workers', type=int, default=8, help='maximum number of dataloader workers')
+    parser.add_argument('--project', default='runs/pgt/train-pgt-yolov7', help='save to project/name')
+    parser.add_argument('--entity', default=None, help='W&B entity')
+    parser.add_argument('--name', default='pgt', help='save to project/name')
+    parser.add_argument('--exist-ok', action='store_true', help='existing project/name ok, do not increment')
+    parser.add_argument('--quad', action='store_true', help='quad dataloader')
+    parser.add_argument('--linear-lr', action='store_true', help='linear LR')
+    parser.add_argument('--label-smoothing', type=float, default=0.0, help='Label smoothing epsilon')
+    parser.add_argument('--upload_dataset', action='store_true', help='Upload dataset as W&B artifact table')
+    parser.add_argument('--bbox_interval', type=int, default=-1, help='Set bounding-box image logging interval for W&B')
+    parser.add_argument('--save_period', type=int, default=-1, help='Log model after every "save_period" epoch')
+    parser.add_argument('--artifact_alias', type=str, default="latest", help='version of dataset artifact to be used')
+    parser.add_argument('--freeze', nargs='+', type=int, default=[0], help='Freeze layers: backbone of yolov7=50, first3=0 1 2')
+    parser.add_argument('--v5-metric', action='store_true', help='assume maximum recall as 1.0 in AP calculation')
+    parser.add_argument('--loss_metric', type=str, default="CIoU",help='metric to minimize: CIoU, NWD')
+    ############################################################################
+    parser.add_argument('--conf-thres', type=float, default=0.001, help='object confidence threshold')
+    parser.add_argument('--iou-thres', type=float, default=0.65, help='IOU threshold for NMS')
+    parser.add_argument('--agnostic-nms', action='store_true', help='class-agnostic NMS')
+    parser.add_argument('--classes', nargs='+', type=int, help='filter by class: --class 0, or --class 0 2 3')
+    parser.add_argument('--pgt-lr', type=float, default=0.5, help='learning rate for plausibility gradient')
+    # parser.add_argument('--out_num_attr', type=float, default=1, help='Default output for generating attribution maps')
+    parser.add_argument('--out_num_attrs', nargs='+', type=int, default=[1,], help='Default output for generating attribution maps')
+    parser.add_argument('--loss_attr', action='store_true', help='If true, use loss to generate attribution maps')
+    ############################################################################
+    opt = parser.parse_args() 
+    print(opt)
+    
+    # opt.loss_attr = True 
+    # opt.out_num_attrs = [0,1,2,] # unused if opt.loss_attr == True 
+    opt.out_num_attrs = [1,] 
+    opt.pgt_lr = 0.7 
+    opt.pgt_lr_decay = 0.9 # float(7.0/9.0)
+    opt.pgt_lr_decay_step = 20
+    opt.epochs = 300 
+    opt.data = check_file(opt.data)  # check file 
+    opt.no_trace = True 
+    opt.conf_thres = 0.50 
+    opt.batch_size = 64 
+    # opt.batch_size = 32 
+    opt.save_dir = str('runs/' + opt.name + '_lr' + str(opt.pgt_lr)) 
+    opt.device = '3' 
+    # opt.device = "0,1,2,3" 
+    # opt.device = "4,5,6,7" 
+    opt.quad = True # Helps for multiple gpu training 
+    
+    for i in range(35):
+        rerun = pgt_start(opt)
