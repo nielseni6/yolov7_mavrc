@@ -54,7 +54,9 @@ class TracePrints(object):
         self.stdout.write("Writing %r\n" % s)
         traceback.print_stack(file=self.stdout)
 
-
+def create_dir_if_not_exists(path):
+    if not os.path.exists(path):
+        os.makedirs(path)
 
 def test(opt,
          data,
@@ -116,6 +118,15 @@ def test(opt,
         except:
             print("No figs yet in", str(save_dir.__str__()))
 
+        save_figs_to = f'{save_dir.__str__()}/figs'
+        try:
+            create_dir_if_not_exists(save_dir.__str__())
+            create_dir_if_not_exists(save_figs_to)
+        except OSError:
+            print ("Creation of the directory %s failed" % save_figs_to)
+        else:
+            print ("Successfully created the directory %s" % save_figs_to)
+        
         def load_model(imgsz):
             # Load model
             model = attempt_load(weights, map_location=device)  # load FP32 model
@@ -381,14 +392,14 @@ def test(opt,
                     
                     npimg = VisualizeNumpyImageGrayscale(im0)
                     npimg = np.transpose(npimg, (2, 0, 1))
-                    imsave_path = str(str("./figs/im0s_test")+str(1))
+                    imsave_path = str(str(f"./{save_figs_to}/im0s_test")+str(1))
                     # npimg = np.array([npimg])
                     # cv2.imwrite(imsave_path, im0)
                     imshow(npimg, save_path=imsave_path)
                     # print("Saving image as ", imsave_path)
                                         
-                    imshow_img(seg_box, str("./figs/test_bbox"))
-                    imshow(img[0].cpu().float().numpy(), str("./figs/test_img"))
+                    imshow_img(seg_box, str(f"./{save_figs_to}/test_bbox"))
+                    imshow(img[0].cpu().float().numpy(), str(f"./{save_figs_to}/test_img"))
                     print("Saving image as ", imsave_path) # Save path for im0
                     
                 if len(det) or not opt.only_detect_true:
@@ -520,8 +531,8 @@ def test(opt,
 
                             # attribution_map = attribution_map[0, :] #.clone().detach().requires_grad_()
                             
-                            save_path_attr = 'figs/imshowfig_'
-                            save_path_attr = str(str(save_path_attr) + cam)
+                            save_path_attr = f'{save_figs_to}/imshowfig_'
+                            save_path_attr = str(str(save_path_attr) + cam + str(batch_i))
                             imshow((VisualizeNumpyImageGrayscale(attr_multi_channel[0].detach().cpu().numpy())), save_path=save_path_attr)
                             print("Saving attr image as ", save_path_attr)
                             
@@ -742,7 +753,7 @@ def test(opt,
                                 # Search for detections
                                 if pi.shape[0]:
                                     # Prediction to target ious
-                                    ious, i = box_iou(predn[pi, :4], tbox[ti]).max(1)  # best ious, indices
+                                    ious, i = box_iou(predn[pi, :4], tbox[ti].to(device)).max(1)  # best ious, indices
 
                                     # Append detections
                                     detected_set = set()
@@ -816,9 +827,7 @@ def test(opt,
                                     "_" + norm + '_inc' + str(increment) + '_nsamples' + str(n_samples) + gray + "_" + 
                                     robust +'_robust_' + img_num_str)
         save_to = str(save_dir.__str__() + run_name)
-        def create_dir_if_not_exists(path):
-            if not os.path.exists(path):
-                os.makedirs(path)
+        
         try:
             create_dir_if_not_exists(save_dir.__str__())
             create_dir_if_not_exists(save_to)
@@ -965,11 +974,12 @@ if __name__ == '__main__':
     # opt.data = 'data/sls.yaml'
     opt.hyp = 'data/hyp.real_world.yaml'
     opt.img_size = 480 
-    opt.name = 'test_VG_targets[1]' 
+    opt.name = 'plaus_VG_targets[1]' 
+    opt.project = f'runs/{opt.name}'
     # opt.weights = 'weights/yolov7-tiny.pt' 
     opt.weights = 'weights/best-pgt53-yolov7-drone.pt'
     opt.task = 'val'
-    opt.n_samples = 100
+    opt.n_samples = 5
     # opt.n_samples = 100
     opt.save_img = True
     # opt.classes = 2
@@ -977,7 +987,7 @@ if __name__ == '__main__':
     # opt.eval_method = 'evalattai'
     opt.eval_method = 'plausibility'
     # opt.save_dir = 'runs/test1'
-    opt.device = '3'
+    opt.device = '7'
     opt.save_dir = str('runs/' + opt.name)
     
     # Set CUDA device

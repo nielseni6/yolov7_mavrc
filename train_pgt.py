@@ -50,6 +50,8 @@ def train(hyp, opt, device, tb_writer=None):
     save_dir, epochs, batch_size, total_batch_size, weights, rank, freeze = \
         Path(opt.save_dir), opt.epochs, opt.batch_size, opt.total_batch_size, opt.weights, opt.global_rank, opt.freeze
 
+    print(f'Seed: {opt.seed}')
+    
     # Directories
     wdir = save_dir / 'weights'
     wdir.mkdir(parents=True, exist_ok=True)  # make dir
@@ -519,8 +521,8 @@ def train(hyp, opt, device, tb_writer=None):
                     'metrics/precision', 'metrics/recall', 'metrics/mAP_0.5', 'metrics/mAP_0.5:0.95',
                     'val/box_loss', 'val/obj_loss', 'val/cls_loss',  # val loss
                     'x/lr0', 'x/lr1', 'x/lr2',  # params
-                    ] + ['plaus_loss_train', 'plaus_score_train', 'plaus_num_nan',]
-            for x, tag in zip(list(mloss[:-1]) + list((results)) + lr + [plaus_loss_total_train, plaus_score_total_train, plaus_num_nan,], tags):
+                    ] + ['plaus_loss_train', 'plaus_score_train', 'plaus_num_nan','pgt_lr']
+            for x, tag in zip(list(mloss[:-1]) + list((results)) + lr + [plaus_loss_total_train, plaus_score_total_train, plaus_num_nan, opt.pgt_lr,], tags):
                 if tb_writer:
                     tb_writer.add_scalar(tag, x, epoch)  # tensorboard
                 if wandb_logger.wandb:
@@ -588,7 +590,7 @@ def train(hyp, opt, device, tb_writer=None):
                                           plots=False,
                                           is_coco=is_coco,
                                           v5_metric=opt.v5_metric)
-        
+
         # Strip optimizers
         final = best if best.exists() else last  # final model
         for f in last, best:
@@ -659,12 +661,13 @@ if __name__ == '__main__':
     opt = parser.parse_args() 
     print(opt)
     
+    # opt.sweep = True
     # opt.loss_attr = True 
     # opt.out_num_attrs = [0,1,2,] # unused if opt.loss_attr == True 
     opt.out_num_attrs = [1,] 
-    opt.pgt_lr = 1.0 
-    opt.pgt_lr_decay = 0.9 # float(7.0/9.0)
-    opt.pgt_lr_decay_step = 20
+    opt.pgt_lr = 0.7 
+    opt.pgt_lr_decay = 0.75 # float(7.0/9.0) # 0.75 
+    opt.pgt_lr_decay_step = 20 
     opt.epochs = 300 
     opt.data = check_file(opt.data)  # check file 
     opt.no_trace = True 
@@ -717,6 +720,7 @@ if __name__ == '__main__':
     username = os.getenv('USER')
     os.environ["WANDB_ENTITY"] = username
     
+    
     # Resume
     wandb_run = check_wandb_resume(opt)
     if opt.resume and not wandb_run:  # resume an interrupted run
@@ -734,7 +738,7 @@ if __name__ == '__main__':
         opt.img_size.extend([opt.img_size[-1]] * (2 - len(opt.img_size)))  # extend to 2 sizes (train, test)
         opt.name = 'evolve' if opt.evolve else opt.name
         opt.save_dir = increment_path(Path(opt.project) / opt.name, exist_ok=opt.exist_ok | opt.evolve)  # increment run
-
+    
     # DDP mode
     opt.total_batch_size = opt.batch_size
     device = select_device(opt.device, batch_size=opt.batch_size)
