@@ -121,7 +121,7 @@ def eval_plausibility(imgs, targets, attr_tensor, device, debug=False):
                 plaus_num_nan += 1 if math.isnan(IoU_) else 0
             else:
                 IoU = IoU_
-            IoU_list.append(IoU)
+            IoU_list.append(IoU.clone().detach().cpu())
         list_mean = torch.mean(torch.tensor(IoU_list))
         eval_totals += list_mean if not math.isnan(list_mean) else 0.0
         eval_individual_data.append(IoU_list)
