@@ -32,7 +32,7 @@ def test(data,
          save_txt=False,  # for auto-labelling
          save_hybrid=False,  # for hybrid auto-labelling
          save_conf=False,  # save auto-label confidences
-         plots=True,
+         plots=False, ############ TURNED OFF DUE TO ERROR SHOULD FIX ############
          wandb_logger=None,
          compute_loss=None,
          half_precision=True,
@@ -313,6 +313,13 @@ if __name__ == '__main__':
     opt.data = check_file(opt.data)  # check file
     print(opt)
     #check_requirements()
+
+    opt.batch_size = 8 
+    opt.data = 'data/real_world.yaml'
+    opt.img_size = 480 
+    opt.name = 'test1' 
+    opt.weights = 'weights/yolov7-tiny.pt' 
+    # opt.single_cls = True
 
     if opt.task in ('train', 'val', 'test'):  # run normally
         test(opt.data,

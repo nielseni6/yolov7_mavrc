@@ -577,7 +577,7 @@ class Model(nn.Module):
         initialize_weights(self)
         self.info()
         logger.info('')
-
+    
     def forward(self, x, augment=False, profile=False):
         if augment:
             img_size = x.shape[-2:]  # height, width
@@ -597,11 +597,15 @@ class Model(nn.Module):
             return torch.cat(y, 1), None  # augmented inference, train
         else:
             return self.forward_once(x, profile)  # single-scale inference, train
-
+    
     def forward_once(self, x, profile=False):
+        if not hasattr(self, 'k'):
+            self.k = 0
+
         y, dt = [], []  # outputs
         for m in self.model:
             if m.f != -1:  # if not from previous layer
+                # print("x not from previous layer")
                 x = y[m.f] if isinstance(m.f, int) else [x if j == -1 else y[j] for j in m.f]  # from earlier layers
 
             if not hasattr(self, 'traced'):
@@ -622,8 +626,11 @@ class Model(nn.Module):
                 dt.append((time_synchronized() - t) * 100)
                 print('%10.1f%10.0f%10.1fms %-40s' % (o, m.np, dt[-1], m.type))
 
+            # if self.k % (100) == 0:
+            #     print('Pass number', self.k)
             x = m(x)  # run
-            
+            self.k += 1
+
             y.append(x if m.i in self.save else None)  # save output
 
         if profile:
