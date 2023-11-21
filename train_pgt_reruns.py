@@ -577,7 +577,7 @@ def train(hyp, opt, device, tb_writer=None):
             if opt.sweep:
                 rerun = early_terminate(epoch, np.mean(maps))
                 if rerun:
-                    wandb.run.stop(reason="Early stopping due to low accuracy")
+                    wandb.finish()
                     return 'rerun'
                     # sys.exit(0)
                 
@@ -872,7 +872,7 @@ if __name__ == '__main__':
     opt.device = '3' 
     # opt.device = "0,1,2,3" 
     # opt.device = "4,5,6,7" 
-    opt.quad = True # Helps for multiple gpu training 
+    # opt.quad = True # Helps for multiple gpu training 
     
     for i in range(35):
         rerun = pgt_start(opt)
