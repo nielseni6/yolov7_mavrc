@@ -570,7 +570,12 @@ if __name__ == '__main__':
     parser.add_argument('--loss_metric', type=str, default="CIoU",help='metric to minimize: CIoU, NWD')
     opt = parser.parse_args()
     
-  
+    opt.device = '6' 
+    
+    # Set CUDA device
+    os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID" 
+    os.environ["CUDA_VISIBLE_DEVICES"] = opt.device 
+    
     # Set DDP variables
     opt.world_size = int(os.environ['WORLD_SIZE']) if 'WORLD_SIZE' in os.environ else 1
     opt.global_rank = int(os.environ['RANK']) if 'RANK' in os.environ else -1
