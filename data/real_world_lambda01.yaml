@@ -1,7 +1,7 @@
-path: ../../../../data/nielseni6/Real_world_training # dataset root dir
-train: ../../../../data/nielseni6/Real_world_training/images  # train images (relative to 'path') 128 images
-val: ../../../../data/nielseni6/Real_world_test/images  # val images (relative to 'path') 128 images
-test: ../../../../data/nielseni6/Real_world_test/images
+path: ../../../../data/nielseni6/ijcnn_v7data/Real_world_training # dataset root dir
+train: ../../../../data/nielseni6/ijcnn_v7data/Real_world_training/images  # train images (relative to 'path') 128 images
+val: ../../../../data/nielseni6/ijcnn_v7data/Real_world_test/images  # val images (relative to 'path') 128 images
+test: ../../../../data/nielseni6/ijcnn_v7data/Real_world_test/images
 
 
 # Classes

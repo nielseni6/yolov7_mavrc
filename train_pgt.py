@@ -363,14 +363,19 @@ def train(hyp, opt, device, tb_writer=None):
             ni = i + nb * epoch  # number integrated batches (since train start)
             imgs = imgs.to(device, non_blocking=True).float() / 255.0  # uint8 to float32, 0-255 to 0.0-1.0
             
-            path_labels, labels = [], []
-            for il, path in enumerate(paths):
-                path_ = path.replace('images', 'labels').replace('.jpg', '.txt').replace('../../..', '')
-                label = torch.tensor(np.insert(np.loadtxt(path_, dtype=np.float32), 0, il))
-                labels.append(label)
-                path_labels.append(path_)
-            labels = torch.stack(labels)
-            
+            if opt.dataset == 'real_world_drone':
+                path_labels, labels = [], []
+                for il, path in enumerate(paths):
+                    path_ = str('/' + path.replace('images', 'labels').replace('.jpg', '.txt').replace('../', ''))
+                    lab_txt = np.loadtxt(path_, dtype=np.float32, delimiter='\s')
+                    label = torch.tensor(np.insert(lab_txt, 0, il))
+                    labels.append(label)
+                    path_labels.append(path_)
+                labels = torch.stack(labels)
+            if opt.dataset == 'coco':
+                labels = targets
+                path_labels = [path.replace('images', 'labels').replace('.jpg', '.txt').replace('../', '') for path in paths]
+                
             # Warmup
             if ni <= nw:
                 xi = [0, nw]  # x interp
@@ -659,26 +664,26 @@ if __name__ == '__main__':
     parser.add_argument('--loss_attr', action='store_true', help='If true, use loss to generate attribution maps')
     ############################################################################
     opt = parser.parse_args() 
-    print(opt)
+    print(opt) 
     
     # opt.sweep = True
     # opt.loss_attr = True 
     # opt.out_num_attrs = [0,1,2,] # unused if opt.loss_attr == True 
     opt.out_num_attrs = [1,] 
     opt.pgt_lr = 0.7 
-    opt.pgt_lr_decay = 0.75 # float(7.0/9.0) # 0.75 
-    opt.pgt_lr_decay_step = 20 
+    opt.pgt_lr_decay = 1.0 # float(7.0/9.0) # 0.75 
+    opt.pgt_lr_decay_step = 300 
     opt.epochs = 300 
-    opt.data = check_file(opt.data)  # check file 
     opt.no_trace = True 
     opt.conf_thres = 0.50 
     opt.batch_size = 64 
     # opt.batch_size = 32 
     opt.save_dir = str('runs/' + opt.name + '_lr' + str(opt.pgt_lr)) 
-    opt.device = '3' 
+    opt.device = '6' 
     # opt.device = "0,1,2,3" 
     # opt.device = "4,5,6,7" 
     opt.quad = True # Helps for multiple gpu training 
+    opt.dataset = 'coco' # 'real_world_drone'
     
     opt.seed = random.randrange(sys.maxsize)
     rng = random.Random(opt.seed)
@@ -688,15 +693,23 @@ if __name__ == '__main__':
     opt.entity = os.popen('whoami').read().strip()
     host_name = socket.gethostname()
     
-    if ('lambda02' == host_name) or ('lambda03' == host_name):    
-        opt.source = '/data/Koutsoubn8/ijcnn_v7data/Real_world_test/images' 
-        opt.data = 'data/real_world.yaml' 
-        opt.hyp = 'data/hyp.real_world.yaml' 
-    if ('lambda01' == host_name):
-        opt.source = '/data/nielseni6/Real_world_test/images' 
-        opt.data = 'data/real_world_lambda01.yaml' 
-        opt.hyp = 'data/hyp.real_world_lambda01.yaml' 
+    if opt.dataset == 'real_world_drone':
+        if ('lambda02' == host_name) or ('lambda03' == host_name):    
+            opt.source = '/data/Koutsoubn8/ijcnn_v7data/Real_world_test/images' 
+            opt.data = 'data/real_world.yaml' 
+            opt.hyp = 'data/hyp.real_world.yaml' 
+        if ('lambda01' == host_name):
+            opt.source = '/data/nielseni6/ijcnn_v7data/Real_world_test/images' 
+            opt.data = 'data/real_world_lambda01.yaml' 
+            opt.hyp = 'data/hyp.real_world_lambda01.yaml' 
+    if opt.dataset == 'coco':
+        opt.source = "/data/nielseni6/coco/images"
+        opt.data = 'data/coco_lambda01.yaml'
+        opt.hyp = 'data/hyp.scratch.tiny.yaml'
+        
 
+    opt.data = check_file(opt.data)  # check file 
+    
     # print(host_name, opt.entity)
     
     # Set CUDA device
