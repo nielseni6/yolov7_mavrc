@@ -453,8 +453,9 @@ def train(hyp, opt, device, tb_writer=None):
             # Backward
             scaler.scale(loss).backward()
             t3_pgt = time.time()
-            # if (i % 5) == 0:
-            if i == 0:
+            
+            if (i % 30) == 0:
+            # if i == 0:
                 # print(f'Attribution generation took {t1_pgt - t0_pgt}s')
                 print(f'Plausibility eval took {t2_pgt - t0_pgt}s and backprop took {t3_pgt - t2_pgt}s')
             
@@ -680,10 +681,11 @@ if __name__ == '__main__':
     # opt.batch_size = 16 
     opt.batch_size = 32 
     opt.save_dir = str('runs/' + opt.name + '_lr' + str(opt.pgt_lr)) 
-    opt.device = '0,2,3,4' 
+    opt.device = '5,6'
+    # opt.device = '6,5,4,3' 
     # opt.device = "0,1,2,3" 
     # opt.device = "4,5,6,7" 
-    opt.quad = True # Helps for multiple gpu training 
+    # opt.quad = True # Helps for multiple gpu training 
     opt.dataset = 'coco' # 'real_world_drone'
     
     opt.seed = random.randrange(sys.maxsize)
