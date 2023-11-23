@@ -35,6 +35,8 @@ from utils.plots import plot_images, plot_labels, plot_results, plot_evolution
 from utils.torch_utils import ModelEMA, select_device, intersect_dicts, torch_distributed_zero_first, is_parallel
 from utils.wandb_logging.wandb_utils import WandbLogger, check_wandb_resume
 
+import socket
+
 logger = logging.getLogger(__name__)
 # import torch
 torch.manual_seed(8)
@@ -570,7 +572,20 @@ if __name__ == '__main__':
     parser.add_argument('--loss_metric', type=str, default="CIoU",help='metric to minimize: CIoU, NWD')
     opt = parser.parse_args()
     
-    opt.device = '6' 
+    opt.device = '1,2' 
+    opt.data = 'data/coco_lambda01.yaml'
+    opt.weights = 'weights/yolov7-tiny.pt'
+    
+    # opt.seed = random.randrange(sys.maxsize)
+    # rng = random.Random(opt.seed)
+    # torch.manual_seed(opt.seed)
+    # print(f'Seed: {opt.seed}')
+    
+    opt.entity = os.popen('whoami').read().strip()
+    host_name = socket.gethostname()
+    username = os.getenv('USER')
+    os.environ["WANDB_ENTITY"] = username
+    opt.username = username
     
     # Set CUDA device
     os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID" 
