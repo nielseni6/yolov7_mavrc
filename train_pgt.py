@@ -671,19 +671,19 @@ if __name__ == '__main__':
     # opt.loss_attr = True 
     # opt.out_num_attrs = [0,1,2,] # unused if opt.loss_attr == True 
     opt.out_num_attrs = [1,] 
-    opt.pgt_lr = 0.9 
+    opt.pgt_lr = 0.7 
     opt.pgt_lr_decay = 1.0 # float(7.0/9.0) # 0.75 
     opt.pgt_lr_decay_step = 300 
     opt.epochs = 300 
     opt.no_trace = True 
     opt.conf_thres = 0.50 
-    opt.batch_size = 16 
-    # opt.batch_size = 32 
+    # opt.batch_size = 16 
+    opt.batch_size = 32 
     opt.save_dir = str('runs/' + opt.name + '_lr' + str(opt.pgt_lr)) 
-    opt.device = '5,6' 
+    opt.device = '0,2,3,4' 
     # opt.device = "0,1,2,3" 
     # opt.device = "4,5,6,7" 
-    # opt.quad = True # Helps for multiple gpu training 
+    opt.quad = True # Helps for multiple gpu training 
     opt.dataset = 'coco' # 'real_world_drone'
     
     opt.seed = random.randrange(sys.maxsize)
@@ -708,7 +708,8 @@ if __name__ == '__main__':
             opt.hyp = 'data/hyp.real_world_lambda01.yaml' 
     if opt.dataset == 'coco':
         opt.source = "/data/nielseni6/coco/images"
-        opt.weights = 'weights/yolov7-tiny.pt'
+        opt.weights = ''
+        opt.cfg = 'cfg/training/yolov7.yaml'
         opt.data = 'data/coco_lambda01.yaml'
         opt.hyp = 'data/hyp.scratch.p5.yaml'
         
