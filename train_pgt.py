@@ -17,6 +17,7 @@ import torch.nn.functional as F
 import torch.optim as optim
 import torch.optim.lr_scheduler as lr_scheduler
 import torch.utils.data
+import torch
 import yaml
 from torch.cuda import amp
 from torch.nn.parallel import DistributedDataParallel as DDP
@@ -369,12 +370,43 @@ def train(hyp, opt, device, tb_writer=None):
                     path_ = str('/' + path.replace('images', 'labels').replace('.jpg', '.txt').replace('../', ''))
                     lab_txt = np.loadtxt(path_, dtype=np.float32, delimiter='\s')
                     label = torch.tensor(np.insert(lab_txt, 0, il))
-                    labels.append(label)
+                    labels.append(label.to(device))
                     path_labels.append(path_)
-                labels = torch.stack(labels)
+                # labels = torch.stack(labels).to(device)
             if opt.dataset == 'coco':
-                labels = targets
+                labels = []
                 path_labels = [path.replace('images', 'labels').replace('.jpg', '.txt').replace('../', '') for path in paths]
+                for il, path in enumerate(path_labels):
+                    try:
+                        lab_txt = np.loadtxt(str('/' + path), dtype=str, delimiter='\n')
+                    except:
+                        lab_txt = np.array([])
+                    lab_ = []
+                    try:
+                        n_objs = len(lab_txt)
+                    except:
+                        lab_txt = np.expand_dims(lab_txt, axis=0)
+                        n_objs = 1 # len(lab_txt)
+                        
+                        
+                    for i_boxes in range(n_objs):
+                        label_list = lab_txt[i_boxes].split(' ')
+                        label_floats = np.array(label_list, dtype=np.float32)
+                        segx, segy = label_floats[1::2], label_floats[2::2]
+                        xx, yy = (np.max(segx)+np.min(segx))/2, (np.max(segy)+np.min(segy))/2
+                        xh, yw = (np.max(segx)-np.min(segx)), (np.max(segy)-np.min(segy))
+                        label_bbox = np.array([xx, yy, xh, yw])
+                        label_ = torch.tensor(np.insert(np.insert(label_bbox, 0, label_floats[0]), 0, il))
+                        lab_.append(label_)
+                    try:
+                        label = torch.stack(lab_)
+                    except:
+                        label = torch.tensor([[]])
+                    labels.append(label.to(device))
+                # labels = torch.stack(labels)
+                                
+                # labels = targets
+                
                 
             # Warmup
             if ni <= nw:
@@ -428,7 +460,7 @@ def train(hyp, opt, device, tb_writer=None):
                                                                 out_num = out_num_attr, device=device) # mlc = max label class
                         t1_pgt = time.time()
                         # Calculate Plausibility IoU with attribution maps
-                        plaus_score, plaus_num_nan = eval_plausibility(imgs, labels.to(device), 
+                        plaus_score, plaus_num_nan = eval_plausibility(imgs, labels, 
                                                                        attribution_map, device=device, 
                                                                        debug=True)
                         # ADD LR SCHEDULER
@@ -672,19 +704,20 @@ if __name__ == '__main__':
     # opt.loss_attr = True 
     # opt.out_num_attrs = [0,1,2,] # unused if opt.loss_attr == True 
     opt.out_num_attrs = [1,] 
-    opt.pgt_lr = 0.7 
+    opt.pgt_lr = 0.9 
     opt.pgt_lr_decay = 1.0 # float(7.0/9.0) # 0.75 
     opt.pgt_lr_decay_step = 300 
     opt.epochs = 300 
     opt.no_trace = True 
     opt.conf_thres = 0.50 
     # opt.batch_size = 16 
-    opt.batch_size = 32 
+    opt.batch_size = 8 
     opt.save_dir = str('runs/' + opt.name + '_lr' + str(opt.pgt_lr)) 
-    opt.device = '5,6'
+    # opt.device = '6'
     # opt.device = '6,5,4,3' 
-    # opt.device = "0,1,2,3" 
+    opt.device = "6,5,4,3" 
     # opt.device = "4,5,6,7" 
+    # nohup python -m torch.distributed.launch --nproc_per_node 4 --master_port 9529 train_pgt.py --sync-bn > ./output_logs/gpu1245_coco_pgtlr0_9.log 2>&1
     # opt.quad = True # Helps for multiple gpu training 
     opt.dataset = 'coco' # 'real_world_drone'
     
@@ -698,6 +731,9 @@ if __name__ == '__main__':
     username = os.getenv('USER')
     os.environ["WANDB_ENTITY"] = username
     opt.username = username
+    
+    # set environment variables for parallel training
+    os.environ["OMP_NUM_THREADS"] = "1"
     
     if opt.dataset == 'real_world_drone':
         if ('lambda02' == host_name) or ('lambda03' == host_name):    

@@ -103,7 +103,8 @@ def eval_plausibility(imgs, targets, attr_tensor, device, debug=False):
     eval_totals = 0.0
     plaus_num_nan = 0
     eval_individual_data = []
-    targets_ = [[targets[i] for i in range(len(targets)) if int(targets[i][0]) == j] for j in range(len(imgs))]
+    targets_ = targets
+    # targets_ = [[targets[i] for i in range(len(targets)) if int(targets[i][0]) == j] for j in range(len(imgs))]
     for i, im0 in enumerate(imgs):
         if len(targets_[i]) == 0:
             eval_individual_data.append([torch.tensor(0).to(device),])
@@ -111,37 +112,27 @@ def eval_plausibility(imgs, targets, attr_tensor, device, debug=False):
             IoU_list = []
             for j in range(len(targets_[i])):
                 # t0 = time.time()
-                xyxy_pred = targets_[i][j][2:] # * torch.tensor([im0.shape[2], im0.shape[1], im0.shape[2], im0.shape[1]])
-                xyxy_center = corners_coords(xyxy_pred) * torch.tensor([im0.shape[1], im0.shape[2], im0.shape[1], im0.shape[2]])
-                c1, c2 = (int(xyxy_center[0]), int(xyxy_center[1])), (int(xyxy_center[2]), int(xyxy_center[3]))
-                attr = normalize_tensor(torch.abs(attr_tensor[i].clone().detach()))
-                # t1 = time.time()
-                if torch.isnan(attr).any():
-                    attr = torch.nan_to_num(attr, nan=0.0)
-                # t2 = time.time()
-                IoU_num = (torch.sum(attr[:,c1[1]:c2[1], c1[0]:c2[0]]))
-                IoU_denom = torch.sum(attr)
-                # t3 = time.time()
-                IoU_ = (IoU_num / IoU_denom)
-                # t4 = time.time()
-                if debug:
-                    # t5 = time.time()
-                    iou_isnan = torch.isnan(IoU_)
-                    # t6 = time.time()
-                    if iou_isnan:
-                        # t7 = time.time()
-                        IoU = torch.tensor([0.0]).to(device)
-                        plaus_num_nan += 1
+                IoU = torch.tensor(0.0).to(device)
+                if not targets_[i].numel() == 0:
+                    xyxy_pred = targets_[i][j][2:] # * torch.tensor([im0.shape[2], im0.shape[1], im0.shape[2], im0.shape[1]])
+                    xyxy_center = corners_coords(xyxy_pred) * torch.tensor([im0.shape[1], im0.shape[2], im0.shape[1], im0.shape[2]])
+                    c1, c2 = (int(xyxy_center[0]), int(xyxy_center[1])), (int(xyxy_center[2]), int(xyxy_center[3]))
+                    attr = normalize_tensor(torch.abs(attr_tensor[i].clone().detach()))
+                    if torch.isnan(attr).any():
+                        attr = torch.nan_to_num(attr, nan=0.0)
+                    IoU_num = (torch.sum(attr[:,c1[1]:c2[1], c1[0]:c2[0]]))
+                    IoU_denom = torch.sum(attr)
+                    IoU_ = (IoU_num / IoU_denom)
+                    if debug:
+                        iou_isnan = torch.isnan(IoU_)
+                        if iou_isnan:
+                            IoU = torch.tensor([0.0]).to(device)
+                            plaus_num_nan += 1
+                        else:
+                            IoU = IoU_
                     else:
-                        # t7 = time.time()
                         IoU = IoU_
-                    # t8 = time.time()
-                else:
-                    IoU = IoU_
-                # t9 = time.time()
                 IoU_list.append(IoU.clone().detach().cpu())
-                # t10 = time.time()
-                # print(f"t1: {t1-t0}, t2: {t2-t1}, t3: {t3-t2}, t4: {t4-t3}, t5: {t5-t4}, t6: {t6-t5}, t7: {t7-t6}, t8: {t8-t7}, t9: {t9-t8}, t10: {t10-t9}")
             list_mean = torch.mean(torch.tensor(IoU_list))
             eval_totals += list_mean if not math.isnan(list_mean) else 0.0
             eval_individual_data.append(IoU_list)
