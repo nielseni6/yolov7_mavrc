@@ -112,7 +112,6 @@ def eval_plausibility(imgs, targets, attr_tensor, device, debug=False):
             IoU_list = []
             for j in range(len(targets_[i])):
                 # t0 = time.time()
-                IoU = torch.tensor(0.0).to(device)
                 if not targets_[i].numel() == 0:
                     xyxy_pred = targets_[i][j][2:] # * torch.tensor([im0.shape[2], im0.shape[1], im0.shape[2], im0.shape[1]])
                     xyxy_center = corners_coords(xyxy_pred) * torch.tensor([im0.shape[1], im0.shape[2], im0.shape[1], im0.shape[2]])
@@ -132,6 +131,8 @@ def eval_plausibility(imgs, targets, attr_tensor, device, debug=False):
                             IoU = IoU_
                     else:
                         IoU = IoU_
+                else:
+                    IoU = torch.tensor(0.0).to(device)
                 IoU_list.append(IoU.clone().detach().cpu())
             list_mean = torch.mean(torch.tensor(IoU_list))
             eval_totals += list_mean if not math.isnan(list_mean) else 0.0
