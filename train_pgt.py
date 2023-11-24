@@ -39,6 +39,8 @@ from utils.plots import plot_images, plot_labels, plot_results, plot_evolution
 from utils.torch_utils import ModelEMA, select_device, intersect_dicts, torch_distributed_zero_first, is_parallel
 from utils.wandb_logging.wandb_utils import WandbLogger, check_wandb_resume
 import sys
+from PIL import Image
+import torchvision
 
 from plaus_functs import generate_vanilla_grad, eval_plausibility
 
@@ -374,38 +376,50 @@ def train(hyp, opt, device, tb_writer=None):
                     path_labels.append(path_)
                 # labels = torch.stack(labels).to(device)
             if opt.dataset == 'coco':
-                labels = []
                 path_labels = [path.replace('images', 'labels').replace('.jpg', '.txt').replace('../', '') for path in paths]
-                for il, path in enumerate(path_labels):
-                    try:
-                        lab_txt = np.loadtxt(str('/' + path), dtype=str, delimiter='\n')
-                    except:
-                        lab_txt = np.array([])
-                    lab_ = []
-                    try:
-                        n_objs = len(lab_txt)
-                    except:
-                        lab_txt = np.expand_dims(lab_txt, axis=0)
-                        n_objs = 1 # len(lab_txt)
-                        
-                        
-                    for i_boxes in range(n_objs):
-                        label_list = lab_txt[i_boxes].split(' ')
-                        label_floats = np.array(label_list, dtype=np.float32)
-                        segx, segy = label_floats[1::2], label_floats[2::2]
-                        xx, yy = (np.max(segx)+np.min(segx))/2, (np.max(segy)+np.min(segy))/2
-                        xh, yw = (np.max(segx)-np.min(segx)), (np.max(segy)-np.min(segy))
-                        label_bbox = np.array([xx, yy, xh, yw])
-                        label_ = torch.tensor(np.insert(np.insert(label_bbox, 0, label_floats[0]), 0, il))
-                        lab_.append(label_)
-                    try:
-                        label = torch.stack(lab_)
-                    except:
-                        label = torch.tensor([[]])
-                    labels.append(label.to(device))
-                # labels = torch.stack(labels)
-                                
-                # labels = targets
+                if not opt.clean_plaus_eval:
+                    ################ Below is for augmented image labels ################
+                    labels = targets # **
+                    labels = [[targets[i] for i in range(len(targets)) if int(targets[i][0]) == j] for j in range(len(imgs))] # **
+                    for il in range(len(labels)):
+                        try:
+                            labels[il] = torch.stack(labels[il])
+                        except:
+                            labels[il] = torch.tensor([[]])
+                    # print(labels) # **
+                else:
+                    ############### Below is for unaugmented image labels ###############
+                    labels = []
+                    for il, path in enumerate(path_labels):
+                        try:
+                            lab_txt = np.loadtxt(str('/' + path), dtype=str, delimiter='\n')
+                        except:
+                            lab_txt = np.array([])
+                        lab_ = []
+                        try:
+                            n_objs = len(lab_txt)
+                        except:
+                            lab_txt = np.expand_dims(lab_txt, axis=0)
+                            n_objs = 1 # len(lab_txt)
+                        # n_objs = len(labels[il]) # **
+                        for i_boxes in range(n_objs):
+                            label_list = lab_txt[i_boxes].split(' ')
+                            label_floats = np.array(label_list, dtype=np.float32)
+                            # label_floats = np.array(labels[il], dtype=np.float32) # **
+                            segx, segy = label_floats[1::2], label_floats[2::2]
+                            xx, yy = (np.max(segx)+np.min(segx))/2, (np.max(segy)+np.min(segy))/2
+                            xh, yw = (np.max(segx)-np.min(segx)), (np.max(segy)-np.min(segy))
+                            label_bbox = np.array([xx, yy, xh, yw])
+                            label_ = torch.tensor(np.insert(np.insert(label_bbox, 0, label_floats[0]), 0, il))
+                            lab_.append(label_)
+                        try:
+                            label = torch.stack(lab_)
+                        except:
+                            label = torch.tensor([[]])
+                        labels.append(label.to(device))
+                    # labels = torch.stack(labels)
+                    #####################################################################
+
                 
                 
             # Warmup
@@ -454,13 +468,32 @@ def train(hyp, opt, device, tb_writer=None):
                 for out_num_attr in opt.out_num_attrs:
                     t0_pgt = time.time()
                     if not (opt.pgt_lr == 0):
+                        if opt.clean_plaus_eval:
+                            ############ Load clean images for clean image labels ############
+                            # to_tensor = torchvision.transforms.ToTensor()
+                            transform_img = torchvision.transforms.Compose([
+                                torchvision.transforms.ToTensor(),
+                                torchvision.transforms.Resize((640, 640))
+                            ])
+                            imgs_clean = [transform_img(Image.open(image_path)).to(device).to(imgs.dtype) for image_path in paths]
+                            try:
+                                imgs_clean = torch.stack(imgs_clean)
+                            except:
+                                for i_img, img in enumerate(imgs_clean):
+                                    if img.shape[0] == 1:
+                                        imgs_clean[i_img] = torch.cat([img, img, img], dim=0)
+                                imgs_clean = torch.stack(imgs_clean)
+                            ##################################################################
+                        else:
+                            imgs_clean = imgs
                         # Add attribution maps
-                        attribution_map = generate_vanilla_grad(model, imgs, loss_func=loss_attr, 
+                        attribution_map = generate_vanilla_grad(model, imgs_clean, loss_func=loss_attr, 
                                                                 targets=targets, metric=opt.loss_metric, 
                                                                 out_num = out_num_attr, device=device) # mlc = max label class
                         t1_pgt = time.time()
+
                         # Calculate Plausibility IoU with attribution maps
-                        plaus_score, plaus_num_nan = eval_plausibility(imgs, labels, 
+                        plaus_score, plaus_num_nan = eval_plausibility(imgs_clean, labels, 
                                                                        attribution_map, device=device, 
                                                                        debug=True)
                         # ADD LR SCHEDULER
@@ -696,6 +729,7 @@ if __name__ == '__main__':
     # parser.add_argument('--out_num_attr', type=float, default=1, help='Default output for generating attribution maps')
     parser.add_argument('--out_num_attrs', nargs='+', type=int, default=[1,], help='Default output for generating attribution maps')
     parser.add_argument('--loss_attr', action='store_true', help='If true, use loss to generate attribution maps')
+    parser.add_argument('--clean_plaus_eval', action='store_true', help='If true, calculate plausibility on clean, non-augmented images and labels')
     ############################################################################
     opt = parser.parse_args() 
     print(opt) 
@@ -704,17 +738,16 @@ if __name__ == '__main__':
     # opt.loss_attr = True 
     # opt.out_num_attrs = [0,1,2,] # unused if opt.loss_attr == True 
     opt.out_num_attrs = [1,] 
-    opt.pgt_lr = 0.5 
+    opt.pgt_lr = 0.9 
     opt.pgt_lr_decay = 1.0 # float(7.0/9.0) # 0.75 
     opt.pgt_lr_decay_step = 300 
     opt.epochs = 300 
     opt.no_trace = True 
     opt.conf_thres = 0.50 
-    opt.batch_size = 16 
+    opt.batch_size = 16
     # opt.batch_size = 8 
     opt.save_dir = str('runs/' + opt.name + '_lr' + str(opt.pgt_lr)) 
-    # opt.device = '6'
-    opt.device = '6,5' 
+    opt.device = '5,6' 
     # opt.device = "0,1,2,3" 
     # opt.device = "4,5,6,7" 
     # nohup python -m torch.distributed.launch --nproc_per_node 4 --master_port 9529 train_pgt.py --sync-bn > ./output_logs/gpu654_coco_pgtlr0_5.log 2>&1
@@ -736,7 +769,7 @@ if __name__ == '__main__':
     # set environment variables for parallel training
     os.environ["OMP_NUM_THREADS"] = "1"
     # opt.local_rank = -1 # os.environ["LOCAL_RANK"]
-        
+    
     if opt.dataset == 'real_world_drone':
         if ('lambda02' == host_name) or ('lambda03' == host_name):    
             opt.source = '/data/Koutsoubn8/ijcnn_v7data/Real_world_test/images' 
@@ -752,6 +785,8 @@ if __name__ == '__main__':
         opt.cfg = 'cfg/training/yolov7.yaml'
         opt.data = 'data/coco_lambda01.yaml'
         opt.hyp = 'data/hyp.scratch.p5.yaml'
+        opt.clean_plaus_eval = True
+
         
 
     opt.data = check_file(opt.data)  # check file 

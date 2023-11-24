@@ -119,6 +119,11 @@ def eval_plausibility(imgs, targets, attr_tensor, device, debug=False):
                     attr = normalize_tensor(torch.abs(attr_tensor[i].clone().detach()))
                     if torch.isnan(attr).any():
                         attr = torch.nan_to_num(attr, nan=0.0)
+                    # if True:
+                    #     test_bbox = torch.zeros_like(im0)
+                    #     test_bbox[:, c1[1]:c2[1], c1[0]:c2[0]] = im0[:, c1[1]:c2[1], c1[0]:c2[0]]
+                    #     imshow(test_bbox, save_path='figs/test_bbox')
+                    #     imshow(im0, save_path='figs/im0')
                     IoU_num = (torch.sum(attr[:,c1[1]:c2[1], c1[0]:c2[0]]))
                     IoU_denom = torch.sum(attr)
                     IoU_ = (IoU_num / IoU_denom)
