@@ -747,10 +747,10 @@ if __name__ == '__main__':
     opt.epochs = 300 
     opt.no_trace = True 
     opt.conf_thres = 0.50 
-    # opt.batch_size = 16
-    opt.batch_size = 8 
+    opt.batch_size = 24
+    # opt.batch_size = 8 
     opt.save_dir = str('runs/' + opt.name + '_lr' + str(opt.pgt_lr)) 
-    opt.device = '6' 
+    opt.device = '4,5,6' 
     # opt.device = "0,1,2,3" 
     # opt.device = "4,5,6,7" 
     # nohup python -m torch.distributed.launch --nproc_per_node 4 --master_port 9529 train_pgt.py --sync-bn > ./output_logs/gpu654_coco_pgtlr0_5.log 2>&1
