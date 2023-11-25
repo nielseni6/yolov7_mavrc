@@ -361,7 +361,6 @@ def train(hyp, opt, device, tb_writer=None):
         #################################################################################
             
         plaus_loss_total_train, plaus_score_total_train = 0.0, 0.0
-        plaus_num_nan = 0
         for i, (imgs, targets, paths, _) in pbar:  # batch -------------------------------------------------------------
             ni = i + nb * epoch  # number integrated batches (since train start)
             imgs = imgs.to(device, non_blocking=True).float() / 255.0  # uint8 to float32, 0-255 to 0.0-1.0
@@ -379,17 +378,17 @@ def train(hyp, opt, device, tb_writer=None):
                 path_labels = [path.replace('images', 'labels').replace('.jpg', '.txt').replace('../', '') for path in paths]
                 if not opt.clean_plaus_eval:
                     ################ Below is for augmented image labels ################
-                    labels = targets # **
-                    labels = [[targets[i] for i in range(len(targets)) if int(targets[i][0]) == j] for j in range(len(imgs))] # **
-                    for il in range(len(labels)):
+                    # labels = targets # **
+                    labels_list = [[targets[i] for i in range(len(targets)) if int(targets[i][0]) == j] for j in range(len(imgs))] # **
+                    for il in range(len(labels_list)):
                         try:
-                            labels[il] = torch.stack(labels[il])
+                            labels_list[il] = torch.stack(labels_list[il])
                         except:
-                            labels[il] = torch.tensor([[]])
-                    # print(labels) # **
+                            labels_list[il] = torch.tensor([[]])
+                    # print(labels_list) # **
                 else:
                     ############### Below is for unaugmented image labels ###############
-                    labels = []
+                    labels_list = []
                     for il, path in enumerate(path_labels):
                         try:
                             lab_txt = np.loadtxt(str('/' + path), dtype=str, delimiter='\n')
@@ -401,11 +400,11 @@ def train(hyp, opt, device, tb_writer=None):
                         except:
                             lab_txt = np.expand_dims(lab_txt, axis=0)
                             n_objs = 1 # len(lab_txt)
-                        # n_objs = len(labels[il]) # **
+                        # n_objs = len(labels_list[il]) # **
                         for i_boxes in range(n_objs):
                             label_list = lab_txt[i_boxes].split(' ')
                             label_floats = np.array(label_list, dtype=np.float32)
-                            # label_floats = np.array(labels[il], dtype=np.float32) # **
+                            # label_floats = np.array(labels_list[il], dtype=np.float32) # **
                             segx, segy = label_floats[1::2], label_floats[2::2]
                             xx, yy = (np.max(segx)+np.min(segx))/2, (np.max(segy)+np.min(segy))/2
                             xh, yw = (np.max(segx)-np.min(segx)), (np.max(segy)-np.min(segy))
@@ -416,9 +415,13 @@ def train(hyp, opt, device, tb_writer=None):
                             label = torch.stack(lab_)
                         except:
                             label = torch.tensor([[]])
-                        labels.append(label.to(device))
-                    # labels = torch.stack(labels)
+                        labels_list.append(label.to(device))
                     #####################################################################
+                try:
+                    labels = torch.cat(labels_list, dim=0) # labels as single tensor
+                except:
+                    filtered_list = [tensor for tensor in labels_list if tensor.numel() > 0]
+                    labels = torch.cat(filtered_list, dim=0) # labels as single tensor
 
                 
                 
@@ -488,14 +491,14 @@ def train(hyp, opt, device, tb_writer=None):
                             imgs_clean = imgs
                         # Add attribution maps
                         attribution_map = generate_vanilla_grad(model, imgs_clean, loss_func=loss_attr, 
-                                                                targets=targets, metric=opt.loss_metric, 
+                                                                targets=labels, targets_list=labels_list, metric=opt.loss_metric, 
                                                                 out_num = out_num_attr, device=device) # mlc = max label class
                         t1_pgt = time.time()
 
                         # Calculate Plausibility IoU with attribution maps
-                        plaus_score, plaus_num_nan = eval_plausibility(imgs_clean, labels, 
+                        plaus_score = eval_plausibility(imgs_clean, labels_list, 
                                                                        attribution_map, device=device, 
-                                                                       debug=True)
+                                                                       debug=False)
                         # ADD LR SCHEDULER
                         
                         plaus_loss = (opt.pgt_lr * plaus_score)
@@ -593,8 +596,8 @@ def train(hyp, opt, device, tb_writer=None):
                     'metrics/precision', 'metrics/recall', 'metrics/mAP_0.5', 'metrics/mAP_0.5:0.95',
                     'val/box_loss', 'val/obj_loss', 'val/cls_loss',  # val loss
                     'x/lr0', 'x/lr1', 'x/lr2',  # params
-                    ] + ['plaus_loss_train', 'plaus_score_train', 'plaus_num_nan','pgt_lr']
-            for x, tag in zip(list(mloss[:-1]) + list((results)) + lr + [plaus_loss_total_train, plaus_score_total_train, plaus_num_nan, opt.pgt_lr,], tags):
+                    ] + ['plaus_loss_train', 'plaus_score_train','pgt_lr']
+            for x, tag in zip(list(mloss[:-1]) + list((results)) + lr + [plaus_loss_total_train, plaus_score_total_train, opt.pgt_lr,], tags):
                 if tb_writer:
                     tb_writer.add_scalar(tag, x, epoch)  # tensorboard
                 if wandb_logger.wandb:
@@ -736,18 +739,18 @@ if __name__ == '__main__':
     
     # opt.sweep = True 
     # opt.loss_attr = True 
-    # opt.out_num_attrs = [0,1,2,] # unused if opt.loss_attr == True 
-    opt.out_num_attrs = [1,] 
-    opt.pgt_lr = 0.9 
+    opt.out_num_attrs = [0,1,2,] # unused if opt.loss_attr == True 
+    # opt.out_num_attrs = [1,] 
+    opt.pgt_lr = 3.5 
     opt.pgt_lr_decay = 1.0 # float(7.0/9.0) # 0.75 
     opt.pgt_lr_decay_step = 300 
     opt.epochs = 300 
     opt.no_trace = True 
     opt.conf_thres = 0.50 
-    opt.batch_size = 16
-    # opt.batch_size = 8 
+    # opt.batch_size = 16
+    opt.batch_size = 8 
     opt.save_dir = str('runs/' + opt.name + '_lr' + str(opt.pgt_lr)) 
-    opt.device = '5,6' 
+    opt.device = '6' 
     # opt.device = "0,1,2,3" 
     # opt.device = "4,5,6,7" 
     # nohup python -m torch.distributed.launch --nproc_per_node 4 --master_port 9529 train_pgt.py --sync-bn > ./output_logs/gpu654_coco_pgtlr0_5.log 2>&1
