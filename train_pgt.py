@@ -523,7 +523,7 @@ def train(hyp, opt, device, tb_writer=None):
             scaler.scale(loss).backward()
             t3_pgt = time.time()
             
-            if (i % 5) == 0:
+            if (i % 25) == 0:
             # if i == 0:
                 # print(f'Attribution generation took {t1_pgt - t0_pgt}s')
                 print(f'Plausibility eval took {t2_pgt - t0_pgt}s and backprop took {t3_pgt - t2_pgt}s')
@@ -743,19 +743,24 @@ if __name__ == '__main__':
     opt.loss_attr = True 
     # opt.out_num_attrs = [0,1,2,] # unused if opt.loss_attr == True 
     opt.out_num_attrs = [1,] 
-    opt.pgt_lr = 0.7 
+    opt.pgt_lr = 2.5 
     opt.pgt_lr_decay = 1.0 # float(7.0/9.0) # 0.75 
     opt.pgt_lr_decay_step = 300 
     opt.epochs = 300 
     opt.no_trace = True 
     opt.conf_thres = 0.50 
-    # opt.batch_size = 32
+    # opt.batch_size = 16
     opt.batch_size = 8 
     opt.save_dir = str('runs/' + opt.name + '_lr' + str(opt.pgt_lr)) 
-    opt.device = '4' 
+    opt.device = '6' 
     # opt.device = "0,1,2,3" 
     # opt.device = "4,5,6,7" 
-    # nohup python -m torch.distributed.launch --nproc_per_node 4 --master_port 9527 train_pgt.py --sync-bn > ./output_logs/gpu0123_coco_pgtlr1_5.log 2>&1
+    
+    # lambda03
+    # source /home/nielseni6/envs/yolo/bin/activate
+    # cd /home/nielseni6/PythonScripts/yolov7_mavrc
+    # nohup python train_pgt.py > ./output_logs/gpu6_trpgt_coco_loss_lr2_5.log 2>&1 &
+    # nohup python -m torch.distributed.launch --nproc_per_node 2 --master_port 9528 train_pgt.py --sync-bn > ./output_logs/gpu56_coco_pgtlr0_9.log 2>&1 &
     # opt.quad = True # Helps for multiple gpu training 
     opt.dataset = 'coco' # 'real_world_drone'
     # opt.sync_bn = True
@@ -787,7 +792,7 @@ if __name__ == '__main__':
     if opt.dataset == 'coco':
         opt.source = "/data/nielseni6/coco/images"
         opt.weights = ''
-        opt.weights = 'weights/yolov7.pt'
+        # opt.weights = 'weights/yolov7.pt'
         opt.cfg = 'cfg/training/yolov7.yaml'
         opt.data = 'data/coco_lambda01.yaml'
         opt.hyp = 'data/hyp.scratch.p5.yaml'
