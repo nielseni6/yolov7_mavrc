@@ -523,7 +523,7 @@ def train(hyp, opt, device, tb_writer=None):
             scaler.scale(loss).backward()
             t3_pgt = time.time()
             
-            if (i % 25) == 0:
+            if (i % 5) == 0:
             # if i == 0:
                 # print(f'Attribution generation took {t1_pgt - t0_pgt}s')
                 print(f'Plausibility eval took {t2_pgt - t0_pgt}s and backprop took {t3_pgt - t2_pgt}s')

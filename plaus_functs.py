@@ -54,19 +54,28 @@ def generate_vanilla_grad(model, input_tensor, loss_func = None,
             n_attr_list.append(0)
     
     targets_list_filled = [targ.clone().detach() for targ in targets_list]
-    max_labels = np.max([len(targets_list[ih]) for ih in range(len(targets_list))])
+    labels_len = [len(targets_list[ih]) for ih in range(len(targets_list))]
+    max_labels = np.max(labels_len)
+    max_index = np.argmax(labels_len)
     for i in range(len(targets_list)):
         # targets_list_filled[i] = targets_list[i]
         if len(targets_list_filled[i]) < max_labels:
             tlist = [targets_list_filled[i]] * math.ceil(max_labels / len(targets_list_filled[i]))
-            targets_list_filled[i] = torch.cat(tlist[:max_labels])
-    # targets_stacked = torch.stack(targets_list_filled)
+            targets_list_filled[i] = torch.cat(tlist)[:max_labels].unsqueeze(0)
+        else:
+            targets_list_filled[i] = targets_list_filled[i].unsqueeze(0)
+    for i in range(len(targets_list_filled)-1,-1,-1):
+        if targets_list_filled[i].numel() == 0:
+            targets_list_filled.pop(i)
+    targets_list_filled = torch.cat(targets_list_filled)
     
     n_img_attrs = len(input_tensor) if class_specific_attr else 1
-    # n_img_attrs = 1 if loss_func else n_img_attrs
+    n_img_attrs = 1 if loss_func else n_img_attrs
     
     attrs_batch = []
     for i_batch in range(n_img_attrs):
+        if loss_func:
+            i_batch = max_index
         # inpt = input_tensor[i_batch].unsqueeze(0)
         # ##################################################################
         # model.zero_grad() # Zero gradients
@@ -84,22 +93,14 @@ def generate_vanilla_grad(model, input_tensor, loss_func = None,
             else:
                 # if class_specific_attr:
                 #     targets = targets_list[:][i_attr]
-                # target_indiv = targets_stacked[:,i_attr] # batch input
                 n_targets = len(targets_list[i_batch])
-                target_indiv = []
-                for ib in range(n_img_attrs):
-                    if i_attr < len(targets_list[ib]):
-                        target_indiv.append(targets_list_filled[ib][i_attr].unsqueeze(0))
-                # [targets_list_filled[ib][i_attr].unsqueeze(0) if (i_attr < len(targets_list[ib])) else None for ib in range(n_img_attrs)]
-                target_indiv = torch.cat(target_indiv) # batch image input
+                target_indiv = targets_list_filled[:,i_attr] # batch image input
                 # target_indiv = targets_list[i_batch][i_attr].unsqueeze(0) # single image input
                 # target_indiv[:,0] = 0 # this indicates the batch index of the target, should be 0 since we are only doing one image at a time
                 loss, loss_items = loss_func(train_out, target_indiv, inpt, metric=metric)  # loss scaled by batch_size
                 grad_wrt = loss
                 grad_wrt_outputs = None
-                # loss.backward(retain_graph=True, create_graph=True)
-                # gradients = input_tensor.grad
-                
+            
             model.zero_grad() # Zero gradients
             gradients = torch.autograd.grad(grad_wrt, inpt, 
                                                 grad_outputs=grad_wrt_outputs, 
@@ -124,8 +125,21 @@ def generate_vanilla_grad(model, input_tensor, loss_func = None,
 
     # out_attr = torch.tensor(attribution_map).unsqueeze(0).to(device) if ((loss_func) or (not class_specific_attr)) else torch.stack(attrs_batch).to(device)
     # out_attr = [attrs_batch[0]] * len(input_tensor) if ((loss_func) or (not class_specific_attr)) else attrs_batch
-    out_attr = attrs_batch
-    
+    if loss_func:
+        a_batch = []
+        for i_batch in range(len(input_tensor)):
+            n_label_attrs = n_attr_list[i_batch] if class_specific_attr else 1
+            attrs_img = []
+            for i_attr in range(n_label_attrs):
+                attribution_map = attrs_batch[0][i_attr]
+                attrs_img.append(attribution_map)
+            if len(attrs_img) == 0:
+                a_batch.append((torch.zeros_like(inpt).unsqueeze(0)).to(device))
+            else:
+                a_batch.append(torch.stack(attrs_img).to(device))
+        out_attr = a_batch
+    else:
+        out_attr = attrs_batch
     # Set model back to original mode
     if not train_mode:
         model.eval()
