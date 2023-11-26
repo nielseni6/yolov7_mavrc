@@ -30,10 +30,10 @@ def generate_vanilla_grad(model, input_tensor, loss_func = None,
         model.train()
     
     input_tensor.requires_grad = True # Set requires_grad attribute of tensor. Important for computing gradients
-    model.zero_grad() # Zero gradients
+    # model.zero_grad() # Zero gradients
     # inpt = input_tensor
-    # Forward pass
-    train_out = model(input_tensor) # training outputs (no inference outputs in train mode)
+    # # Forward pass
+    # train_out = model(inpt) # training outputs (no inference outputs in train mode)
     
     # train_out[1] = torch.Size([4, 3, 80, 80, 7]) HxWx(#anchorxC) cls (class probabilities)
     # train_out[0] = torch.Size([4, 3, 160, 160, 7]) HxWx(#anchorx4) reg (location and scaling)
@@ -58,11 +58,11 @@ def generate_vanilla_grad(model, input_tensor, loss_func = None,
     
     attrs_batch = []
     for i_batch in range(n_img_attrs):
-        # inpt = input_tensor[i_batch].unsqueeze(0)
-        # ##################################################################
+        inpt = input_tensor[i_batch].unsqueeze(0)
+        ##################################################################
         model.zero_grad() # Zero gradients
-        # train_out = model(inpt)  # training outputs (no inference outputs in train mode)
-        # ##################################################################
+        train_out = model(inpt)  # training outputs (no inference outputs in train mode)
+        ##################################################################
         n_label_attrs = n_attr_list[i_batch] if class_specific_attr else 1
         # n_label_attrs = 1 if loss_func else n_label_attrs
         attrs_img = []
@@ -77,14 +77,14 @@ def generate_vanilla_grad(model, input_tensor, loss_func = None,
                 #     targets = targets_list[:][i_attr]
                 target_indiv = targets_list[i_batch][i_attr].unsqueeze(0)
                 # target_indiv[:,0] = 0 # this indicates the batch index of the target, should be 0 since we are only doing one image at a time
-                loss, loss_items = loss_func(train_out, target_indiv, input_tensor, metric=metric)  # loss scaled by batch_size
+                loss, loss_items = loss_func(train_out, target_indiv, inpt, metric=metric)  # loss scaled by batch_size
                 grad_wrt = loss
                 grad_wrt_outputs = None
                 # loss.backward(retain_graph=True, create_graph=True)
                 # gradients = input_tensor.grad
                 
-            # model.zero_grad() # Zero gradients
-            gradients = torch.autograd.grad(grad_wrt, input_tensor, 
+            model.zero_grad() # Zero gradients
+            gradients = torch.autograd.grad(grad_wrt, inpt, 
                                                 grad_outputs=grad_wrt_outputs, 
                                                 retain_graph=True, 
                                                 # create_graph=True, # Create graph to allow for higher order derivatives but slows down computation significantly
@@ -101,7 +101,7 @@ def generate_vanilla_grad(model, input_tensor, loss_func = None,
             #     attribution_map = gradients
             attrs_img.append(attribution_map)
         if len(attrs_img) == 0:
-            attrs_batch.append((torch.zeros_like(input_tensor).unsqueeze(0)).to(device))
+            attrs_batch.append((torch.zeros_like(inpt).unsqueeze(0)).to(device))
         else:
             attrs_batch.append(torch.stack(attrs_img).to(device))
 
@@ -162,7 +162,7 @@ def eval_plausibility(imgs, targets, attr_tensor, device, debug=False):
                     xyxy_pred = targets_[i][j][2:] # * torch.tensor([im0.shape[2], im0.shape[1], im0.shape[2], im0.shape[1]])
                     xyxy_center = corners_coords(xyxy_pred) * torch.tensor([im0.shape[1], im0.shape[2], im0.shape[1], im0.shape[2]])
                     c1, c2 = (int(xyxy_center[0]), int(xyxy_center[1])), (int(xyxy_center[2]), int(xyxy_center[3]))
-                    attr = normalize_tensor(torch.abs(attr_tensor[i % len(attr_tensor)][j][i].clone().detach())) 
+                    attr = normalize_tensor(torch.abs(attr_tensor[i % len(attr_tensor)][j][i % attr_tensor[i % len(attr_tensor)].shape[1]].clone().detach())) 
                     # different attr was generated for each target, indexed by j (i_attr) ^^
                     if torch.isnan(attr).any():
                         attr = torch.nan_to_num(attr, nan=0.0)
