@@ -555,8 +555,8 @@ def train(hyp, opt, device, tb_writer=None):
                                                   save_dir.glob('train*.jpg') if x.exists()]})
 
             # end batch ------------------------------------------------------------------------------------------------
-        plaus_loss_total_train /= float(i * batch_size)
-        plaus_score_total_train /= float(i * batch_size)
+        # plaus_loss_total_train /= float(i * batch_size)
+        # plaus_score_total_train /= float(i * batch_size)
         # end epoch ----------------------------------------------------------------------------------------------------
 
         # Scheduler
@@ -738,19 +738,19 @@ if __name__ == '__main__':
     print(opt) 
     
     # opt.sweep = True 
-    # opt.loss_attr = True 
-    opt.out_num_attrs = [0,1,2,] # unused if opt.loss_attr == True 
-    # opt.out_num_attrs = [1,] 
-    opt.pgt_lr = 3.5 
+    opt.loss_attr = True 
+    # opt.out_num_attrs = [0,1,2,] # unused if opt.loss_attr == True 
+    opt.out_num_attrs = [1,] 
+    opt.pgt_lr = 1.5 
     opt.pgt_lr_decay = 1.0 # float(7.0/9.0) # 0.75 
     opt.pgt_lr_decay_step = 300 
     opt.epochs = 300 
     opt.no_trace = True 
     opt.conf_thres = 0.50 
-    opt.batch_size = 24
-    # opt.batch_size = 8 
+    opt.batch_size = 4
+    # opt.batch_size = 4 
     opt.save_dir = str('runs/' + opt.name + '_lr' + str(opt.pgt_lr)) 
-    opt.device = '4,5,6' 
+    opt.device = '0' 
     # opt.device = "0,1,2,3" 
     # opt.device = "4,5,6,7" 
     # nohup python -m torch.distributed.launch --nproc_per_node 4 --master_port 9529 train_pgt.py --sync-bn > ./output_logs/gpu654_coco_pgtlr0_5.log 2>&1

@@ -56,7 +56,7 @@ def generate_vanilla_grad(model, input_tensor, loss_func = None,
     attrs_batch = []
     for i_batch in range(n_img_attrs):
         n_label_attrs = n_attr_list[i_batch] if class_specific_attr else 1
-        n_label_attrs = 1 if loss_func else n_label_attrs
+        # n_label_attrs = 1 if loss_func else n_label_attrs
         attrs_img = []
         for i_attr in range(n_label_attrs):
             if loss_func is None:
@@ -90,12 +90,14 @@ def generate_vanilla_grad(model, input_tensor, loss_func = None,
                 attribution_map = gradients
             attrs_img.append(torch.tensor(attribution_map))
         if len(attrs_img) == 0:
-            attrs_batch.append(torch.zeros_like(input_tensor).to(device))
+            attrs_batch.append((torch.zeros_like(input_tensor).unsqueeze(0)).to(device))
         else:
             attrs_batch.append(torch.stack(attrs_img).to(device))
 
     # out_attr = torch.tensor(attribution_map).unsqueeze(0).to(device) if ((loss_func) or (not class_specific_attr)) else torch.stack(attrs_batch).to(device)
-    out_attr = [torch.tensor(attribution_map).to(device),] if ((loss_func) or (not class_specific_attr)) else attrs_batch
+    # out_attr = [attrs_batch[0]] * len(input_tensor) if ((loss_func) or (not class_specific_attr)) else attrs_batch
+    out_attr = attrs_batch
+    
     # Set model back to original mode
     if not train_mode:
         model.eval()
@@ -122,7 +124,7 @@ def eval_plausibility(imgs, targets, attr_tensor, device, debug=False):
     #     return 0
     # MIGHT NEED TO NORMALIZE OR TAKE ABS VAL OF ATTR
     # ALSO MIGHT NORMALIZE FOR THE SIZE OF THE BBOX
-    eval_totals = 0.0
+    eval_totals = torch.tensor(0.0)
     plaus_num_nan = 0
     
     targets_ = targets
@@ -135,7 +137,7 @@ def eval_plausibility(imgs, targets, attr_tensor, device, debug=False):
     eval_data_all_attr = []
     for i, im0 in enumerate(imgs):
         eval_individual_data = []
-        for i_attr in range(len(attr_tensor[i])):
+        for i_attr in range(len(attr_tensor[i % len(attr_tensor)])):
             if len(targets_[i]) == 0:
                 eval_individual_data.append([torch.tensor(0).to(device),]) 
             else:
@@ -146,7 +148,7 @@ def eval_plausibility(imgs, targets, attr_tensor, device, debug=False):
                         xyxy_pred = targets_[i][j][2:] # * torch.tensor([im0.shape[2], im0.shape[1], im0.shape[2], im0.shape[1]])
                         xyxy_center = corners_coords(xyxy_pred) * torch.tensor([im0.shape[1], im0.shape[2], im0.shape[1], im0.shape[2]])
                         c1, c2 = (int(xyxy_center[0]), int(xyxy_center[1])), (int(xyxy_center[2]), int(xyxy_center[3]))
-                        attr = normalize_tensor(torch.abs(attr_tensor[i][i_attr][i].clone().detach()))
+                        attr = normalize_tensor(torch.abs(attr_tensor[i % len(attr_tensor)][i_attr][i].clone().detach()))
                         if torch.isnan(attr).any():
                             attr = torch.nan_to_num(attr, nan=0.0)
                         # if True:
@@ -172,15 +174,15 @@ def eval_plausibility(imgs, targets, attr_tensor, device, debug=False):
                     IoU_list.append(IoU.clone().detach().cpu())
                 list_mean = torch.mean(torch.tensor(IoU_list))
                 # eval_totals += (list_mean / float(len(attr_tensor[i]))) if len(attr_tensor[i]) > 0 else 0.0 # must be changed to this if doing multiple individual class attribution maps
-                eval_totals += list_mean
+                eval_totals += ((list_mean / float(len(attr_tensor[i % len(attr_tensor)]))) / float(len(imgs)))
                 eval_individual_data.append(IoU_list)
         eval_data_all_attr.append(eval_individual_data)
     
     
     if debug:
-        return torch.tensor(eval_totals).requires_grad_(True), plaus_num_nan
+        return eval_totals.clone().detach().requires_grad_(True), plaus_num_nan
     else:
-        return torch.tensor(eval_totals).requires_grad_(True)#, eval_data_all_attr
+        return eval_totals.clone().detach().requires_grad_(True)#, eval_data_all_attr
 
 
 def corners_coords(center_xywh):
