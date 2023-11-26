@@ -30,10 +30,10 @@ def generate_vanilla_grad(model, input_tensor, loss_func = None,
         model.train()
     
     input_tensor.requires_grad = True # Set requires_grad attribute of tensor. Important for computing gradients
-    # model.zero_grad() # Zero gradients
-    # inpt = input_tensor
-    # # Forward pass
-    # train_out = model(inpt) # training outputs (no inference outputs in train mode)
+    model.zero_grad() # Zero gradients
+    inpt = input_tensor
+    # Forward pass
+    train_out = model(inpt) # training outputs (no inference outputs in train mode)
     
     # train_out[1] = torch.Size([4, 3, 80, 80, 7]) HxWx(#anchorxC) cls (class probabilities)
     # train_out[0] = torch.Size([4, 3, 160, 160, 7]) HxWx(#anchorx4) reg (location and scaling)
@@ -52,17 +52,26 @@ def generate_vanilla_grad(model, input_tensor, loss_func = None,
         else:
             index_classes.append([0, 1, 2, 3, 4])
             n_attr_list.append(0)
-        
+    
+    targets_list_filled = [targ.clone().detach() for targ in targets_list]
+    max_labels = np.max([len(targets_list[ih]) for ih in range(len(targets_list))])
+    for i in range(len(targets_list)):
+        # targets_list_filled[i] = targets_list[i]
+        if len(targets_list_filled[i]) < max_labels:
+            tlist = [targets_list_filled[i]] * math.ceil(max_labels / len(targets_list_filled[i]))
+            targets_list_filled[i] = torch.cat(tlist[:max_labels])
+    # targets_stacked = torch.stack(targets_list_filled)
+    
     n_img_attrs = len(input_tensor) if class_specific_attr else 1
     # n_img_attrs = 1 if loss_func else n_img_attrs
     
     attrs_batch = []
     for i_batch in range(n_img_attrs):
-        inpt = input_tensor[i_batch].unsqueeze(0)
-        ##################################################################
-        model.zero_grad() # Zero gradients
-        train_out = model(inpt)  # training outputs (no inference outputs in train mode)
-        ##################################################################
+        # inpt = input_tensor[i_batch].unsqueeze(0)
+        # ##################################################################
+        # model.zero_grad() # Zero gradients
+        # train_out = model(inpt)  # training outputs (no inference outputs in train mode)
+        # ##################################################################
         n_label_attrs = n_attr_list[i_batch] if class_specific_attr else 1
         # n_label_attrs = 1 if loss_func else n_label_attrs
         attrs_img = []
@@ -75,7 +84,15 @@ def generate_vanilla_grad(model, input_tensor, loss_func = None,
             else:
                 # if class_specific_attr:
                 #     targets = targets_list[:][i_attr]
-                target_indiv = targets_list[i_batch][i_attr].unsqueeze(0)
+                # target_indiv = targets_stacked[:,i_attr] # batch input
+                n_targets = len(targets_list[i_batch])
+                target_indiv = []
+                for ib in range(n_img_attrs):
+                    if i_attr < len(targets_list[ib]):
+                        target_indiv.append(targets_list_filled[ib][i_attr].unsqueeze(0))
+                # [targets_list_filled[ib][i_attr].unsqueeze(0) if (i_attr < len(targets_list[ib])) else None for ib in range(n_img_attrs)]
+                target_indiv = torch.cat(target_indiv) # batch image input
+                # target_indiv = targets_list[i_batch][i_attr].unsqueeze(0) # single image input
                 # target_indiv[:,0] = 0 # this indicates the batch index of the target, should be 0 since we are only doing one image at a time
                 loss, loss_items = loss_func(train_out, target_indiv, inpt, metric=metric)  # loss scaled by batch_size
                 grad_wrt = loss
@@ -175,15 +192,7 @@ def eval_plausibility(imgs, targets, attr_tensor, device, debug=False):
                     IoU_num = (torch.sum(attr[:,c1[1]:c2[1], c1[0]:c2[0]]))
                     IoU_denom = torch.sum(attr)
                     IoU_ = (IoU_num / IoU_denom)
-                    if debug:
-                        iou_isnan = torch.isnan(IoU_)
-                        if iou_isnan:
-                            IoU = torch.tensor([0.0]).to(device)
-                            plaus_num_nan += 1
-                        else:
-                            IoU = IoU_
-                    else:
-                        IoU = IoU_
+                    IoU = IoU_
                 else:
                     IoU = torch.tensor(0.0).to(device)
                 IoU_list.append(IoU.clone().detach())
@@ -193,11 +202,7 @@ def eval_plausibility(imgs, targets, attr_tensor, device, debug=False):
             eval_individual_data.append(IoU_list)
         eval_data_all_attr.append(eval_individual_data)
     
-    
-    if debug:
-        return eval_totals.clone().detach().requires_grad_(True), plaus_num_nan
-    else:
-        return eval_totals.clone().detach().requires_grad_(True)#, eval_data_all_attr
+    return eval_totals.clone().detach().requires_grad_(True)#, eval_data_all_attr
 
 
 def corners_coords(center_xywh):

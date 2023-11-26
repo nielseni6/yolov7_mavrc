@@ -750,9 +750,9 @@ if __name__ == '__main__':
     opt.no_trace = True 
     opt.conf_thres = 0.50 
     # opt.batch_size = 16
-    opt.batch_size = 8 
+    opt.batch_size = 2 
     opt.save_dir = str('runs/' + opt.name + '_lr' + str(opt.pgt_lr)) 
-    opt.device = '6' 
+    opt.device = '2' 
     # opt.device = "0,1,2,3" 
     # opt.device = "4,5,6,7" 
     
