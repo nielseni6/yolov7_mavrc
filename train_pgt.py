@@ -489,11 +489,12 @@ def train(hyp, opt, device, tb_writer=None):
                             ##################################################################
                         else:
                             imgs_clean = imgs
+                        t0_attr = time.time()
                         # Add attribution maps
                         attribution_map = generate_vanilla_grad(model, imgs_clean, loss_func=loss_attr, 
                                                                 targets=labels, targets_list=labels_list, metric=opt.loss_metric, 
                                                                 out_num = out_num_attr, device=device) # mlc = max label class
-                        t1_pgt = time.time()
+                        t1_attr = time.time()
 
                         # Calculate Plausibility IoU with attribution maps
                         plaus_score = eval_plausibility(imgs_clean, labels_list, 
@@ -522,10 +523,11 @@ def train(hyp, opt, device, tb_writer=None):
             scaler.scale(loss).backward()
             t3_pgt = time.time()
             
-            if (i % 30) == 0:
+            if (i % 5) == 0:
             # if i == 0:
                 # print(f'Attribution generation took {t1_pgt - t0_pgt}s')
                 print(f'Plausibility eval took {t2_pgt - t0_pgt}s and backprop took {t3_pgt - t2_pgt}s')
+                print(f'Attribution alone took {t1_attr - t0_attr}s')
             
             # Optimize
             if ni % accumulate == 0:
@@ -741,22 +743,22 @@ if __name__ == '__main__':
     opt.loss_attr = True 
     # opt.out_num_attrs = [0,1,2,] # unused if opt.loss_attr == True 
     opt.out_num_attrs = [1,] 
-    opt.pgt_lr = 1.5 
+    opt.pgt_lr = 0.7 
     opt.pgt_lr_decay = 1.0 # float(7.0/9.0) # 0.75 
     opt.pgt_lr_decay_step = 300 
     opt.epochs = 300 
     opt.no_trace = True 
     opt.conf_thres = 0.50 
-    opt.batch_size = 4
-    # opt.batch_size = 4 
+    # opt.batch_size = 32
+    opt.batch_size = 8 
     opt.save_dir = str('runs/' + opt.name + '_lr' + str(opt.pgt_lr)) 
-    opt.device = '0' 
+    opt.device = '4' 
     # opt.device = "0,1,2,3" 
     # opt.device = "4,5,6,7" 
-    # nohup python -m torch.distributed.launch --nproc_per_node 4 --master_port 9529 train_pgt.py --sync-bn > ./output_logs/gpu654_coco_pgtlr0_5.log 2>&1
+    # nohup python -m torch.distributed.launch --nproc_per_node 4 --master_port 9527 train_pgt.py --sync-bn > ./output_logs/gpu0123_coco_pgtlr1_5.log 2>&1
     # opt.quad = True # Helps for multiple gpu training 
     opt.dataset = 'coco' # 'real_world_drone'
-    
+    # opt.sync_bn = True
     
     opt.seed = random.randrange(sys.maxsize)
     rng = random.Random(opt.seed)
@@ -785,6 +787,7 @@ if __name__ == '__main__':
     if opt.dataset == 'coco':
         opt.source = "/data/nielseni6/coco/images"
         opt.weights = ''
+        opt.weights = 'weights/yolov7.pt'
         opt.cfg = 'cfg/training/yolov7.yaml'
         opt.data = 'data/coco_lambda01.yaml'
         opt.hyp = 'data/hyp.scratch.p5.yaml'

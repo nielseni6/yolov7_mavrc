@@ -31,6 +31,7 @@ def generate_vanilla_grad(model, input_tensor, loss_func = None,
     
     input_tensor.requires_grad = True # Set requires_grad attribute of tensor. Important for computing gradients
     model.zero_grad() # Zero gradients
+    # inpt = input_tensor
     # Forward pass
     train_out = model(input_tensor) # training outputs (no inference outputs in train mode)
     
@@ -41,20 +42,27 @@ def generate_vanilla_grad(model, input_tensor, loss_func = None,
     n_attr_list, index_classes = [], []
     for i in range(len(input_tensor)):
         if targets_list[i].numel() != 0:
-            unique_classes = torch.unique(targets_list[i][:,1])
-            # index_classes.append([[int(uc), -4, -3, -2, -1] for uc in unique_classes])
-            index_classes.append([int(uc) for uc in unique_classes] + [-4, -3, -2, -1])
-            num_attrs = 1 #len(unique_classes)# if loss_func else len(targets_list[i])
+            # unique_classes = torch.unique(targets_list[i][:,1])
+            class_numbers = targets_list[i][:,1]
+            index_classes.append([[0, 1, 2, 3, 4, int(uc)] for uc in class_numbers])
+            num_attrs = len(targets_list[i])
+            # index_classes.append([0, 1, 2, 3, 4] + [int(uc + 5) for uc in unique_classes])
+            # num_attrs = 1 #len(unique_classes)# if loss_func else len(targets_list[i])
             n_attr_list.append(num_attrs)
         else:
-            index_classes.append([-4, -3, -2, -1])
+            index_classes.append([0, 1, 2, 3, 4])
             n_attr_list.append(0)
         
     n_img_attrs = len(input_tensor) if class_specific_attr else 1
-    n_img_attrs = 1 if loss_func else n_img_attrs
+    # n_img_attrs = 1 if loss_func else n_img_attrs
     
     attrs_batch = []
     for i_batch in range(n_img_attrs):
+        # inpt = input_tensor[i_batch].unsqueeze(0)
+        # ##################################################################
+        model.zero_grad() # Zero gradients
+        # train_out = model(inpt)  # training outputs (no inference outputs in train mode)
+        # ##################################################################
         n_label_attrs = n_attr_list[i_batch] if class_specific_attr else 1
         # n_label_attrs = 1 if loss_func else n_label_attrs
         attrs_img = []
@@ -62,33 +70,36 @@ def generate_vanilla_grad(model, input_tensor, loss_func = None,
             if loss_func is None:
                 grad_wrt = train_out[out_num]
                 if class_specific_attr:
-                    grad_wrt = train_out[out_num][:,:,:,:,index_classes[i_batch]]
+                    grad_wrt = train_out[out_num][:,:,:,:,index_classes[i_batch][i_attr]]
                 grad_wrt_outputs = torch.ones_like(grad_wrt)
             else:
                 # if class_specific_attr:
                 #     targets = targets_list[:][i_attr]
-                loss, loss_items = loss_func(train_out, targets.to(device), input_tensor, metric=metric)  # loss scaled by batch_size
+                target_indiv = targets_list[i_batch][i_attr].unsqueeze(0)
+                # target_indiv[:,0] = 0 # this indicates the batch index of the target, should be 0 since we are only doing one image at a time
+                loss, loss_items = loss_func(train_out, target_indiv, input_tensor, metric=metric)  # loss scaled by batch_size
                 grad_wrt = loss
                 grad_wrt_outputs = None
                 # loss.backward(retain_graph=True, create_graph=True)
                 # gradients = input_tensor.grad
-            
+                
+            # model.zero_grad() # Zero gradients
             gradients = torch.autograd.grad(grad_wrt, input_tensor, 
                                                 grad_outputs=grad_wrt_outputs, 
                                                 retain_graph=True, 
                                                 # create_graph=True, # Create graph to allow for higher order derivatives but slows down computation significantly
                                                 )
 
-            gradients = gradients[0].detach().cpu().numpy() # Convert gradients to numpy array
+            attribution_map = gradients[0]#.detach()#.cpu().numpy() # Convert gradients to numpy array
             
             if norm:
-                attribution_map = np.absolute(gradients) # Take absolute values of gradients
+                attribution_map = torch.abs(attribution_map) # Take absolute values of gradients
                 # attribution_map = np.sum(gradients, axis=0) # Sum across color channels
-                attribution_map = normalize_numpy(attribution_map) # Normalize attribution map
+                attribution_map = normalize_tensor(attribution_map) # Normalize attribution map
                 # imshow(attr, save_path='figs/attr')
-            else:
-                attribution_map = gradients
-            attrs_img.append(torch.tensor(attribution_map))
+            # else:
+            #     attribution_map = gradients
+            attrs_img.append(attribution_map)
         if len(attrs_img) == 0:
             attrs_batch.append((torch.zeros_like(input_tensor).unsqueeze(0)).to(device))
         else:
@@ -124,7 +135,7 @@ def eval_plausibility(imgs, targets, attr_tensor, device, debug=False):
     #     return 0
     # MIGHT NEED TO NORMALIZE OR TAKE ABS VAL OF ATTR
     # ALSO MIGHT NORMALIZE FOR THE SIZE OF THE BBOX
-    eval_totals = torch.tensor(0.0)
+    eval_totals = torch.tensor(0.0).to(device)
     plaus_num_nan = 0
     
     targets_ = targets
@@ -134,48 +145,52 @@ def eval_plausibility(imgs, targets, attr_tensor, device, debug=False):
     #     except:
     #         targets_[il] = torch.tensor([[]])
     # targets_ = [[targets[i] for i in range(len(targets)) if int(targets[i][0]) == j] for j in range(len(imgs))]
+    ## attr_tensor[img_num][attr_num][img_num] 
+    # # first img_num if for attributions generated from that images targets
+    # # second img_num is for all images in batch, but we only care about the one that matches the first img_num
     eval_data_all_attr = []
     for i, im0 in enumerate(imgs):
         eval_individual_data = []
-        for i_attr in range(len(attr_tensor[i % len(attr_tensor)])):
-            if len(targets_[i]) == 0:
-                eval_individual_data.append([torch.tensor(0).to(device),]) 
-            else:
-                IoU_list = []
-                for j in range(len(targets_[i])):
-                    # t0 = time.time()
-                    if not targets_[i].numel() == 0:
-                        xyxy_pred = targets_[i][j][2:] # * torch.tensor([im0.shape[2], im0.shape[1], im0.shape[2], im0.shape[1]])
-                        xyxy_center = corners_coords(xyxy_pred) * torch.tensor([im0.shape[1], im0.shape[2], im0.shape[1], im0.shape[2]])
-                        c1, c2 = (int(xyxy_center[0]), int(xyxy_center[1])), (int(xyxy_center[2]), int(xyxy_center[3]))
-                        attr = normalize_tensor(torch.abs(attr_tensor[i % len(attr_tensor)][i_attr][i].clone().detach()))
-                        if torch.isnan(attr).any():
-                            attr = torch.nan_to_num(attr, nan=0.0)
-                        # if True:
-                        #     test_bbox = torch.zeros_like(im0)
-                        #     test_bbox[:, c1[1]:c2[1], c1[0]:c2[0]] = im0[:, c1[1]:c2[1], c1[0]:c2[0]]
-                        #     imshow(test_bbox, save_path='figs/test_bbox')
-                        #     imshow(im0, save_path='figs/im0')
-                        #     imshow(attr, save_path='figs/attr')
-                        IoU_num = (torch.sum(attr[:,c1[1]:c2[1], c1[0]:c2[0]]))
-                        IoU_denom = torch.sum(attr)
-                        IoU_ = (IoU_num / IoU_denom)
-                        if debug:
-                            iou_isnan = torch.isnan(IoU_)
-                            if iou_isnan:
-                                IoU = torch.tensor([0.0]).to(device)
-                                plaus_num_nan += 1
-                            else:
-                                IoU = IoU_
+        # for i_attr in range(len(attr_tensor[i % len(attr_tensor)])):
+        if len(targets_[i]) == 0:
+            eval_individual_data.append([torch.tensor(0).to(device),]) 
+        else:
+            IoU_list = []
+            for j in range(len(targets_[i])):
+                # t0 = time.time()
+                if not targets_[i].numel() == 0:
+                    xyxy_pred = targets_[i][j][2:] # * torch.tensor([im0.shape[2], im0.shape[1], im0.shape[2], im0.shape[1]])
+                    xyxy_center = corners_coords(xyxy_pred) * torch.tensor([im0.shape[1], im0.shape[2], im0.shape[1], im0.shape[2]])
+                    c1, c2 = (int(xyxy_center[0]), int(xyxy_center[1])), (int(xyxy_center[2]), int(xyxy_center[3]))
+                    attr = normalize_tensor(torch.abs(attr_tensor[i % len(attr_tensor)][j][i].clone().detach())) 
+                    # different attr was generated for each target, indexed by j (i_attr) ^^
+                    if torch.isnan(attr).any():
+                        attr = torch.nan_to_num(attr, nan=0.0)
+                    if debug:
+                        test_bbox = torch.zeros_like(im0)
+                        test_bbox[:, c1[1]:c2[1], c1[0]:c2[0]] = im0[:, c1[1]:c2[1], c1[0]:c2[0]]
+                        imshow(test_bbox, save_path='figs/test_bbox')
+                        imshow(im0, save_path='figs/im0')
+                        imshow(attr, save_path='figs/attr')
+                    IoU_num = (torch.sum(attr[:,c1[1]:c2[1], c1[0]:c2[0]]))
+                    IoU_denom = torch.sum(attr)
+                    IoU_ = (IoU_num / IoU_denom)
+                    if debug:
+                        iou_isnan = torch.isnan(IoU_)
+                        if iou_isnan:
+                            IoU = torch.tensor([0.0]).to(device)
+                            plaus_num_nan += 1
                         else:
                             IoU = IoU_
                     else:
-                        IoU = torch.tensor(0.0).to(device)
-                    IoU_list.append(IoU.clone().detach().cpu())
-                list_mean = torch.mean(torch.tensor(IoU_list))
-                # eval_totals += (list_mean / float(len(attr_tensor[i]))) if len(attr_tensor[i]) > 0 else 0.0 # must be changed to this if doing multiple individual class attribution maps
-                eval_totals += ((list_mean / float(len(attr_tensor[i % len(attr_tensor)]))) / float(len(imgs)))
-                eval_individual_data.append(IoU_list)
+                        IoU = IoU_
+                else:
+                    IoU = torch.tensor(0.0).to(device)
+                IoU_list.append(IoU.clone().detach())
+            list_mean = torch.mean(torch.tensor(IoU_list))
+            # eval_totals += (list_mean / float(len(attr_tensor[i]))) if len(attr_tensor[i]) > 0 else 0.0 # must be changed to this if doing multiple individual class attribution maps
+            eval_totals += ((list_mean / float(len(attr_tensor[i % len(attr_tensor)]))) / float(len(imgs)))
+            eval_individual_data.append(IoU_list)
         eval_data_all_attr.append(eval_individual_data)
     
     
