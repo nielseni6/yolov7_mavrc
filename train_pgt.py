@@ -492,6 +492,10 @@ def train(hyp, opt, device, tb_writer=None):
                         else:
                             imgs_clean = imgs
                         t0_attr = time.time()
+                        
+                        ## TO IMPROVE EFFICIENCY: Combine generate_vanilla_grad and eval_plausibility into one function
+                        ########################  and delete each attribution map after calculating plausibility for each label
+                        
                         # Add attribution maps
                         attribution_map = generate_vanilla_grad(model, imgs_clean, loss_func=loss_attr, 
                                                                 targets_list=labels_list, metric=opt.loss_metric, 
@@ -506,6 +510,7 @@ def train(hyp, opt, device, tb_writer=None):
                                                         debug=False)
                         del attribution_map # delete attribution to free up gpu space
                         del imgs_clean # delete imgs_clean to free up gpu space
+                        torch.cuda.empty_cache() # empty cache to after deleting tensors to remove from gpu memory 
                         
                         plaus_loss = (opt.pgt_lr * plaus_score)
                         # plaus_loss_np = plaus_loss.cpu().clone().detach().numpy()
