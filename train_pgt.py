@@ -533,7 +533,7 @@ def train(hyp, opt, device, tb_writer=None):
             scaler.scale(loss).backward()
             t3_pgt = time.time()
             
-            if (i % 15) == 0:
+            if (i % 25) == 0:
                 print(f'Plaus_eval total: {t2_pgt - t0_pgt}sec | Attribution: {t1_attr - t0_attr}s | backprop: {t3_pgt - t2_pgt}s')
             
             # Optimize
@@ -754,25 +754,25 @@ if __name__ == '__main__':
     opt.loss_attr = True 
     # opt.out_num_attrs = [0,1,2,] # unused if opt.loss_attr == True 
     opt.out_num_attrs = [1,] 
-    opt.n_max_attr_labels = 3 # currently breaks if above 3, further vram saving needed
-    opt.pgt_lr = 0.9 
+    opt.n_max_attr_labels = 2 # currently breaks if above 3, further vram saving needed
+    opt.pgt_lr = 0.0005 
     opt.pgt_lr_decay = 1.0 # float(7.0/9.0) # 0.75 
     opt.pgt_lr_decay_step = 300 
     opt.epochs = 300 
     opt.no_trace = True 
     opt.conf_thres = 0.50 
-    opt.batch_size = 32
+    opt.batch_size = 24
     # opt.batch_size = 2 
     opt.save_dir = str('runs/' + opt.name + '_lr' + str(opt.pgt_lr)) 
-    # opt.device = '4,5,6' 
-    opt.device = "0,1,2,3" 
+    opt.device = '4,5,6' 
+    # opt.device = "0,1,2,3" 
     # opt.device = "4,5,6,7" 
     
     # lambda03
     # source /home/nielseni6/envs/yolo/bin/activate
     # cd /home/nielseni6/PythonScripts/yolov7_mavrc
     # nohup python train_pgt.py > ./output_logs/gpu6_trpgt_coco_loss_lr2_5.log 2>&1 &
-    # nohup python -m torch.distributed.launch --nproc_per_node 4 --master_port 9527 train_pgt.py --sync-bn > ./output_logs/gpu0123_coco_pgtlr0_9.log 2>&1 &
+    # nohup python -m torch.distributed.launch --nproc_per_node 3 --master_port 9529 train_pgt.py --sync-bn > ./output_logs/gpu456_coco_pgtlr0_0005.log 2>&1 &
     # opt.quad = True # Helps for multiple gpu training 
     opt.dataset = 'coco' # 'real_world_drone'
     # opt.sync_bn = True

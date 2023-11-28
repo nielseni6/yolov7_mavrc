@@ -10,20 +10,24 @@ def generate_vanilla_grad(model, input_tensor, loss_func = None,
                           n_max_labels=3, norm=True, abs=True, grayscale=True, 
                           class_specific_attr = True, device='cpu'):    
     """
-    Computes the vanilla gradient of the input tensor with respect to the output of the given model.
+    Generate vanilla gradients for the given model and input tensor.
 
     Args:
-        model (torch.nn.Module): The model to compute the gradient with respect to.
-        input_tensor (torch.Tensor): The input tensor to compute the gradient for.
-        loss_func (callable, optional): The loss function to use. If None, the gradient is computed with respect to the output tensor.
-        targets (torch.Tensor, optional): The target tensor to use with the loss function. Defaults to None.
-        metric (callable, optional): The metric function to use with the loss function. Defaults to None.
-        out_num (int, optional): The index of the output tensor to compute the gradient with respect to. Defaults to 1.
-        norm (bool, optional): Whether to normalize the attribution map. Defaults to False.
+        model (nn.Module): The model to generate gradients for.
+        input_tensor (torch.Tensor): The input tensor for which gradients are computed.
+        loss_func (callable, optional): The loss function to compute gradients with respect to. Defaults to None.
+        targets_list (list, optional): The list of target tensors. Defaults to None.
+        metric (callable, optional): The metric function to evaluate the loss. Defaults to None.
+        out_num (int, optional): The index of the output tensor to compute gradients with respect to. Defaults to 1.
+        n_max_labels (int, optional): The maximum number of labels to consider. Defaults to 3.
+        norm (bool, optional): Whether to normalize the attribution map. Defaults to True.
+        abs (bool, optional): Whether to take the absolute values of gradients. Defaults to True.
+        grayscale (bool, optional): Whether to convert the attribution map to grayscale. Defaults to True.
+        class_specific_attr (bool, optional): Whether to compute class-specific attribution maps. Defaults to True.
         device (str, optional): The device to use for computation. Defaults to 'cpu'.
-    
+
     Returns:
-        torch.Tensor: The attribution map computed as the gradient of the input tensor with respect to the output tensor.
+        torch.Tensor: The generated vanilla gradients.
     """
     # Set model.train() at the beginning and revert back to original mode (model.eval() or model.train()) at the end
     train_mode = model.training
@@ -119,13 +123,8 @@ def generate_vanilla_grad(model, input_tensor, loss_func = None,
                 attribution_map = torch.sum(attribution_map, 1, keepdim=True)
             if abs:
                 attribution_map = torch.abs(attribution_map) # Take absolute values of gradients
-                # attribution_map = np.sum(gradients, axis=0) # Sum across color channels
             if norm:
-                # to improve accuracy, normalize outside of this look for all images in batch
-                attribution_map = normalize_batch(attribution_map) # Normalize attribution map
-                # imshow(attr, save_path='figs/attr')
-            # else:
-            #     attribution_map = gradients
+                attribution_map = normalize_batch(attribution_map) # Normalize attribution maps per image in batch
             attrs_img.append(attribution_map)
         if len(attrs_img) == 0:
             attrs_batch.append((torch.zeros_like(inpt).unsqueeze(0)).to(device))
