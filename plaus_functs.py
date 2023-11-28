@@ -6,8 +6,9 @@ import math
 import time
 
 def generate_vanilla_grad(model, input_tensor, loss_func = None, 
-                          targets=None, targets_list=None, metric=None, out_num = 1, 
-                          norm=False, class_specific_attr = True, device='cpu'):    
+                          targets_list=None, metric=None, out_num = 1, 
+                          n_max_labels=8, norm=True, abs=True, grayscale=True, 
+                          class_specific_attr = True, device='cpu'):    
     """
     Computes the vanilla gradient of the input tensor with respect to the output of the given model.
 
@@ -41,6 +42,8 @@ def generate_vanilla_grad(model, input_tensor, loss_func = None,
     
     n_attr_list, index_classes = [], []
     for i in range(len(input_tensor)):
+        if len(targets_list[i]) > n_max_labels:
+            targets_list[i] = targets_list[i][:n_max_labels]
         if targets_list[i].numel() != 0:
             # unique_classes = torch.unique(targets_list[i][:,1])
             class_numbers = targets_list[i][:,1]
@@ -108,12 +111,18 @@ def generate_vanilla_grad(model, input_tensor, loss_func = None,
                                                 # create_graph=True, # Create graph to allow for higher order derivatives but slows down computation significantly
                                                 )
 
-            attribution_map = gradients[0]#.detach()#.cpu().numpy() # Convert gradients to numpy array
+            # Convert gradients to numpy array and back to ensure full separation from graph
+            # attribution_map = torch.tensor(torch.sum(gradients[0], 1, keepdim=True).clone().detach().cpu().numpy())
+            attribution_map = gradients[0].clone().detach() # without converting to numpy
             
-            if norm:
+            if grayscale: # Convert to grayscale, saves vram and computation time for plaus_eval
+                attribution_map = torch.sum(attribution_map, 1, keepdim=True)
+            if abs:
                 attribution_map = torch.abs(attribution_map) # Take absolute values of gradients
                 # attribution_map = np.sum(gradients, axis=0) # Sum across color channels
-                attribution_map = normalize_tensor(attribution_map) # Normalize attribution map
+            if norm:
+                # to improve accuracy, normalize outside of this look for all images in batch
+                attribution_map = normalize_batch(attribution_map) # Normalize attribution map
                 # imshow(attr, save_path='figs/attr')
             # else:
             #     attribution_map = gradients
@@ -125,21 +134,7 @@ def generate_vanilla_grad(model, input_tensor, loss_func = None,
 
     # out_attr = torch.tensor(attribution_map).unsqueeze(0).to(device) if ((loss_func) or (not class_specific_attr)) else torch.stack(attrs_batch).to(device)
     # out_attr = [attrs_batch[0]] * len(input_tensor) if ((loss_func) or (not class_specific_attr)) else attrs_batch
-    if loss_func:
-        a_batch = []
-        for i_batch in range(len(input_tensor)):
-            n_label_attrs = n_attr_list[i_batch] if class_specific_attr else 1
-            attrs_img = []
-            for i_attr in range(n_label_attrs):
-                attribution_map = attrs_batch[0][i_attr]
-                attrs_img.append(attribution_map)
-            if len(attrs_img) == 0:
-                a_batch.append((torch.zeros_like(inpt).unsqueeze(0)).to(device))
-            else:
-                a_batch.append(torch.stack(attrs_img).to(device))
-        out_attr = a_batch
-    else:
-        out_attr = attrs_batch
+    out_attr = attrs_batch
     # Set model back to original mode
     if not train_mode:
         model.eval()
@@ -147,7 +142,7 @@ def generate_vanilla_grad(model, input_tensor, loss_func = None,
     return out_attr
 
 
-def eval_plausibility(imgs, targets, attr_tensor, device, debug=False):
+def eval_plausibility(imgs, targets, attr_tensor, n_max_labels, device='cpu', debug=False):
     """
     Evaluate the plausibility of an object detection prediction by computing the Intersection over Union (IoU) between
     the predicted bounding box and the ground truth bounding box.
@@ -170,12 +165,10 @@ def eval_plausibility(imgs, targets, attr_tensor, device, debug=False):
     plaus_num_nan = 0
     
     targets_ = targets
-    # for il in range(len(targets_)):
-    #     try:
-    #         targets_[il] = torch.stack(targets_[il])
-    #     except:
-    #         targets_[il] = torch.tensor([[]])
-    # targets_ = [[targets[i] for i in range(len(targets)) if int(targets[i][0]) == j] for j in range(len(imgs))]
+    for i in range(len(targets_)):
+        if len(targets_[i]) > n_max_labels:
+            targets_[i] = targets_[i][:n_max_labels]
+
     ## attr_tensor[img_num][attr_num][img_num] 
     # # first img_num if for attributions generated from that images targets
     # # second img_num is for all images in batch, but we only care about the one that matches the first img_num
@@ -193,7 +186,8 @@ def eval_plausibility(imgs, targets, attr_tensor, device, debug=False):
                     xyxy_pred = targets_[i][j][2:] # * torch.tensor([im0.shape[2], im0.shape[1], im0.shape[2], im0.shape[1]])
                     xyxy_center = corners_coords(xyxy_pred) * torch.tensor([im0.shape[1], im0.shape[2], im0.shape[1], im0.shape[2]])
                     c1, c2 = (int(xyxy_center[0]), int(xyxy_center[1])), (int(xyxy_center[2]), int(xyxy_center[3]))
-                    attr = normalize_tensor(torch.abs(attr_tensor[i % len(attr_tensor)][j][i % attr_tensor[i % len(attr_tensor)].shape[1]].clone().detach())) 
+                    # might be faster to normalize when generating attrs, but this will normalize across entire batch, causing plaus score discrepancy
+                    attr = attr_tensor[i % len(attr_tensor)][j][i].clone().detach()
                     # different attr was generated for each target, indexed by j (i_attr) ^^
                     if torch.isnan(attr).any():
                         attr = torch.nan_to_num(attr, nan=0.0)
@@ -225,3 +219,21 @@ def corners_coords(center_xywh):
     y = center_y - h/2
     return torch.tensor([x, y, x+w, y+h])
     
+def normalize_batch(x):
+    """
+    Normalize a batch of tensors along each channel.
+    
+    Args:
+        x (torch.Tensor): Input tensor of shape (batch_size, channels, height, width).
+        
+    Returns:
+        torch.Tensor: Normalized tensor of the same shape as the input.
+    """
+    mins = torch.zeros((x.shape[0], *(1,)*len(x.shape[1:])), device=x.device)
+    maxs = torch.zeros((x.shape[0], *(1,)*len(x.shape[1:])), device=x.device)
+    for i in range(x.shape[0]):
+        mins[i] = x[i].min()
+        maxs[i] = x[i].max()
+    x_ = (x - mins) / (maxs - mins)
+    
+    return x_

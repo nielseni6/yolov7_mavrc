@@ -471,6 +471,7 @@ def train(hyp, opt, device, tb_writer=None):
                 for out_num_attr in opt.out_num_attrs:
                     t0_pgt = time.time()
                     if not (opt.pgt_lr == 0):
+                        t0_img = time.time()
                         if opt.clean_plaus_eval:
                             ############ Load clean images for clean image labels ############
                             # to_tensor = torchvision.transforms.ToTensor()
@@ -492,14 +493,16 @@ def train(hyp, opt, device, tb_writer=None):
                         t0_attr = time.time()
                         # Add attribution maps
                         attribution_map = generate_vanilla_grad(model, imgs_clean, loss_func=loss_attr, 
-                                                                targets=labels, targets_list=labels_list, metric=opt.loss_metric, 
-                                                                out_num = out_num_attr, device=device) # mlc = max label class
+                                                                targets_list=labels_list, metric=opt.loss_metric, 
+                                                                out_num=out_num_attr, n_max_labels=opt.n_max_attr_labels, 
+                                                                norm=True, abs=True, device=device) # mlc = max label class
+                        # norm and abs should be true to get quality results
                         t1_attr = time.time()
 
                         # Calculate Plausibility IoU with attribution maps
-                        plaus_score = eval_plausibility(imgs_clean, labels_list, 
-                                                                       attribution_map, device=device, 
-                                                                       debug=False)
+                        plaus_score = eval_plausibility(imgs_clean, labels_list, attribution_map,
+                                                        n_max_labels=opt.n_max_attr_labels, device=device, 
+                                                        debug=False)
                         # ADD LR SCHEDULER
                         
                         plaus_loss = (opt.pgt_lr * plaus_score)
@@ -523,11 +526,11 @@ def train(hyp, opt, device, tb_writer=None):
             scaler.scale(loss).backward()
             t3_pgt = time.time()
             
-            if (i % 5) == 0:
+            if (i % 15) == 0:
             # if i == 0:
                 # print(f'Attribution generation took {t1_pgt - t0_pgt}s')
                 print(f'Plausibility eval took {t2_pgt - t0_pgt}s and backprop took {t3_pgt - t2_pgt}s')
-                print(f'Attribution alone took {t1_attr - t0_attr}s')
+                print(f'Attribution alone took {t1_attr - t0_attr}s and getting clean images took {t0_attr - t0_img}s')
             
             # Optimize
             if ni % accumulate == 0:
@@ -709,7 +712,7 @@ if __name__ == '__main__':
     parser.add_argument('--single-cls', action='store_true', help='train multi-class data as single-class')
     parser.add_argument('--adam', action='store_true', help='use torch.optim.Adam() optimizer')
     parser.add_argument('--sync-bn', action='store_true', help='use SyncBatchNorm, only available in DDP mode')
-    parser.add_argument('--local_rank', type=int, default=-1, help='DDP parameter, do not modify')
+    parser.add_argument('--local-rank', type=int, default=-1, help='DDP parameter, do not modify')
     parser.add_argument('--workers', type=int, default=8, help='maximum number of dataloader workers')
     parser.add_argument('--project', default='runs/pgt/train-pgt-yolov7', help='save to project/name')
     parser.add_argument('--entity', default=None, help='W&B entity')
@@ -731,6 +734,9 @@ if __name__ == '__main__':
     parser.add_argument('--agnostic-nms', action='store_true', help='class-agnostic NMS')
     parser.add_argument('--classes', nargs='+', type=int, help='filter by class: --class 0, or --class 0 2 3')
     parser.add_argument('--pgt-lr', type=float, default=0.5, help='learning rate for plausibility gradient')
+    parser.add_argument('--pgt-lr-decay', type=float, default=0.75, help='learning rate decay for plausibility gradient')
+    parser.add_argument('--pgt-lr-decay-step', type=int, default=100, help='learning rate decay step for plausibility gradient')
+    parser.add_argument('--n-max-attr-labels', type=int, default=8, help='maximum number of attribution maps generated for each image')
     # parser.add_argument('--out_num_attr', type=float, default=1, help='Default output for generating attribution maps')
     parser.add_argument('--out_num_attrs', nargs='+', type=int, default=[1,], help='Default output for generating attribution maps')
     parser.add_argument('--loss_attr', action='store_true', help='If true, use loss to generate attribution maps')
@@ -743,7 +749,8 @@ if __name__ == '__main__':
     opt.loss_attr = True 
     # opt.out_num_attrs = [0,1,2,] # unused if opt.loss_attr == True 
     opt.out_num_attrs = [1,] 
-    opt.pgt_lr = 2.5 
+    opt.n_max_attr_labels = 5
+    opt.pgt_lr = 0.9 
     opt.pgt_lr_decay = 1.0 # float(7.0/9.0) # 0.75 
     opt.pgt_lr_decay_step = 300 
     opt.epochs = 300 
