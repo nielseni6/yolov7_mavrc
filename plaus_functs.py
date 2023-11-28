@@ -7,7 +7,7 @@ import time
 
 def generate_vanilla_grad(model, input_tensor, loss_func = None, 
                           targets_list=None, metric=None, out_num = 1, 
-                          n_max_labels=8, norm=True, abs=True, grayscale=True, 
+                          n_max_labels=3, norm=True, abs=True, grayscale=True, 
                           class_specific_attr = True, device='cpu'):    
     """
     Computes the vanilla gradient of the input tensor with respect to the output of the given model.
