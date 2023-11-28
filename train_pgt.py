@@ -524,6 +524,8 @@ def train(hyp, opt, device, tb_writer=None):
                         # print(f'Plausibility eval and loss took {t1_pgt - t0_pgt} seconds')
                     else:
                         plaus_loss, plaus_score = torch.tensor([0.0]), torch.tensor([0.0])
+                        t0_attr = time.time()
+                        t1_attr = time.time()
                     
                     t2_pgt = time.time()
             model.zero_grad()
