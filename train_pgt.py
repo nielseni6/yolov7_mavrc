@@ -364,6 +364,7 @@ def train(hyp, opt, device, tb_writer=None):
         for i, (imgs, targets, paths, _) in pbar:  # batch -------------------------------------------------------------
             ni = i + nb * epoch  # number integrated batches (since train start)
             imgs = imgs.to(device, non_blocking=True).float() / 255.0  # uint8 to float32, 0-255 to 0.0-1.0
+            # targets = targets.to(device)
             
             if opt.dataset == 'real_world_drone':
                 path_labels, labels = [], []
@@ -750,14 +751,14 @@ if __name__ == '__main__':
     # opt.out_num_attrs = [0,1,2,] # unused if opt.loss_attr == True 
     opt.out_num_attrs = [1,] 
     opt.n_max_attr_labels = 5
-    opt.pgt_lr = 0.9 
+    opt.pgt_lr = 0.7 
     opt.pgt_lr_decay = 1.0 # float(7.0/9.0) # 0.75 
     opt.pgt_lr_decay_step = 300 
     opt.epochs = 300 
     opt.no_trace = True 
     opt.conf_thres = 0.50 
     # opt.batch_size = 16
-    opt.batch_size = 2 
+    opt.batch_size = 32 
     opt.save_dir = str('runs/' + opt.name + '_lr' + str(opt.pgt_lr)) 
     opt.device = '2' 
     # opt.device = "0,1,2,3" 
@@ -767,7 +768,7 @@ if __name__ == '__main__':
     # source /home/nielseni6/envs/yolo/bin/activate
     # cd /home/nielseni6/PythonScripts/yolov7_mavrc
     # nohup python train_pgt.py > ./output_logs/gpu6_trpgt_coco_loss_lr2_5.log 2>&1 &
-    # nohup python -m torch.distributed.launch --nproc_per_node 2 --master_port 9528 train_pgt.py --sync-bn > ./output_logs/gpu56_coco_pgtlr0_9.log 2>&1 &
+    # nohup python -m torch.distributed.launch --nproc_per_node 4 --master_port 9527 train_pgt.py --sync-bn > ./output_logs/gpu0123_coco_pgtlr0_7.log 2>&1 &
     # opt.quad = True # Helps for multiple gpu training 
     opt.dataset = 'coco' # 'real_world_drone'
     # opt.sync_bn = True
