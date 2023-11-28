@@ -504,7 +504,8 @@ def train(hyp, opt, device, tb_writer=None):
                         plaus_score = eval_plausibility(imgs_clean, labels_list, attribution_map,
                                                         n_max_labels=opt.n_max_attr_labels, device=device, 
                                                         debug=False)
-                        # ADD LR SCHEDULER
+                        del attribution_map # delete attribution to free up gpu space
+                        del imgs_clean # delete imgs_clean to free up gpu space
                         
                         plaus_loss = (opt.pgt_lr * plaus_score)
                         # plaus_loss_np = plaus_loss.cpu().clone().detach().numpy()
@@ -528,10 +529,7 @@ def train(hyp, opt, device, tb_writer=None):
             t3_pgt = time.time()
             
             if (i % 15) == 0:
-            # if i == 0:
-                # print(f'Attribution generation took {t1_pgt - t0_pgt}s')
-                print(f'Plausibility eval took {t2_pgt - t0_pgt}s and backprop took {t3_pgt - t2_pgt}s')
-                print(f'Attribution alone took {t1_attr - t0_attr}s and getting clean images took {t0_attr - t0_img}s')
+                print(f'Plaus_eval total: {t2_pgt - t0_pgt}sec | Attribution: {t1_attr - t0_attr}s | backprop: {t3_pgt - t2_pgt}s')
             
             # Optimize
             if ni % accumulate == 0:
@@ -751,18 +749,18 @@ if __name__ == '__main__':
     opt.loss_attr = True 
     # opt.out_num_attrs = [0,1,2,] # unused if opt.loss_attr == True 
     opt.out_num_attrs = [1,] 
-    opt.n_max_attr_labels = 5
+    opt.n_max_attr_labels = 2
     opt.pgt_lr = 0.9 
     opt.pgt_lr_decay = 1.0 # float(7.0/9.0) # 0.75 
     opt.pgt_lr_decay_step = 300 
     opt.epochs = 300 
     opt.no_trace = True 
     opt.conf_thres = 0.50 
-    opt.batch_size = 32
+    opt.batch_size = 24
     # opt.batch_size = 2 
     opt.save_dir = str('runs/' + opt.name + '_lr' + str(opt.pgt_lr)) 
-    # opt.device = '4' 
-    opt.device = "0,1,2,3" 
+    opt.device = '4,5,6' 
+    # opt.device = "0,1,2,3" 
     # opt.device = "4,5,6,7" 
     
     # lambda03
@@ -794,7 +792,7 @@ if __name__ == '__main__':
             opt.source = '/data/Koutsoubn8/ijcnn_v7data/Real_world_test/images' 
             opt.data = 'data/real_world.yaml' 
             opt.hyp = 'data/hyp.real_world.yaml' 
-        if ('lambda01' == host_name):
+        if ('lambda01' == host_name) or ('lambda05' == host_name):
             opt.source = '/data/nielseni6/ijcnn_v7data/Real_world_test/images' 
             opt.data = 'data/real_world_lambda01.yaml' 
             opt.hyp = 'data/hyp.real_world_lambda01.yaml' 
