@@ -498,16 +498,18 @@ def train(hyp, opt, device, tb_writer=None):
                         
                         # Add attribution maps
                         attribution_map = generate_vanilla_grad(model, imgs_clean, loss_func=loss_attr, 
-                                                                targets_list=labels_list, metric=opt.loss_metric, 
+                                                                targets_list=labels_list, targets=labels, metric=opt.loss_metric, 
                                                                 out_num=out_num_attr, n_max_labels=opt.n_max_attr_labels, 
-                                                                norm=True, abs=True, device=device) # mlc = max label class
+                                                                norm=True, abs=True, class_specific_attr=opt.class_specific_attr, 
+                                                                device=device) # mlc = max label class
                         # norm and abs should be true to get quality results
                         t1_attr = time.time()
 
                         # Calculate Plausibility IoU with attribution maps
                         plaus_score = eval_plausibility(imgs_clean, labels_list, attribution_map,
-                                                        n_max_labels=opt.n_max_attr_labels, device=device, 
-                                                        debug=False)
+                                                        n_max_labels=opt.n_max_attr_labels, 
+                                                        class_specific_attr=opt.class_specific_attr, 
+                                                        device=device, debug=False)
                         del attribution_map # delete attribution to free up gpu space
                         del imgs_clean # delete imgs_clean to free up gpu space
                         torch.cuda.empty_cache() # empty cache to after deleting tensors to remove from gpu memory 
@@ -748,15 +750,17 @@ if __name__ == '__main__':
     parser.add_argument('--out_num_attrs', nargs='+', type=int, default=[1,], help='Default output for generating attribution maps')
     parser.add_argument('--loss_attr', action='store_true', help='If true, use loss to generate attribution maps')
     parser.add_argument('--clean_plaus_eval', action='store_true', help='If true, calculate plausibility on clean, non-augmented images and labels')
+    parser.add_argument('--class_specific_attr', action='store_true', help='If true, calculate attribution maps for each class individually')
     ############################################################################
     opt = parser.parse_args() 
     print(opt) 
     
+    # opt.class_specific_attr = True
     # opt.sweep = True 
-    opt.loss_attr = True 
+    # opt.loss_attr = True 
     # opt.out_num_attrs = [0,1,2,] # unused if opt.loss_attr == True 
     opt.out_num_attrs = [1,] 
-    opt.n_max_attr_labels = 2 # currently breaks if above 3, further vram saving needed
+    opt.n_max_attr_labels = 5 # currently breaks if above 3, further vram saving needed
     opt.pgt_lr = 0.0005 
     opt.pgt_lr_decay = 1.0 # float(7.0/9.0) # 0.75 
     opt.pgt_lr_decay_step = 300 
@@ -764,7 +768,7 @@ if __name__ == '__main__':
     opt.no_trace = True 
     opt.conf_thres = 0.50 
     opt.batch_size = 24
-    # opt.batch_size = 2 
+    # opt.batch_size = 4 
     opt.save_dir = str('runs/' + opt.name + '_lr' + str(opt.pgt_lr)) 
     opt.device = '4,5,6' 
     # opt.device = "0,1,2,3" 

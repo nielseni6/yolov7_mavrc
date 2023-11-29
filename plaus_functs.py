@@ -6,7 +6,7 @@ import math
 import time
 
 def generate_vanilla_grad(model, input_tensor, loss_func = None, 
-                          targets_list=None, metric=None, out_num = 1, 
+                          targets_list=None, targets=None, metric=None, out_num = 1, 
                           n_max_labels=3, norm=True, abs=True, grayscale=True, 
                           class_specific_attr = True, device='cpu'):    
     """
@@ -60,28 +60,29 @@ def generate_vanilla_grad(model, input_tensor, loss_func = None,
             index_classes.append([0, 1, 2, 3, 4])
             n_attr_list.append(0)
     
-    targets_list_filled = [targ.clone().detach() for targ in targets_list]
-    labels_len = [len(targets_list[ih]) for ih in range(len(targets_list))]
-    max_labels = np.max(labels_len)
-    max_index = np.argmax(labels_len)
-    for i in range(len(targets_list)):
-        # targets_list_filled[i] = targets_list[i]
-        if len(targets_list_filled[i]) < max_labels:
-            tlist = [targets_list_filled[i]] * math.ceil(max_labels / len(targets_list_filled[i]))
-            targets_list_filled[i] = torch.cat(tlist)[:max_labels].unsqueeze(0)
-        else:
-            targets_list_filled[i] = targets_list_filled[i].unsqueeze(0)
-    for i in range(len(targets_list_filled)-1,-1,-1):
-        if targets_list_filled[i].numel() == 0:
-            targets_list_filled.pop(i)
-    targets_list_filled = torch.cat(targets_list_filled)
+    if class_specific_attr:
+        targets_list_filled = [targ.clone().detach() for targ in targets_list]
+        labels_len = [len(targets_list[ih]) for ih in range(len(targets_list))]
+        max_labels = np.max(labels_len)
+        max_index = np.argmax(labels_len)
+        for i in range(len(targets_list)):
+            # targets_list_filled[i] = targets_list[i]
+            if len(targets_list_filled[i]) < max_labels:
+                tlist = [targets_list_filled[i]] * math.ceil(max_labels / len(targets_list_filled[i]))
+                targets_list_filled[i] = torch.cat(tlist)[:max_labels].unsqueeze(0)
+            else:
+                targets_list_filled[i] = targets_list_filled[i].unsqueeze(0)
+        for i in range(len(targets_list_filled)-1,-1,-1):
+            if targets_list_filled[i].numel() == 0:
+                targets_list_filled.pop(i)
+        targets_list_filled = torch.cat(targets_list_filled)
     
     n_img_attrs = len(input_tensor) if class_specific_attr else 1
     n_img_attrs = 1 if loss_func else n_img_attrs
     
     attrs_batch = []
     for i_batch in range(n_img_attrs):
-        if loss_func:
+        if loss_func and class_specific_attr:
             i_batch = max_index
         # inpt = input_tensor[i_batch].unsqueeze(0)
         # ##################################################################
@@ -89,7 +90,7 @@ def generate_vanilla_grad(model, input_tensor, loss_func = None,
         # train_out = model(inpt)  # training outputs (no inference outputs in train mode)
         # ##################################################################
         n_label_attrs = n_attr_list[i_batch] if class_specific_attr else 1
-        # n_label_attrs = 1 if loss_func else n_label_attrs
+        n_label_attrs = 1 if not class_specific_attr else n_label_attrs
         attrs_img = []
         for i_attr in range(n_label_attrs):
             if loss_func is None:
@@ -101,7 +102,10 @@ def generate_vanilla_grad(model, input_tensor, loss_func = None,
                 # if class_specific_attr:
                 #     targets = targets_list[:][i_attr]
                 n_targets = len(targets_list[i_batch])
-                target_indiv = targets_list_filled[:,i_attr] # batch image input
+                if class_specific_attr:
+                    target_indiv = targets_list_filled[:,i_attr] # batch image input
+                else:
+                    target_indiv = targets
                 # target_indiv = targets_list[i_batch][i_attr].unsqueeze(0) # single image input
                 # target_indiv[:,0] = 0 # this indicates the batch index of the target, should be 0 since we are only doing one image at a time
                 loss, loss_items = loss_func(train_out, target_indiv, inpt, metric=metric)  # loss scaled by batch_size
@@ -141,7 +145,7 @@ def generate_vanilla_grad(model, input_tensor, loss_func = None,
     return out_attr
 
 
-def eval_plausibility(imgs, targets, attr_tensor, n_max_labels, device='cpu', debug=False):
+def eval_plausibility(imgs, targets, attr_tensor, n_max_labels=3, class_specific_attr = True, device='cpu', debug=False):
     """
     Evaluate the plausibility of an object detection prediction by computing the Intersection over Union (IoU) between
     the predicted bounding box and the ground truth bounding box.
@@ -161,17 +165,18 @@ def eval_plausibility(imgs, targets, attr_tensor, n_max_labels, device='cpu', de
     # MIGHT NEED TO NORMALIZE OR TAKE ABS VAL OF ATTR
     # ALSO MIGHT NORMALIZE FOR THE SIZE OF THE BBOX
     eval_totals = torch.tensor(0.0).to(device)
-    plaus_num_nan = 0
+    # plaus_num_nan = 0
     
     targets_ = targets
-    for i in range(len(targets_)):
-        if len(targets_[i]) > n_max_labels:
-            targets_[i] = targets_[i][:n_max_labels]
+    if class_specific_attr:
+        for i in range(len(targets_)):
+            if len(targets_[i]) > n_max_labels:
+                targets_[i] = targets_[i][:n_max_labels]
 
     ## attr_tensor[img_num][attr_num][img_num] 
     # # first img_num if for attributions generated from that images targets
     # # second img_num is for all images in batch, but we only care about the one that matches the first img_num
-    eval_data_all_attr = []
+    eval_data_all_attr = [] 
     for i, im0 in enumerate(imgs):
         eval_individual_data = []
         # for i_attr in range(len(attr_tensor[i % len(attr_tensor)])):
@@ -179,34 +184,53 @@ def eval_plausibility(imgs, targets, attr_tensor, n_max_labels, device='cpu', de
             eval_individual_data.append([torch.tensor(0).to(device),]) 
         else:
             IoU_list = []
-            for j in range(len(targets_[i])):
-                # t0 = time.time()
-                if not targets_[i].numel() == 0:
+            coords = []
+            attr = attr_tensor[i % len(attr_tensor)][0][i].clone().detach() # used if class_specific_attr = False
+            if not targets_[i].numel() == 0:
+                for j in range(len(targets_[i])):
+                    # t0 = time.time()
                     xyxy_pred = targets_[i][j][2:] # * torch.tensor([im0.shape[2], im0.shape[1], im0.shape[2], im0.shape[1]])
                     xyxy_center = corners_coords(xyxy_pred) * torch.tensor([im0.shape[1], im0.shape[2], im0.shape[1], im0.shape[2]])
                     c1, c2 = (int(xyxy_center[0]), int(xyxy_center[1])), (int(xyxy_center[2]), int(xyxy_center[3]))
+                    coords.append([c1, c2])
+                
+                coords_map = torch.zeros_like(attr)
+                for j, (c1, c2) in enumerate(coords):
                     # might be faster to normalize when generating attrs, but this will normalize across entire batch, causing plaus score discrepancy
-                    attr = attr_tensor[i % len(attr_tensor)][j][i].clone().detach()
+                    if class_specific_attr:
+                        attr = attr_tensor[i % len(attr_tensor)][j][i].clone().detach()
+                        coords_map = torch.zeros_like(attr)
+                    coords_map[:,c1[1]:c2[1], c1[0]:c2[0]] = 1.0
                     # different attr was generated for each target, indexed by j (i_attr) ^^
                     if torch.isnan(attr).any():
                         attr = torch.nan_to_num(attr, nan=0.0)
-                    if debug:
-                        test_bbox = torch.zeros_like(im0)
-                        test_bbox[:, c1[1]:c2[1], c1[0]:c2[0]] = im0[:, c1[1]:c2[1], c1[0]:c2[0]]
-                        imshow(test_bbox, save_path='figs/test_bbox')
-                        imshow(im0, save_path='figs/im0')
-                        imshow(attr, save_path='figs/attr')
-                    IoU_num = (torch.sum(attr[:,c1[1]:c2[1], c1[0]:c2[0]]))
-                    IoU_denom = torch.sum(attr)
-                    IoU_ = (IoU_num / IoU_denom)
-                    IoU = IoU_
-                else:
-                    IoU = torch.tensor(0.0).to(device)
+                    if class_specific_attr or (j==len(coords)-1):
+                        coords_map = coords_map.to(bool)
+                        if debug:
+                            coords_map3ch = torch.cat([coords_map, coords_map, coords_map], dim=0)
+                            test_bbox = torch.zeros_like(im0)
+                            test_bbox[coords_map3ch] = im0[coords_map3ch]
+                            imshow(test_bbox, save_path='figs/test_bbox')
+                            imshow(im0, save_path='figs/im0')
+                            imshow(attr, save_path='figs/attr')
+                        IoU_num = (torch.sum(attr[coords_map]))
+                        IoU_denom = torch.sum(attr)
+                        IoU_ = (IoU_num / IoU_denom)
+                        IoU = IoU_
+                        IoU_list.append(IoU.clone().detach())
+            else:
+                IoU = torch.tensor(0.0).to(device)
                 IoU_list.append(IoU.clone().detach())
-            list_mean = torch.mean(torch.tensor(IoU_list))
+            IoU_tensor = torch.tensor(IoU_list)
+            # if not class_specific_attr:
+            #     # for c1, c2 in coords:
+            #     #     # find overlap and subtract from IoU_tensor
+            #     IoU_denom = torch.sum(attr)
+            #     IoU_tensor /= IoU_denom
+            list_mean = torch.mean(IoU_tensor)
             # eval_totals += (list_mean / float(len(attr_tensor[i]))) if len(attr_tensor[i]) > 0 else 0.0 # must be changed to this if doing multiple individual class attribution maps
             eval_totals += ((list_mean / float(len(targets_[i]))) / float(len(imgs)))
-            eval_individual_data.append(IoU_list)
+            eval_individual_data.append(IoU_tensor)
         eval_data_all_attr.append(eval_individual_data)
     
     return eval_totals.clone().detach().requires_grad_(True)#, eval_data_all_attr
