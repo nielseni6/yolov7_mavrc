@@ -44,23 +44,23 @@ def generate_vanilla_grad(model, input_tensor, loss_func = None,
     # train_out[0] = torch.Size([4, 3, 160, 160, 7]) HxWx(#anchorx4) reg (location and scaling)
     # train_out[2] = torch.Size([4, 3, 40, 40, 7]) HxWx(#anchorx1) obj (objectness score or confidence)
     
-    n_attr_list, index_classes = [], []
-    for i in range(len(input_tensor)):
-        if len(targets_list[i]) > n_max_labels:
-            targets_list[i] = targets_list[i][:n_max_labels]
-        if targets_list[i].numel() != 0:
-            # unique_classes = torch.unique(targets_list[i][:,1])
-            class_numbers = targets_list[i][:,1]
-            index_classes.append([[0, 1, 2, 3, 4, int(uc)] for uc in class_numbers])
-            num_attrs = len(targets_list[i])
-            # index_classes.append([0, 1, 2, 3, 4] + [int(uc + 5) for uc in unique_classes])
-            # num_attrs = 1 #len(unique_classes)# if loss_func else len(targets_list[i])
-            n_attr_list.append(num_attrs)
-        else:
-            index_classes.append([0, 1, 2, 3, 4])
-            n_attr_list.append(0)
-    
     if class_specific_attr:
+        n_attr_list, index_classes = [], []
+        for i in range(len(input_tensor)):
+            if len(targets_list[i]) > n_max_labels:
+                targets_list[i] = targets_list[i][:n_max_labels]
+            if targets_list[i].numel() != 0:
+                # unique_classes = torch.unique(targets_list[i][:,1])
+                class_numbers = targets_list[i][:,1]
+                index_classes.append([[0, 1, 2, 3, 4, int(uc)] for uc in class_numbers])
+                num_attrs = len(targets_list[i])
+                # index_classes.append([0, 1, 2, 3, 4] + [int(uc + 5) for uc in unique_classes])
+                # num_attrs = 1 #len(unique_classes)# if loss_func else len(targets_list[i])
+                n_attr_list.append(num_attrs)
+            else:
+                index_classes.append([0, 1, 2, 3, 4])
+                n_attr_list.append(0)
+    
         targets_list_filled = [targ.clone().detach() for targ in targets_list]
         labels_len = [len(targets_list[ih]) for ih in range(len(targets_list))]
         max_labels = np.max(labels_len)
