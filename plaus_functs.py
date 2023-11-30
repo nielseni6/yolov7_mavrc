@@ -229,7 +229,10 @@ def eval_plausibility(imgs, targets, attr_tensor, n_max_labels=3, class_specific
             #     IoU_tensor /= IoU_denom
             list_mean = torch.mean(IoU_tensor)
             # eval_totals += (list_mean / float(len(attr_tensor[i]))) if len(attr_tensor[i]) > 0 else 0.0 # must be changed to this if doing multiple individual class attribution maps
-            eval_totals += ((list_mean / float(len(targets_[i]))) / float(len(imgs)))
+            if class_specific_attr:
+                eval_totals += (list_mean / float(len(targets_[i]))) / float(len(imgs))
+            else:
+                eval_totals += (list_mean / float(len(imgs)))
             eval_individual_data.append(IoU_tensor)
         eval_data_all_attr.append(eval_individual_data)
     
