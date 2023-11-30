@@ -568,8 +568,8 @@ def train(hyp, opt, device, tb_writer=None):
                                                   save_dir.glob('train*.jpg') if x.exists()]})
 
             # end batch ------------------------------------------------------------------------------------------------
-        plaus_loss_total_train /= float(len(pbar) * batch_size)
-        plaus_score_total_train /= float(len(pbar) * batch_size)
+        plaus_loss_total_train /= float(i * batch_size)
+        plaus_score_total_train /= float(i * batch_size)
         # end epoch ----------------------------------------------------------------------------------------------------
 
         # Scheduler
@@ -761,26 +761,26 @@ if __name__ == '__main__':
     # opt.sweep = True 
     # opt.loss_attr = True 
     # opt.out_num_attrs = [0,1,2,] # unused if opt.loss_attr == True 
-    opt.out_num_attrs = [0,] 
-    opt.n_max_attr_labels = 5 # only used if class_specific_attr == True
-    opt.pgt_lr = 0.7 
+    opt.out_num_attrs = [1,] 
+    opt.n_max_attr_labels = 50 # only used if class_specific_attr == True
+    opt.pgt_lr = 0.5 
     opt.pgt_lr_decay = 1.0 # float(7.0/9.0) # 0.75 
     opt.pgt_lr_decay_step = 300 
     opt.epochs = 300 
     opt.no_trace = True 
     opt.conf_thres = 0.50 
-    # opt.batch_size = 24
-    opt.batch_size = 16 
+    opt.batch_size = 32
+    # opt.batch_size = 12 
     opt.save_dir = str('runs/' + opt.name + '_lr' + str(opt.pgt_lr)) 
-    opt.device = '7' 
-    # opt.device = "0,1,2,3" 
+    # opt.device = '4,5,6' 
+    opt.device = "0,1,2,3" 
     # opt.device = "4,5,6,7" 
     
     # lambda03
     # source /home/nielseni6/envs/yolo/bin/activate
     # cd /home/nielseni6/PythonScripts/yolov7_mavrc
-    # nohup python train_pgt.py > ./output_logs/gpu7_trpgt_coco_lr0_7.log 2>&1 &
-    # nohup python -m torch.distributed.launch --nproc_per_node 3 --master_port 9529 train_pgt.py --sync-bn > ./output_logs/gpu456_coco_pgtlr0_5.log 2>&1 &
+    # nohup python train_pgt.py > ./output_logs/gpu6_trpgt_coco_loss_lr2_5.log 2>&1 &
+    # nohup python -m torch.distributed.launch --nproc_per_node 3 --master_port 9529 train_pgt.py --sync-bn > ./output_logs/gpu456_coco_pgtlr0_7.log 2>&1 &
     # opt.quad = True # Helps for multiple gpu training 
     opt.dataset = 'coco' # 'real_world_drone'
     # opt.sync_bn = True
