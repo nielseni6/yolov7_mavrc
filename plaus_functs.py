@@ -4,6 +4,7 @@ from plot_functs import *
 from plot_functs import normalize_tensor
 import math   
 import time
+import matplotlib.path as mplPath
 
 def generate_vanilla_grad(model, input_tensor, loss_func = None, 
                           targets_list=None, targets=None, metric=None, out_num = 1, 
@@ -101,7 +102,7 @@ def generate_vanilla_grad(model, input_tensor, loss_func = None,
             else:
                 # if class_specific_attr:
                 #     targets = targets_list[:][i_attr]
-                n_targets = len(targets_list[i_batch])
+                # n_targets = len(targets_list[i_batch])
                 if class_specific_attr:
                     target_indiv = targets_list_filled[:,i_attr] # batch image input
                 else:
@@ -145,7 +146,9 @@ def generate_vanilla_grad(model, input_tensor, loss_func = None,
     return out_attr
 
 
-def eval_plausibility(imgs, targets, attr_tensor, n_max_labels=3, class_specific_attr = True, device='cpu', debug=False):
+def eval_plausibility(imgs, targets, seg_targets, attr_tensor, 
+                      use_seg_labels, n_max_labels=3, class_specific_attr = True, 
+                      device='cpu', debug=False):
     """
     Evaluate the plausibility of an object detection prediction by computing the Intersection over Union (IoU) between
     the predicted bounding box and the ground truth bounding box.
@@ -184,7 +187,7 @@ def eval_plausibility(imgs, targets, attr_tensor, n_max_labels=3, class_specific
             eval_individual_data.append([torch.tensor(0).to(device),]) 
         else:
             IoU_list = []
-            coords = []
+            coords, seg_coords = [], []
             attr = attr_tensor[i % len(attr_tensor)][0][i].clone().detach() # used if class_specific_attr = False
             if not targets_[i].numel() == 0:
                 for j in range(len(targets_[i])):
@@ -193,6 +196,17 @@ def eval_plausibility(imgs, targets, attr_tensor, n_max_labels=3, class_specific
                     xyxy_center = corners_coords(xyxy_pred) * torch.tensor([im0.shape[1], im0.shape[2], im0.shape[1], im0.shape[2]])
                     c1, c2 = (int(xyxy_center[0]), int(xyxy_center[1])), (int(xyxy_center[2]), int(xyxy_center[3]))
                     coords.append([c1, c2])
+                    if use_seg_labels:
+                        channels, height, width = im0.shape
+                        seg = seg_targets[i][j][2:].clone().detach().cpu().numpy()
+                        poly = np.array(seg).reshape((int(len(seg)/2), 2)) * np.array([width, height])
+                        # bitmap = np.zeros(im0.shape)
+                        poly_path = mplPath.Path(poly)
+                        y, x = np.mgrid[:height, :width]
+                        inside = poly_path.contains_points(np.vstack((x.flatten(), y.flatten())).T)
+                        bitmap = torch.tensor(inside.reshape((1,width,height))).to(device)
+                        # bitmap[inside] = 1
+                        seg_coords.append(bitmap)
                 
                 coords_map = torch.zeros_like(attr)
                 for j, (c1, c2) in enumerate(coords):
@@ -200,7 +214,10 @@ def eval_plausibility(imgs, targets, attr_tensor, n_max_labels=3, class_specific
                     if class_specific_attr:
                         attr = attr_tensor[i % len(attr_tensor)][j][i].clone().detach()
                         coords_map = torch.zeros_like(attr)
-                    coords_map[:,c1[1]:c2[1], c1[0]:c2[0]] = 1.0
+                    if use_seg_labels:
+                        coords_map[seg_coords[j]] = 1.0
+                    else:
+                        coords_map[:,c1[1]:c2[1], c1[0]:c2[0]] = 1.0
                     # different attr was generated for each target, indexed by j (i_attr) ^^
                     if torch.isnan(attr).any():
                         attr = torch.nan_to_num(attr, nan=0.0)
@@ -216,7 +233,8 @@ def eval_plausibility(imgs, targets, attr_tensor, n_max_labels=3, class_specific
                         IoU_num = (torch.sum(attr[coords_map]))
                         IoU_denom = torch.sum(attr)
                         IoU_ = (IoU_num / IoU_denom)
-                        IoU = IoU_
+                        img_seg_percent = (torch.sum(coords_map) / coords_map.flatten().shape[0])
+                        IoU = IoU_ / img_seg_percent # weight each IoU by the percent of the image that is a target
                         IoU_list.append(IoU.clone().detach())
             else:
                 IoU = torch.tensor(0.0).to(device)

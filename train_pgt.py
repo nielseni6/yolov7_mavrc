@@ -379,23 +379,21 @@ def train(hyp, opt, device, tb_writer=None):
                 path_labels = [path.replace('images', 'labels').replace('.jpg', '.txt').replace('../', '') for path in paths]
                 if not opt.clean_plaus_eval:
                     ################ Below is for augmented image labels ################
-                    # labels = targets # **
                     labels_list = [[targets[i] for i in range(len(targets)) if int(targets[i][0]) == j] for j in range(len(imgs))] # **
                     for il in range(len(labels_list)):
                         try:
                             labels_list[il] = torch.stack(labels_list[il])
                         except:
                             labels_list[il] = torch.tensor([[]])
-                    # print(labels_list) # **
                 else:
                     ############### Below is for unaugmented image labels ###############
-                    labels_list = []
+                    labels_list, labels_list_seg = [], []
                     for il, path in enumerate(path_labels):
                         try:
                             lab_txt = np.loadtxt(str('/' + path), dtype=str, delimiter='\n')
                         except:
                             lab_txt = np.array([])
-                        lab_ = []
+                        lab_, lab_seg = [], []
                         try:
                             n_objs = len(lab_txt)
                         except:
@@ -405,7 +403,10 @@ def train(hyp, opt, device, tb_writer=None):
                         for i_boxes in range(n_objs):
                             label_list = lab_txt[i_boxes].split(' ')
                             label_floats = np.array(label_list, dtype=np.float32)
-                            # label_floats = np.array(labels_list[il], dtype=np.float32) # **
+                            # Segmentation labels #
+                            label_seg = torch.tensor(np.insert(label_floats, 0, il))
+                            lab_seg.append(label_seg.to(device))
+                            #######################
                             segx, segy = label_floats[1::2], label_floats[2::2]
                             xx, yy = (np.max(segx)+np.min(segx))/2, (np.max(segy)+np.min(segy))/2
                             xh, yw = (np.max(segx)-np.min(segx)), (np.max(segy)-np.min(segy))
@@ -417,6 +418,7 @@ def train(hyp, opt, device, tb_writer=None):
                         except:
                             label = torch.tensor([[]])
                         labels_list.append(label.to(device))
+                        labels_list_seg.append(lab_seg)
                     #####################################################################
                 try:
                     labels = torch.cat(labels_list, dim=0) # labels as single tensor
@@ -506,8 +508,8 @@ def train(hyp, opt, device, tb_writer=None):
                         t1_attr = time.time()
 
                         # Calculate Plausibility IoU with attribution maps
-                        plaus_score = eval_plausibility(imgs_clean, labels_list, attribution_map,
-                                                        n_max_labels=opt.n_max_attr_labels, 
+                        plaus_score = eval_plausibility(imgs_clean, labels_list, labels_list_seg, attribution_map,
+                                                        use_seg_labels=opt.seg_labels, n_max_labels=opt.n_max_attr_labels, 
                                                         class_specific_attr=opt.class_specific_attr, 
                                                         device=device, debug=False)
                         del attribution_map # delete attribution to free up gpu space
@@ -727,7 +729,7 @@ if __name__ == '__main__':
     parser.add_argument('--workers', type=int, default=8, help='maximum number of dataloader workers')
     parser.add_argument('--project', default='runs/pgt/train-pgt-yolov7', help='save to project/name')
     parser.add_argument('--entity', default=None, help='W&B entity')
-    parser.add_argument('--name', default='pgt', help='save to project/name')
+    parser.add_argument('--name', default=f'pgt{socket.gethostname()[-1]}_', help='save to project/name')
     parser.add_argument('--exist-ok', action='store_true', help='existing project/name ok, do not increment')
     parser.add_argument('--quad', action='store_true', help='quad dataloader')
     parser.add_argument('--linear-lr', action='store_true', help='linear LR')
@@ -753,13 +755,15 @@ if __name__ == '__main__':
     parser.add_argument('--loss_attr', action='store_true', help='If true, use loss to generate attribution maps')
     parser.add_argument('--clean_plaus_eval', action='store_true', help='If true, calculate plausibility on clean, non-augmented images and labels')
     parser.add_argument('--class_specific_attr', action='store_true', help='If true, calculate attribution maps for each class individually')
+    parser.add_argument('--seg_labels', action='store_true', help='If true, calculate plaus score with segmentation maps rather than bbox')
     ############################################################################
     opt = parser.parse_args() 
     print(opt) 
     
+    opt.seg_labels = True
     # opt.class_specific_attr = True
     # opt.sweep = True 
-    # opt.loss_attr = True 
+    opt.loss_attr = True 
     # opt.out_num_attrs = [0,1,2,] # unused if opt.loss_attr == True 
     opt.out_num_attrs = [1,] 
     opt.n_max_attr_labels = 50 # only used if class_specific_attr == True
@@ -769,18 +773,19 @@ if __name__ == '__main__':
     opt.epochs = 300 
     opt.no_trace = True 
     opt.conf_thres = 0.50 
-    opt.batch_size = 32
+    opt.batch_size = 16
     # opt.batch_size = 12 
     opt.save_dir = str('runs/' + opt.name + '_lr' + str(opt.pgt_lr)) 
-    # opt.device = '4,5,6' 
-    opt.device = "0,1,2,3" 
+    opt.device = '5' 
+    # opt.device = "0,1,2,3" 
     # opt.device = "4,5,6,7" 
+    # opt.weights = 'weights/yolov7.pt'
     
     # lambda03
     # source /home/nielseni6/envs/yolo/bin/activate
     # cd /home/nielseni6/PythonScripts/yolov7_mavrc
-    # nohup python train_pgt.py > ./output_logs/gpu6_trpgt_coco_loss_lr2_5.log 2>&1 &
-    # nohup python -m torch.distributed.launch --nproc_per_node 3 --master_port 9529 train_pgt.py --sync-bn > ./output_logs/gpu456_coco_pgtlr0_7.log 2>&1 &
+    # nohup python train_pgt.py > ./output_logs/gpu5_trpgt_coco_loss_newhyp_lr0.5.log 2>&1 &
+    # nohup python -m torch.distributed.launch --nproc_per_node 4 --master_port 9529 train_pgt.py --sync-bn > ./output_logs/gpu3456_coco_pgtlr0_1.log 2>&1 &
     # opt.quad = True # Helps for multiple gpu training 
     opt.dataset = 'coco' # 'real_world_drone'
     # opt.sync_bn = True
@@ -811,11 +816,12 @@ if __name__ == '__main__':
             opt.hyp = 'data/hyp.real_world_lambda01.yaml' 
     if opt.dataset == 'coco':
         opt.source = "/data/nielseni6/coco/images"
-        opt.weights = ''
-        # opt.weights = 'weights/yolov7.pt'
-        opt.cfg = 'cfg/training/yolov7.yaml'
+        # opt.weights = ''
+        opt.weights = 'weights/yolov7.pt'
         opt.data = 'data/coco_lambda01.yaml'
-        opt.hyp = 'data/hyp.scratch.p5.yaml'
+        # opt.cfg = 'cfg/training/yolov7.yaml'
+        # opt.hyp = 'data/hyp.scratch.p5.yaml'
+        opt.hyp = 'data/hyp.pretrained.yolov7.yaml'
         opt.clean_plaus_eval = True
 
         
