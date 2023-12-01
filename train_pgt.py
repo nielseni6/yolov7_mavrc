@@ -519,7 +519,10 @@ def train(hyp, opt, device, tb_writer=None):
                         plaus_loss = (opt.pgt_lr * plaus_score)
                         # plaus_loss_np = plaus_loss.cpu().clone().detach().numpy()
                         
-                        loss = loss - plaus_loss
+                        if opt.add_plaus_loss:
+                            loss = loss + plaus_loss
+                        else:
+                            loss = loss - plaus_loss
                         
                         ploss = (float(plaus_loss) / float(len(opt.out_num_attrs)))
                         pscore = (float(plaus_score) / float(len(opt.out_num_attrs)))
@@ -756,18 +759,20 @@ if __name__ == '__main__':
     parser.add_argument('--clean_plaus_eval', action='store_true', help='If true, calculate plausibility on clean, non-augmented images and labels')
     parser.add_argument('--class_specific_attr', action='store_true', help='If true, calculate attribution maps for each class individually')
     parser.add_argument('--seg_labels', action='store_true', help='If true, calculate plaus score with segmentation maps rather than bbox')
+    parser.add_argument('--add_plaus_loss', action='store_true', help='If true, add plausibility loss to total loss rather than subtracting')
     ############################################################################
     opt = parser.parse_args() 
     print(opt) 
     
     opt.seg_labels = True
+    # opt.add_plaus_loss = True
     # opt.class_specific_attr = True
     # opt.sweep = True 
     opt.loss_attr = True 
     # opt.out_num_attrs = [0,1,2,] # unused if opt.loss_attr == True 
     opt.out_num_attrs = [1,] 
     opt.n_max_attr_labels = 50 # only used if class_specific_attr == True
-    opt.pgt_lr = 0.5 
+    opt.pgt_lr = 0.9 
     opt.pgt_lr_decay = 1.0 # float(7.0/9.0) # 0.75 
     opt.pgt_lr_decay_step = 300 
     opt.epochs = 300 
@@ -784,8 +789,9 @@ if __name__ == '__main__':
     # lambda03
     # source /home/nielseni6/envs/yolo/bin/activate
     # cd /home/nielseni6/PythonScripts/yolov7_mavrc
-    # nohup python train_pgt.py > ./output_logs/gpu5_trpgt_coco_loss_newhyp_lr0.5.log 2>&1 &
-    # nohup python -m torch.distributed.launch --nproc_per_node 4 --master_port 9529 train_pgt.py --sync-bn > ./output_logs/gpu3456_coco_pgtlr0_1.log 2>&1 &
+    # nohup python train_pgt.py > ./output_logs/gpu6_trpgt_coco_loss_lr2_5.log 2>&1 &
+    # nohup python -m torch.distributed.launch --nproc_per_node 4 --master_port 9527 train_pgt.py --sync-bn > ./output_logs/gpu0123_coco_pgtlr0_7.log 2>&1 &
+    # nohup python -m torch.distributed.launch --nproc_per_node 3 --master_port 9529 train_pgt.py --sync-bn > ./output_logs/gpu456_coco_pgtlr0_9.log 2>&1 &
     # opt.quad = True # Helps for multiple gpu training 
     opt.dataset = 'coco' # 'real_world_drone'
     # opt.sync_bn = True
@@ -796,7 +802,7 @@ if __name__ == '__main__':
     print(f'Seed: {opt.seed}')
     
     opt.entity = os.popen('whoami').read().strip()
-    host_name = socket.gethostname()
+    opt.host_name = socket.gethostname()
     username = os.getenv('USER')
     os.environ["WANDB_ENTITY"] = username
     opt.username = username
@@ -806,11 +812,11 @@ if __name__ == '__main__':
     # opt.local_rank = -1 # os.environ["LOCAL_RANK"]
     
     if opt.dataset == 'real_world_drone':
-        if ('lambda02' == host_name) or ('lambda03' == host_name):    
+        if ('lambda02' == opt.host_name) or ('lambda03' == opt.host_name):    
             opt.source = '/data/Koutsoubn8/ijcnn_v7data/Real_world_test/images' 
             opt.data = 'data/real_world.yaml' 
             opt.hyp = 'data/hyp.real_world.yaml' 
-        if ('lambda01' == host_name) or ('lambda05' == host_name):
+        if ('lambda01' == opt.host_name) or ('lambda05' == opt.host_name):
             opt.source = '/data/nielseni6/ijcnn_v7data/Real_world_test/images' 
             opt.data = 'data/real_world_lambda01.yaml' 
             opt.hyp = 'data/hyp.real_world_lambda01.yaml' 
@@ -828,7 +834,7 @@ if __name__ == '__main__':
 
     opt.data = check_file(opt.data)  # check file 
     
-    # print(host_name, opt.entity)
+    # print(opt.host_name, opt.entity)
     
     # Set CUDA device
     os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID" 
