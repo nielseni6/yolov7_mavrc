@@ -22,17 +22,12 @@ degrees: 0.0  # image rotation (+/- deg)
 translate: 0.2  # image translation (+/- fraction)
 scale: 0.9  # image scale (+/- gain)
 shear: 0.0  # image shear (+/- deg)
-perspective: 0.005  # image perspective (+/- fraction), range 0-0.001
-flipud: 0.01  # image flip up-down (probability)
+perspective: 0.0  # image perspective (+/- fraction), range 0-0.001
+flipud: 0.0  # image flip up-down (probability)
 fliplr: 0.5  # image flip left-right (probability)
-mosaic: 0.5  # image mosaic (probability)
+mosaic: 1.0  # image mosaic (probability)
 mixup: 0.15  # image mixup (probability)
 copy_paste: 0.0  # image copy paste (probability)
-paste_in: 0.15  # image copy paste (probability), use 0 for faster training
+paste_in: 0.05  # image copy paste (probability), use 0 for faster training
 loss_ota: 1 # use ComputeLossOTA, use 0 for faster training
 
-
-# # Data
-# train: data/train.txt  # path to training data
-# val: data/val.txt  # path to validation data
-# test: data/test.txt  # path to test data

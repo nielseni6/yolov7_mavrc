@@ -5,6 +5,7 @@ from plot_functs import normalize_tensor
 import math   
 import time
 import matplotlib.path as mplPath
+from matplotlib.path import Path
 
 def generate_vanilla_grad(model, input_tensor, loss_func = None, 
                           targets_list=None, targets=None, metric=None, out_num = 1, 
@@ -163,9 +164,7 @@ def eval_plausibility(imgs, targets, seg_targets, attr_tensor,
     Returns:
         float: The total IoU score for all predicted bounding boxes.
     """
-    # if len(targets) == 0:
-    #     return 0
-    # MIGHT NEED TO NORMALIZE OR TAKE ABS VAL OF ATTR
+
     # ALSO MIGHT NORMALIZE FOR THE SIZE OF THE BBOX
     eval_totals = torch.tensor(0.0).to(device)
     # plaus_num_nan = 0
@@ -182,7 +181,6 @@ def eval_plausibility(imgs, targets, seg_targets, attr_tensor,
     eval_data_all_attr = [] 
     for i, im0 in enumerate(imgs):
         eval_individual_data = []
-        # for i_attr in range(len(attr_tensor[i % len(attr_tensor)])):
         if len(targets_[i]) == 0:
             eval_individual_data.append([torch.tensor(0).to(device),]) 
         else:
@@ -197,32 +195,29 @@ def eval_plausibility(imgs, targets, seg_targets, attr_tensor,
                     c1, c2 = (int(xyxy_center[0]), int(xyxy_center[1])), (int(xyxy_center[2]), int(xyxy_center[3]))
                     coords.append([c1, c2])
                     if use_seg_labels:
+                        # t0 = time.time()
                         channels, height, width = im0.shape
-                        seg = seg_targets[i][j][2:].clone().detach().cpu().numpy()
-                        poly = np.array(seg).reshape((int(len(seg)/2), 2)) * np.array([width, height])
-                        # bitmap = np.zeros(im0.shape)
-                        poly_path = mplPath.Path(poly)
-                        y, x = np.mgrid[:height, :width]
-                        inside = poly_path.contains_points(np.vstack((x.flatten(), y.flatten())).T)
-                        bitmap = torch.tensor(inside.reshape((1,width,height))).to(device)
-                        # bitmap[inside] = 1
+                        seg = seg_targets[i][j][2:].clone().detach().unsqueeze(0)
+                        poly = seg.view(-1, 2) * torch.tensor([width, height]).to(device)
+                        y, x = torch.meshgrid(torch.arange(height), torch.arange(width))
+                        bitmap = bitmap_for_polygon(poly, height, width)
                         seg_coords.append(bitmap)
+                        # t1 = time.time()
+                        # print(f'bitmap time: {t1-t0}')
                 
-                coords_map = torch.zeros_like(attr)
+                coords_map = torch.zeros_like(attr, dtype=torch.bool)
                 for j, (c1, c2) in enumerate(coords):
-                    # might be faster to normalize when generating attrs, but this will normalize across entire batch, causing plaus score discrepancy
                     if class_specific_attr:
                         attr = attr_tensor[i % len(attr_tensor)][j][i].clone().detach()
-                        coords_map = torch.zeros_like(attr)
+                        coords_map = torch.zeros_like(attr, dtype=torch.bool)
                     if use_seg_labels:
-                        coords_map[seg_coords[j]] = 1.0
+                        coords_map += seg_coords[j]
                     else:
-                        coords_map[:,c1[1]:c2[1], c1[0]:c2[0]] = 1.0
-                    # different attr was generated for each target, indexed by j (i_attr) ^^
+                        coords_map[:,c1[1]:c2[1], c1[0]:c2[0]] = True
                     if torch.isnan(attr).any():
                         attr = torch.nan_to_num(attr, nan=0.0)
                     if class_specific_attr or (j==len(coords)-1):
-                        coords_map = coords_map.to(bool)
+                        # coords_map = coords_map.to(bool)
                         if debug:
                             coords_map3ch = torch.cat([coords_map, coords_map, coords_map], dim=0)
                             test_bbox = torch.zeros_like(im0)
@@ -255,6 +250,26 @@ def eval_plausibility(imgs, targets, seg_targets, attr_tensor,
         eval_data_all_attr.append(eval_individual_data)
     
     return eval_totals.clone().detach().requires_grad_(True)#, eval_data_all_attr
+
+def point_in_polygon(poly, grid):
+    num_points = poly.shape[0]
+    j = num_points - 1
+    oddNodes = torch.zeros_like(grid[..., 0], dtype=torch.bool)
+    for i in range(num_points):
+        cond1 = (poly[i, 1] < grid[..., 1]) & (poly[j, 1] >= grid[..., 1])
+        cond2 = (poly[j, 1] < grid[..., 1]) & (poly[i, 1] >= grid[..., 1])
+        cond3 = (grid[..., 0] - poly[i, 0]) < (poly[j, 0] - poly[i, 0]) * (grid[..., 1] - poly[i, 1]) / (poly[j, 1] - poly[i, 1])
+        oddNodes = oddNodes ^ (cond1 | cond2) & cond3
+        j = i
+    return oddNodes
+
+def bitmap_for_polygon(poly, h, w):
+    y = torch.arange(h).to(poly.device).float()
+    x = torch.arange(w).to(poly.device).float()
+    grid_y, grid_x = torch.meshgrid(y, x)
+    grid = torch.stack((grid_x, grid_y), dim=-1)
+    bitmap = point_in_polygon(poly, grid)
+    return bitmap.unsqueeze(0)
 
 
 def corners_coords(center_xywh):

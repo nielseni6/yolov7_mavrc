@@ -762,7 +762,7 @@ if __name__ == '__main__':
     parser.add_argument('--add_plaus_loss', action='store_true', help='If true, add plausibility loss to total loss rather than subtracting')
     ############################################################################
     opt = parser.parse_args() 
-    print(opt) 
+     
     
     opt.seg_labels = True
     # opt.add_plaus_loss = True
@@ -781,7 +781,7 @@ if __name__ == '__main__':
     opt.batch_size = 16
     # opt.batch_size = 12 
     opt.save_dir = str('runs/' + opt.name + '_lr' + str(opt.pgt_lr)) 
-    opt.device = '5' 
+    opt.device = '6' 
     # opt.device = "0,1,2,3" 
     # opt.device = "4,5,6,7" 
     # opt.weights = 'weights/yolov7.pt'
@@ -789,7 +789,7 @@ if __name__ == '__main__':
     # lambda03
     # source /home/nielseni6/envs/yolo/bin/activate
     # cd /home/nielseni6/PythonScripts/yolov7_mavrc
-    # nohup python train_pgt.py > ./output_logs/gpu6_trpgt_coco_loss_lr2_5.log 2>&1 &
+    # nohup python train_pgt.py > ./output_logs/gpu7_trpgt_coco_loss_lr0_9.log 2>&1 &
     # nohup python -m torch.distributed.launch --nproc_per_node 4 --master_port 9527 train_pgt.py --sync-bn > ./output_logs/gpu0123_coco_pgtlr0_7.log 2>&1 &
     # nohup python -m torch.distributed.launch --nproc_per_node 3 --master_port 9529 train_pgt.py --sync-bn > ./output_logs/gpu456_coco_pgtlr0_9.log 2>&1 &
     # opt.quad = True # Helps for multiple gpu training 
@@ -854,7 +854,7 @@ if __name__ == '__main__':
     else:
         print("USING CIOU LOSS")
 
-    
+    print(opt)
     
     
     # Resume
