@@ -196,24 +196,22 @@ def eval_plausibility(imgs, targets, seg_targets, attr_tensor,
             seg_coords = torch.zeros(len(targets_[i]), 1, im0.shape[1], im0.shape[2], dtype=torch.bool, device=device)
             attr = attr_tensor[i % len(attr_tensor)][0][i].clone().detach() # used if class_specific_attr = False
             if not targets_[i].numel() == 0:
-
+                # t0 = time.time()
+                # this for loop is the current bottleneck, consider changing it to tensor operation rather than for loop
                 for j in range(len(targets_[i])):
                     # t0 = time.time()
                     if use_seg_labels:
-                        # t0 = time.time()
+                        # The two lines below are a relatively large bottleneck to fix
                         seg = seg_targets[i][j][2:].clone().detach().unsqueeze(0)
                         poly = seg.view(-1, 2) * torch.tensor([width, height], device=device)
-                        # y, x = torch.meshgrid(torch.arange(height), torch.arange(width))
-                        # bitmap = point_in_polygon_gpu(poly, grid)
                         seg_coords[j] = point_in_polygon_gpu(poly, grid) # bitmap
-                        # t1 = time.time()
-                        # print(f'bitmap time: {t1-t0}')
                     else:
                         xyxy_pred = targets_[i][j][2:] # * torch.tensor([im0.shape[2], im0.shape[1], im0.shape[2], im0.shape[1]])
                         xyxy_center = corners_coords(xyxy_pred) * torch.tensor([im0.shape[1], im0.shape[2], im0.shape[1], im0.shape[2]])
                         c1, c2 = (int(xyxy_center[0]), int(xyxy_center[1])), (int(xyxy_center[2]), int(xyxy_center[3]))
                         coords.append([c1, c2])
-                
+                # t1 = time.time()
+                # print(f'bitmap time: {t1-t0}')
                 coords_map = torch.zeros_like(attr, dtype=torch.bool)
                 if use_seg_labels:
                     coords_map = torch.sum(seg_coords, dim=0, dtype=bool)
@@ -226,7 +224,6 @@ def eval_plausibility(imgs, targets, seg_targets, attr_tensor,
                         coords_map[:,c1[1]:c2[1], c1[0]:c2[0]] = True
                     if torch.isnan(attr).any():
                         attr = torch.nan_to_num(attr, nan=0.0)
-                    # coords_map = coords_map.to(bool)
                     if debug:
                         coords_map3ch = torch.cat([coords_map, coords_map, coords_map], dim=0)
                         test_bbox = torch.zeros_like(im0)
@@ -240,17 +237,13 @@ def eval_plausibility(imgs, targets, seg_targets, attr_tensor,
                     img_seg_percent = (torch.sum(coords_map) / coords_map.flatten().shape[0])
                     IoU = IoU_ / img_seg_percent # weight each IoU by the percent of the image that is a target
                     IoU_list.append(IoU.clone().detach())
+                # t2 = time.time()
+                # print(f'IoU time: {t2-t1}')
             else:
                 IoU = torch.tensor(0.0).to(device)
                 IoU_list.append(IoU.clone().detach())
             IoU_tensor = torch.tensor(IoU_list)
-            # if not class_specific_attr:
-            #     # for c1, c2 in coords:
-            #     #     # find overlap and subtract from IoU_tensor
-            #     IoU_denom = torch.sum(attr)
-            #     IoU_tensor /= IoU_denom
             list_mean = torch.mean(IoU_tensor)
-            # eval_totals += (list_mean / float(len(attr_tensor[i]))) if len(attr_tensor[i]) > 0 else 0.0 # must be changed to this if doing multiple individual class attribution maps
             if class_specific_attr:
                 eval_totals += (list_mean / float(len(targets_[i]))) / float(len(imgs))
             else:
@@ -261,6 +254,7 @@ def eval_plausibility(imgs, targets, seg_targets, attr_tensor,
     return eval_totals.clone().detach().requires_grad_(True)#, eval_data_all_attr
 
 def point_in_polygon(poly, grid):
+    # t0 = time.time()
     num_points = poly.shape[0]
     j = num_points - 1
     oddNodes = torch.zeros_like(grid[..., 0], dtype=torch.bool)
@@ -270,26 +264,25 @@ def point_in_polygon(poly, grid):
         cond3 = (grid[..., 0] - poly[i, 0]) < (poly[j, 0] - poly[i, 0]) * (grid[..., 1] - poly[i, 1]) / (poly[j, 1] - poly[i, 1])
         oddNodes = oddNodes ^ (cond1 | cond2) & cond3
         j = i
+    # t1 = time.time()
+    # print(f'point in polygon time: {t1-t0}')
     return oddNodes
-
-    # grid0 = torch.stack([grid[..., 0] for i_ in range(len(i))])
-    # grid1 = torch.stack([grid[..., 1] for i_ in range(len(i))])
-
     
 def point_in_polygon_gpu(poly, grid):
     num_points = poly.shape[0]
     i = torch.arange(num_points)
     j = (i - 1) % num_points
     # Expand dimensions
+    # t0 = time.time()
     poly_expanded = poly.unsqueeze(-1).unsqueeze(-1).expand(-1, -1, grid.shape[0], grid.shape[0])
-
+    # t1 = time.time()
     cond1 = (poly_expanded[i, 1] < grid[..., 1]) & (poly_expanded[j, 1] >= grid[..., 1])
     cond2 = (poly_expanded[j, 1] < grid[..., 1]) & (poly_expanded[i, 1] >= grid[..., 1])
     cond3 = (grid[..., 0] - poly_expanded[i, 0]) < (poly_expanded[j, 0] - poly_expanded[i, 0]) * (grid[..., 1] - poly_expanded[i, 1]) / (poly_expanded[j, 1] - poly_expanded[i, 1])
-
+    # t2 = time.time()
     oddNodes = torch.zeros_like(grid[..., 0], dtype=torch.bool)
     cond = (cond1 | cond2) & cond3
-    
+    # t3 = time.time()
     # efficiently perform xor using gpu and avoiding cpu as much as possible
     c = []
     while len(cond) > 1: 
@@ -300,10 +293,11 @@ def point_in_polygon_gpu(poly, grid):
     for c_ in c:
         cond = torch.bitwise_xor(cond, c_)
     oddNodes = cond
-    
+    # t4 = time.time()
     # for c in cond:
     #     oddNodes = oddNodes ^ c
-    
+    # print(f'expand time: {t1-t0} | cond123 time: {t2-t1} | cond logic time: {t3-t2} |  bitwise xor time: {t4-t3}')
+    # print(f'point in polygon time gpu: {t4-t0}')
     # oddNodes = oddNodes ^ (cond1 | cond2) & cond3
     return oddNodes
 
