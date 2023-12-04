@@ -521,9 +521,9 @@ def train(hyp, opt, device, tb_writer=None):
                         # plaus_loss_np = plaus_loss.cpu().clone().detach().numpy()
                         
                         if opt.add_plaus_loss:
-                            loss = loss + plaus_loss
+                            loss = (loss * opt.loss_alpha) + plaus_loss
                         else:
-                            loss = loss - plaus_loss
+                            loss = (loss * opt.loss_alpha) - plaus_loss
                         
                         ploss = (float(plaus_loss) / float(len(opt.out_num_attrs))) / float(batch_size)
                         pscore = (float(plaus_score) / float(len(opt.out_num_attrs))) / float(batch_size)
@@ -767,7 +767,8 @@ if __name__ == '__main__':
      
     
     # opt.seg_labels = True
-    opt.add_plaus_loss = True
+    # opt.add_plaus_loss = True
+    opt.loss_alpha = 1.0
     # opt.class_specific_attr = True
     # opt.sweep = True 
     opt.seg_size_factor = 0.0 # max 1.0, min 0.0 (clean training), reduces weight/scale of segmentation maps that cover entire image
@@ -781,10 +782,10 @@ if __name__ == '__main__':
     opt.epochs = 300 
     opt.no_trace = True 
     opt.conf_thres = 0.50 
-    opt.batch_size = 8
+    opt.batch_size = 16
     # opt.batch_size = 12 
     opt.save_dir = str('runs/' + opt.name + '_lr' + str(opt.pgt_lr)) 
-    opt.device = '6' 
+    opt.device = '4,5' 
     # opt.device = "0,1,2,3" 
     # opt.device = "4,5,6,7" 
     # opt.weights = 'weights/yolov7.pt'
@@ -794,8 +795,8 @@ if __name__ == '__main__':
     # cd /home/nielseni6/PythonScripts/yolov7_mavrc
     # nohup python train_pgt.py > ./output_logs/gpu6_trpgt_coco_out2_lr0_9.log 2>&1 &
     # nohup python -m torch.distributed.launch --nproc_per_node 4 --master_port 9528 train_pgt.py --sync-bn > ./output_logs/gpu0123_coco_pgtlr0_7.log 2>&1 &
-    # nohup python -m torch.distributed.launch --nproc_per_node 3 --master_port 9529 train_pgt.py --sync-bn > ./output_logs/gpu456_coco_pgtlr0_9.log 2>&1 &
-    opt.quad = True # Helps for multiple gpu training 
+    # nohup python -m torch.distributed.launch --nproc_per_node 2 --master_port 9529 train_pgt.py --sync-bn > ./output_logs/gpu45_coco_pgtlossonly_lr0_9.log 2>&1 &
+    # opt.quad = True # Helps for multiple gpu training 
     opt.dataset = 'coco' # 'real_world_drone'
     # opt.sync_bn = True
     
@@ -825,14 +826,14 @@ if __name__ == '__main__':
             opt.hyp = 'data/hyp.real_world_lambda01.yaml' 
     if opt.dataset == 'coco':
         opt.source = "/data/nielseni6/coco/images"
-        ######### scratch #########
-        opt.weights = ''
-        opt.hyp = 'data/hyp.scratch.p5.yaml'
-        ###########################
-        # ######## pretrained #######
-        # opt.weights = 'weights/yolov7.pt'
-        # opt.hyp = 'data/hyp.pretrained.yolov7.yaml'
+        # ######### scratch #########
+        # opt.weights = ''
+        # opt.hyp = 'data/hyp.scratch.p5.yaml'
         # ###########################
+        ######## pretrained #######
+        opt.weights = 'weights/yolov7.pt'
+        opt.hyp = 'data/hyp.pretrained.yolov7.yaml'
+        ###########################
         opt.data = 'data/coco_lambda01.yaml'
         opt.cfg = 'cfg/training/yolov7.yaml'
         
