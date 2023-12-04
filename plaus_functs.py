@@ -186,7 +186,7 @@ def eval_plausibility(imgs, targets, seg_targets, attr_tensor,
     grid = torch.stack((grid_x, grid_y), dim=-1)
     
     eval_data_all_attr = [] 
-    for i, im0 in enumerate(imgs):
+    for i, im0 in enumerate(imgs): # improve efficiency do entire batch at once
         eval_individual_data = []
         if len(targets_[i]) == 0:
             eval_individual_data.append([torch.tensor(0).to(device),]) 
@@ -215,13 +215,13 @@ def eval_plausibility(imgs, targets, seg_targets, attr_tensor,
                 coords_map = torch.zeros_like(attr, dtype=torch.bool)
                 if use_seg_labels:
                     coords_map = torch.sum(seg_coords, dim=0, dtype=bool)
+                else:
+                    for c1, c2 in coords:
+                        coords_map[:,c1[1]:c2[1], c1[0]:c2[0]] = True
                 for j in range(len(attr_tensor)):
                     if class_specific_attr:
                         attr = attr_tensor[i % len(attr_tensor)][j][i].clone().detach()
                         coords_map = torch.zeros_like(attr, dtype=torch.bool)
-                    if not use_seg_labels:
-                        c1, c2 = coords[j]
-                        coords_map[:,c1[1]:c2[1], c1[0]:c2[0]] = True
                     if torch.isnan(attr).any():
                         attr = torch.nan_to_num(attr, nan=0.0)
                     if debug:
@@ -237,7 +237,7 @@ def eval_plausibility(imgs, targets, seg_targets, attr_tensor,
                     # weight each IoU by the percent of the image that is a target
                     img_seg_percent = (torch.sum(coords_map) / coords_map.flatten().shape[0])
                     # seg_size_factor = 1.0 has largest effect on IoU, 0.0 has no effect
-                    IoU = IoU_ * (1.0 - (img_seg_percent * seg_size_factor)) 
+                    IoU = IoU_ * (1.0 - (img_seg_percent * seg_size_factor)) if not math.isnan(IoU_) else 0.0
                     IoU_list.append(IoU.clone().detach())
                 # t2 = time.time()
                 # print(f'IoU time: {t2-t1}')

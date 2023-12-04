@@ -380,6 +380,7 @@ def train(hyp, opt, device, tb_writer=None):
                 if not opt.clean_plaus_eval:
                     ################ Below is for augmented image labels ################
                     labels_list = [[targets[i] for i in range(len(targets)) if int(targets[i][0]) == j] for j in range(len(imgs))] # **
+                    labels_list_seg = [[targets[i] for i in range(len(targets)) if int(targets[i][0]) == j] for j in range(len(imgs))] # **
                     for il in range(len(labels_list)):
                         try:
                             labels_list[il] = torch.stack(labels_list[il])
@@ -765,16 +766,16 @@ if __name__ == '__main__':
     opt = parser.parse_args() 
      
     
-    opt.seg_labels = True
+    # opt.seg_labels = True
     # opt.add_plaus_loss = True
     # opt.class_specific_attr = True
     # opt.sweep = True 
-    opt.seg_size_factor = 1.0 # max 1.0, min 0.0 (clean training), reduces weight/scale of segmentation maps that cover entire image
-    opt.loss_attr = True 
+    opt.seg_size_factor = 0.0 # max 1.0, min 0.0 (clean training), reduces weight/scale of segmentation maps that cover entire image
+    # opt.loss_attr = True 
     # opt.out_num_attrs = [0,1,2,] # unused if opt.loss_attr == True 
     opt.out_num_attrs = [1,] 
     opt.n_max_attr_labels = 50 # only used if class_specific_attr == True
-    opt.pgt_lr = 0.7 
+    opt.pgt_lr = 0.9 
     opt.pgt_lr_decay = 1.0 # float(7.0/9.0) # 0.75 
     opt.pgt_lr_decay_step = 300 
     opt.epochs = 300 
@@ -783,7 +784,7 @@ if __name__ == '__main__':
     opt.batch_size = 16
     # opt.batch_size = 12 
     opt.save_dir = str('runs/' + opt.name + '_lr' + str(opt.pgt_lr)) 
-    opt.device = '5' 
+    opt.device = '7' 
     # opt.device = "0,1,2,3" 
     # opt.device = "4,5,6,7" 
     # opt.weights = 'weights/yolov7.pt'
@@ -791,7 +792,7 @@ if __name__ == '__main__':
     # lambda03
     # source /home/nielseni6/envs/yolo/bin/activate
     # cd /home/nielseni6/PythonScripts/yolov7_mavrc
-    # nohup python train_pgt.py > ./output_logs/gpu7_trpgt_coco_loss_lr0_9.log 2>&1 &
+    # nohup python train_pgt.py > ./output_logs/gpu7_trpgt_coco_lr0_9.log 2>&1 &
     # nohup python -m torch.distributed.launch --nproc_per_node 4 --master_port 9528 train_pgt.py --sync-bn > ./output_logs/gpu0123_coco_pgtlr0_7.log 2>&1 &
     # nohup python -m torch.distributed.launch --nproc_per_node 3 --master_port 9529 train_pgt.py --sync-bn > ./output_logs/gpu456_coco_pgtlr0_9.log 2>&1 &
     # opt.quad = True # Helps for multiple gpu training 
@@ -824,18 +825,18 @@ if __name__ == '__main__':
             opt.hyp = 'data/hyp.real_world_lambda01.yaml' 
     if opt.dataset == 'coco':
         opt.source = "/data/nielseni6/coco/images"
-        ######### scratch #########
-        opt.weights = ''
-        opt.hyp = 'data/hyp.scratch.p5.yaml'
-        ###########################
-        # ######## pretrained #######
-        # opt.weights = 'weights/yolov7.pt'
-        # opt.hyp = 'data/hyp.pretrained.yolov7.yaml'
+        # ######### scratch #########
+        # opt.weights = ''
+        # opt.hyp = 'data/hyp.scratch.p5.yaml'
         # ###########################
+        ######## pretrained #######
+        opt.weights = 'weights/yolov7.pt'
+        opt.hyp = 'data/hyp.pretrained.yolov7.yaml'
+        ###########################
         opt.data = 'data/coco_lambda01.yaml'
         opt.cfg = 'cfg/training/yolov7.yaml'
         
-        opt.clean_plaus_eval = True
+        # opt.clean_plaus_eval = True
 
         
 
