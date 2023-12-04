@@ -364,7 +364,7 @@ def train(hyp, opt, device, tb_writer=None):
         for i, (imgs, targets, paths, _) in pbar:  # batch -------------------------------------------------------------
             ni = i + nb * epoch  # number integrated batches (since train start)
             imgs = imgs.to(device, non_blocking=True).float() / 255.0  # uint8 to float32, 0-255 to 0.0-1.0
-            # targets = targets.to(device)
+            targets = targets.to(device)
             
             if opt.dataset == 'real_world_drone':
                 path_labels, labels = [], []
@@ -507,7 +507,7 @@ def train(hyp, opt, device, tb_writer=None):
                                                                 device=device) # mlc = max label class
                         # norm and abs should be true to get quality results
                         t1_attr = time.time()
-
+                        
                         # Calculate Plausibility IoU with attribution maps
                         plaus_score = eval_plausibility(imgs_clean, labels_list, labels_list_seg, attribution_map,
                                                         use_seg_labels=opt.seg_labels, n_max_labels=opt.n_max_attr_labels, 
@@ -525,8 +525,8 @@ def train(hyp, opt, device, tb_writer=None):
                         else:
                             loss = loss - plaus_loss
                         
-                        ploss = (float(plaus_loss) / float(len(opt.out_num_attrs)))
-                        pscore = (float(plaus_score) / float(len(opt.out_num_attrs)))
+                        ploss = (float(plaus_loss) / float(len(opt.out_num_attrs))) / float(batch_size)
+                        pscore = (float(plaus_score) / float(len(opt.out_num_attrs))) / float(batch_size)
                         plaus_loss_total_train += ploss if not math.isnan(ploss) else 0.0
                         plaus_score_total_train += pscore if not math.isnan(pscore) else 0.0
                         # print(f'Plausibility eval and loss took {t1_pgt - t0_pgt} seconds')
@@ -574,8 +574,8 @@ def train(hyp, opt, device, tb_writer=None):
                                                   save_dir.glob('train*.jpg') if x.exists()]})
 
             # end batch ------------------------------------------------------------------------------------------------
-        plaus_loss_total_train /= float(i * batch_size)
-        plaus_score_total_train /= float(i * batch_size)
+        plaus_loss_total_train /= float(i)
+        plaus_score_total_train /= float(i)
         # end epoch ----------------------------------------------------------------------------------------------------
 
         # Scheduler
@@ -771,9 +771,9 @@ if __name__ == '__main__':
     # opt.class_specific_attr = True
     # opt.sweep = True 
     opt.seg_size_factor = 0.0 # max 1.0, min 0.0 (clean training), reduces weight/scale of segmentation maps that cover entire image
-    # opt.loss_attr = True 
+    opt.loss_attr = True 
     # opt.out_num_attrs = [0,1,2,] # unused if opt.loss_attr == True 
-    opt.out_num_attrs = [1,] 
+    opt.out_num_attrs = [2,] 
     opt.n_max_attr_labels = 50 # only used if class_specific_attr == True
     opt.pgt_lr = 0.9 
     opt.pgt_lr_decay = 1.0 # float(7.0/9.0) # 0.75 
@@ -781,10 +781,10 @@ if __name__ == '__main__':
     opt.epochs = 300 
     opt.no_trace = True 
     opt.conf_thres = 0.50 
-    opt.batch_size = 16
+    opt.batch_size = 8
     # opt.batch_size = 12 
     opt.save_dir = str('runs/' + opt.name + '_lr' + str(opt.pgt_lr)) 
-    opt.device = '7' 
+    opt.device = '6' 
     # opt.device = "0,1,2,3" 
     # opt.device = "4,5,6,7" 
     # opt.weights = 'weights/yolov7.pt'
@@ -792,10 +792,10 @@ if __name__ == '__main__':
     # lambda03
     # source /home/nielseni6/envs/yolo/bin/activate
     # cd /home/nielseni6/PythonScripts/yolov7_mavrc
-    # nohup python train_pgt.py > ./output_logs/gpu7_trpgt_coco_lr0_9.log 2>&1 &
+    # nohup python train_pgt.py > ./output_logs/gpu6_trpgt_coco_loss_lr0_9.log 2>&1 &
     # nohup python -m torch.distributed.launch --nproc_per_node 4 --master_port 9528 train_pgt.py --sync-bn > ./output_logs/gpu0123_coco_pgtlr0_7.log 2>&1 &
     # nohup python -m torch.distributed.launch --nproc_per_node 3 --master_port 9529 train_pgt.py --sync-bn > ./output_logs/gpu456_coco_pgtlr0_9.log 2>&1 &
-    # opt.quad = True # Helps for multiple gpu training 
+    opt.quad = True # Helps for multiple gpu training 
     opt.dataset = 'coco' # 'real_world_drone'
     # opt.sync_bn = True
     
@@ -825,14 +825,14 @@ if __name__ == '__main__':
             opt.hyp = 'data/hyp.real_world_lambda01.yaml' 
     if opt.dataset == 'coco':
         opt.source = "/data/nielseni6/coco/images"
-        # ######### scratch #########
-        # opt.weights = ''
-        # opt.hyp = 'data/hyp.scratch.p5.yaml'
-        # ###########################
-        ######## pretrained #######
-        opt.weights = 'weights/yolov7.pt'
-        opt.hyp = 'data/hyp.pretrained.yolov7.yaml'
+        ######### scratch #########
+        opt.weights = ''
+        opt.hyp = 'data/hyp.scratch.p5.yaml'
         ###########################
+        # ######## pretrained #######
+        # opt.weights = 'weights/yolov7.pt'
+        # opt.hyp = 'data/hyp.pretrained.yolov7.yaml'
+        # ###########################
         opt.data = 'data/coco_lambda01.yaml'
         opt.cfg = 'cfg/training/yolov7.yaml'
         

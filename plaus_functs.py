@@ -110,7 +110,16 @@ def generate_vanilla_grad(model, input_tensor, loss_func = None,
                     target_indiv = targets
                 # target_indiv = targets_list[i_batch][i_attr].unsqueeze(0) # single image input
                 # target_indiv[:,0] = 0 # this indicates the batch index of the target, should be 0 since we are only doing one image at a time
-                loss, loss_items = loss_func(train_out, target_indiv, inpt, metric=metric)  # loss scaled by batch_size
+                    
+                try:
+                    loss, loss_items = loss_func(train_out, target_indiv, inpt, metric=metric)  # loss scaled by batch_size
+                except:
+                    target_indiv = target_indiv.to(device)
+                    inpt = inpt.to(device)
+                    for tro in train_out:
+                        tro = tro.to(device)
+                    print("Error in loss function, trying again with device specified")
+                    loss, loss_items = loss_func(train_out, target_indiv, inpt, metric=metric)
                 grad_wrt = loss
                 grad_wrt_outputs = None
             
