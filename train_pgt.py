@@ -760,6 +760,7 @@ if __name__ == '__main__':
     parser.add_argument('--class_specific_attr', action='store_true', help='If true, calculate attribution maps for each class individually')
     parser.add_argument('--seg-labels', action='store_true', help='If true, calculate plaus score with segmentation maps rather than bbox')
     parser.add_argument('--add_plaus_loss', action='store_true', help='If true, add plausibility loss to total loss rather than subtracting')
+    parser.add_argument('--seg_size_factor', type=float, default=1.0, help='Factor to reduce weight of segmentation maps that cover entire image')
     ############################################################################
     opt = parser.parse_args() 
      
@@ -768,7 +769,7 @@ if __name__ == '__main__':
     # opt.add_plaus_loss = True
     # opt.class_specific_attr = True
     # opt.sweep = True 
-    opt.seg_size_factor = 2.0
+    opt.seg_size_factor = 1.0 # max 1.0, min 0.0 (clean training), reduces weight/scale of segmentation maps that cover entire image
     opt.loss_attr = True 
     # opt.out_num_attrs = [0,1,2,] # unused if opt.loss_attr == True 
     opt.out_num_attrs = [1,] 
@@ -782,8 +783,8 @@ if __name__ == '__main__':
     opt.batch_size = 16
     # opt.batch_size = 12 
     opt.save_dir = str('runs/' + opt.name + '_lr' + str(opt.pgt_lr)) 
-    # opt.device = '4,5' 
-    opt.device = "0,1,2,3" 
+    opt.device = '5' 
+    # opt.device = "0,1,2,3" 
     # opt.device = "4,5,6,7" 
     # opt.weights = 'weights/yolov7.pt'
     
