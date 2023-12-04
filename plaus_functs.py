@@ -178,6 +178,13 @@ def eval_plausibility(imgs, targets, seg_targets, attr_tensor,
     ## attr_tensor[img_num][attr_num][img_num] 
     # # first img_num if for attributions generated from that images targets
     # # second img_num is for all images in batch, but we only care about the one that matches the first img_num
+    
+    channels, height, width = imgs[0].shape
+    y = torch.arange(height).to(imgs[0].device).float()
+    x = torch.arange(width).to(imgs[0].device).float()
+    grid_y, grid_x = torch.meshgrid(y, x)
+    grid = torch.stack((grid_x, grid_y), dim=-1)
+    
     eval_data_all_attr = [] 
     for i, im0 in enumerate(imgs):
         eval_individual_data = []
@@ -185,52 +192,54 @@ def eval_plausibility(imgs, targets, seg_targets, attr_tensor,
             eval_individual_data.append([torch.tensor(0).to(device),]) 
         else:
             IoU_list = []
-            coords, seg_coords = [], []
+            coords = []
+            seg_coords = torch.zeros(len(targets_[i]), 1, im0.shape[1], im0.shape[2], dtype=torch.bool, device=device)
             attr = attr_tensor[i % len(attr_tensor)][0][i].clone().detach() # used if class_specific_attr = False
             if not targets_[i].numel() == 0:
+
                 for j in range(len(targets_[i])):
                     # t0 = time.time()
-                    xyxy_pred = targets_[i][j][2:] # * torch.tensor([im0.shape[2], im0.shape[1], im0.shape[2], im0.shape[1]])
-                    xyxy_center = corners_coords(xyxy_pred) * torch.tensor([im0.shape[1], im0.shape[2], im0.shape[1], im0.shape[2]])
-                    c1, c2 = (int(xyxy_center[0]), int(xyxy_center[1])), (int(xyxy_center[2]), int(xyxy_center[3]))
-                    coords.append([c1, c2])
                     if use_seg_labels:
                         # t0 = time.time()
-                        channels, height, width = im0.shape
                         seg = seg_targets[i][j][2:].clone().detach().unsqueeze(0)
-                        poly = seg.view(-1, 2) * torch.tensor([width, height]).to(device)
-                        y, x = torch.meshgrid(torch.arange(height), torch.arange(width))
-                        bitmap = bitmap_for_polygon(poly, height, width)
-                        seg_coords.append(bitmap)
+                        poly = seg.view(-1, 2) * torch.tensor([width, height], device=device)
+                        # y, x = torch.meshgrid(torch.arange(height), torch.arange(width))
+                        # bitmap = point_in_polygon_gpu(poly, grid)
+                        seg_coords[j] = point_in_polygon_gpu(poly, grid) # bitmap
                         # t1 = time.time()
                         # print(f'bitmap time: {t1-t0}')
+                    else:
+                        xyxy_pred = targets_[i][j][2:] # * torch.tensor([im0.shape[2], im0.shape[1], im0.shape[2], im0.shape[1]])
+                        xyxy_center = corners_coords(xyxy_pred) * torch.tensor([im0.shape[1], im0.shape[2], im0.shape[1], im0.shape[2]])
+                        c1, c2 = (int(xyxy_center[0]), int(xyxy_center[1])), (int(xyxy_center[2]), int(xyxy_center[3]))
+                        coords.append([c1, c2])
                 
                 coords_map = torch.zeros_like(attr, dtype=torch.bool)
-                for j, (c1, c2) in enumerate(coords):
+                if use_seg_labels:
+                    coords_map = torch.sum(seg_coords, dim=0, dtype=bool)
+                for j in range(len(attr_tensor)):
                     if class_specific_attr:
                         attr = attr_tensor[i % len(attr_tensor)][j][i].clone().detach()
                         coords_map = torch.zeros_like(attr, dtype=torch.bool)
-                    if use_seg_labels:
-                        coords_map += seg_coords[j]
-                    else:
+                    if not use_seg_labels:
+                        c1, c2 = coords[j]
                         coords_map[:,c1[1]:c2[1], c1[0]:c2[0]] = True
                     if torch.isnan(attr).any():
                         attr = torch.nan_to_num(attr, nan=0.0)
-                    if class_specific_attr or (j==len(coords)-1):
-                        # coords_map = coords_map.to(bool)
-                        if debug:
-                            coords_map3ch = torch.cat([coords_map, coords_map, coords_map], dim=0)
-                            test_bbox = torch.zeros_like(im0)
-                            test_bbox[coords_map3ch] = im0[coords_map3ch]
-                            imshow(test_bbox, save_path='figs/test_bbox')
-                            imshow(im0, save_path='figs/im0')
-                            imshow(attr, save_path='figs/attr')
-                        IoU_num = (torch.sum(attr[coords_map]))
-                        IoU_denom = torch.sum(attr)
-                        IoU_ = (IoU_num / IoU_denom)
-                        img_seg_percent = (torch.sum(coords_map) / coords_map.flatten().shape[0])
-                        IoU = IoU_ / img_seg_percent # weight each IoU by the percent of the image that is a target
-                        IoU_list.append(IoU.clone().detach())
+                    # coords_map = coords_map.to(bool)
+                    if debug:
+                        coords_map3ch = torch.cat([coords_map, coords_map, coords_map], dim=0)
+                        test_bbox = torch.zeros_like(im0)
+                        test_bbox[coords_map3ch] = im0[coords_map3ch]
+                        imshow(test_bbox, save_path='figs/test_bbox')
+                        imshow(im0, save_path='figs/im0')
+                        imshow(attr, save_path='figs/attr')
+                    IoU_num = (torch.sum(attr[coords_map]))
+                    IoU_denom = torch.sum(attr)
+                    IoU_ = (IoU_num / IoU_denom)
+                    img_seg_percent = (torch.sum(coords_map) / coords_map.flatten().shape[0])
+                    IoU = IoU_ / img_seg_percent # weight each IoU by the percent of the image that is a target
+                    IoU_list.append(IoU.clone().detach())
             else:
                 IoU = torch.tensor(0.0).to(device)
                 IoU_list.append(IoU.clone().detach())
@@ -262,6 +271,42 @@ def point_in_polygon(poly, grid):
         oddNodes = oddNodes ^ (cond1 | cond2) & cond3
         j = i
     return oddNodes
+
+    # grid0 = torch.stack([grid[..., 0] for i_ in range(len(i))])
+    # grid1 = torch.stack([grid[..., 1] for i_ in range(len(i))])
+
+    
+def point_in_polygon_gpu(poly, grid):
+    num_points = poly.shape[0]
+    i = torch.arange(num_points)
+    j = (i - 1) % num_points
+    # Expand dimensions
+    poly_expanded = poly.unsqueeze(-1).unsqueeze(-1).expand(-1, -1, grid.shape[0], grid.shape[0])
+
+    cond1 = (poly_expanded[i, 1] < grid[..., 1]) & (poly_expanded[j, 1] >= grid[..., 1])
+    cond2 = (poly_expanded[j, 1] < grid[..., 1]) & (poly_expanded[i, 1] >= grid[..., 1])
+    cond3 = (grid[..., 0] - poly_expanded[i, 0]) < (poly_expanded[j, 0] - poly_expanded[i, 0]) * (grid[..., 1] - poly_expanded[i, 1]) / (poly_expanded[j, 1] - poly_expanded[i, 1])
+
+    oddNodes = torch.zeros_like(grid[..., 0], dtype=torch.bool)
+    cond = (cond1 | cond2) & cond3
+    
+    # efficiently perform xor using gpu and avoiding cpu as much as possible
+    c = []
+    while len(cond) > 1: 
+        if len(cond) % 2 == 1: # odd number of elements
+            c.append(cond[-1])
+            cond = cond[:-1]
+        cond = torch.bitwise_xor(cond[:int(len(cond)/2)], cond[int(len(cond)/2):])
+    for c_ in c:
+        cond = torch.bitwise_xor(cond, c_)
+    oddNodes = cond
+    
+    # for c in cond:
+    #     oddNodes = oddNodes ^ c
+    
+    # oddNodes = oddNodes ^ (cond1 | cond2) & cond3
+    return oddNodes
+
 
 def bitmap_for_polygon(poly, h, w):
     y = torch.arange(h).to(poly.device).float()
