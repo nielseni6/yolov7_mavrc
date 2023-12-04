@@ -510,7 +510,7 @@ def train(hyp, opt, device, tb_writer=None):
                         # Calculate Plausibility IoU with attribution maps
                         plaus_score = eval_plausibility(imgs_clean, labels_list, labels_list_seg, attribution_map,
                                                         use_seg_labels=opt.seg_labels, n_max_labels=opt.n_max_attr_labels, 
-                                                        class_specific_attr=opt.class_specific_attr, 
+                                                        class_specific_attr=opt.class_specific_attr, seg_size_factor=opt.seg_size_factor,
                                                         device=device, debug=False)
                         del attribution_map # delete attribution to free up gpu space
                         del imgs_clean # delete imgs_clean to free up gpu space
@@ -758,7 +758,7 @@ if __name__ == '__main__':
     parser.add_argument('--loss_attr', action='store_true', help='If true, use loss to generate attribution maps')
     parser.add_argument('--clean_plaus_eval', action='store_true', help='If true, calculate plausibility on clean, non-augmented images and labels')
     parser.add_argument('--class_specific_attr', action='store_true', help='If true, calculate attribution maps for each class individually')
-    parser.add_argument('--seg_labels', action='store_true', help='If true, calculate plaus score with segmentation maps rather than bbox')
+    parser.add_argument('--seg-labels', action='store_true', help='If true, calculate plaus score with segmentation maps rather than bbox')
     parser.add_argument('--add_plaus_loss', action='store_true', help='If true, add plausibility loss to total loss rather than subtracting')
     ############################################################################
     opt = parser.parse_args() 
@@ -768,11 +768,12 @@ if __name__ == '__main__':
     # opt.add_plaus_loss = True
     # opt.class_specific_attr = True
     # opt.sweep = True 
+    opt.seg_size_factor = 2.0
     opt.loss_attr = True 
     # opt.out_num_attrs = [0,1,2,] # unused if opt.loss_attr == True 
     opt.out_num_attrs = [1,] 
     opt.n_max_attr_labels = 50 # only used if class_specific_attr == True
-    opt.pgt_lr = 0.9 
+    opt.pgt_lr = 0.7 
     opt.pgt_lr_decay = 1.0 # float(7.0/9.0) # 0.75 
     opt.pgt_lr_decay_step = 300 
     opt.epochs = 300 
@@ -781,8 +782,8 @@ if __name__ == '__main__':
     opt.batch_size = 16
     # opt.batch_size = 12 
     opt.save_dir = str('runs/' + opt.name + '_lr' + str(opt.pgt_lr)) 
-    opt.device = '5' 
-    # opt.device = "0,1,2,3" 
+    # opt.device = '4,5' 
+    opt.device = "0,1,2,3" 
     # opt.device = "4,5,6,7" 
     # opt.weights = 'weights/yolov7.pt'
     
@@ -790,7 +791,7 @@ if __name__ == '__main__':
     # source /home/nielseni6/envs/yolo/bin/activate
     # cd /home/nielseni6/PythonScripts/yolov7_mavrc
     # nohup python train_pgt.py > ./output_logs/gpu7_trpgt_coco_loss_lr0_9.log 2>&1 &
-    # nohup python -m torch.distributed.launch --nproc_per_node 4 --master_port 9527 train_pgt.py --sync-bn > ./output_logs/gpu0123_coco_pgtlr0_7.log 2>&1 &
+    # nohup python -m torch.distributed.launch --nproc_per_node 4 --master_port 9528 train_pgt.py --sync-bn > ./output_logs/gpu0123_coco_pgtlr0_7.log 2>&1 &
     # nohup python -m torch.distributed.launch --nproc_per_node 3 --master_port 9529 train_pgt.py --sync-bn > ./output_logs/gpu456_coco_pgtlr0_9.log 2>&1 &
     # opt.quad = True # Helps for multiple gpu training 
     opt.dataset = 'coco' # 'real_world_drone'
@@ -822,12 +823,17 @@ if __name__ == '__main__':
             opt.hyp = 'data/hyp.real_world_lambda01.yaml' 
     if opt.dataset == 'coco':
         opt.source = "/data/nielseni6/coco/images"
-        # opt.weights = ''
-        opt.weights = 'weights/yolov7.pt'
+        ######### scratch #########
+        opt.weights = ''
+        opt.hyp = 'data/hyp.scratch.p5.yaml'
+        ###########################
+        # ######## pretrained #######
+        # opt.weights = 'weights/yolov7.pt'
+        # opt.hyp = 'data/hyp.pretrained.yolov7.yaml'
+        # ###########################
         opt.data = 'data/coco_lambda01.yaml'
-        # opt.cfg = 'cfg/training/yolov7.yaml'
-        # opt.hyp = 'data/hyp.scratch.p5.yaml'
-        opt.hyp = 'data/hyp.pretrained.yolov7.yaml'
+        opt.cfg = 'cfg/training/yolov7.yaml'
+        
         opt.clean_plaus_eval = True
 
         

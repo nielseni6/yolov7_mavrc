@@ -149,7 +149,7 @@ def generate_vanilla_grad(model, input_tensor, loss_func = None,
 
 def eval_plausibility(imgs, targets, seg_targets, attr_tensor, 
                       use_seg_labels, n_max_labels=3, class_specific_attr = True, 
-                      device='cpu', debug=False):
+                      seg_size_factor = 1.0, device='cpu', debug=False):
     """
     Evaluate the plausibility of an object detection prediction by computing the Intersection over Union (IoU) between
     the predicted bounding box and the ground truth bounding box.
@@ -234,8 +234,10 @@ def eval_plausibility(imgs, targets, seg_targets, attr_tensor,
                     IoU_num = (torch.sum(attr[coords_map]))
                     IoU_denom = torch.sum(attr)
                     IoU_ = (IoU_num / IoU_denom)
+                    # weight each IoU by the percent of the image that is a target
                     img_seg_percent = (torch.sum(coords_map) / coords_map.flatten().shape[0])
-                    IoU = IoU_ / img_seg_percent # weight each IoU by the percent of the image that is a target
+                    # seg_size_factor = 1.0 has largest effect on IoU, 0.0 has no effect
+                    IoU = IoU_ * (1.0 - (img_seg_percent * seg_size_factor)) 
                     IoU_list.append(IoU.clone().detach())
                 # t2 = time.time()
                 # print(f'IoU time: {t2-t1}')
