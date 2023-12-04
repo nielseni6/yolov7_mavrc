@@ -507,7 +507,7 @@ def train(hyp, opt, device, tb_writer=None):
                                                                 device=device) # mlc = max label class
                         # norm and abs should be true to get quality results
                         t1_attr = time.time()
-                        
+
                         # Calculate Plausibility IoU with attribution maps
                         plaus_score = eval_plausibility(imgs_clean, labels_list, labels_list_seg, attribution_map,
                                                         use_seg_labels=opt.seg_labels, n_max_labels=opt.n_max_attr_labels, 
@@ -544,7 +544,7 @@ def train(hyp, opt, device, tb_writer=None):
             t3_pgt = time.time()
             
             if (i % 25) == 0:
-                print(f'Plaus_eval total: {t2_pgt - t0_pgt}sec | Attribution: {t1_attr - t0_attr}s | backprop: {t3_pgt - t2_pgt}s')
+                print(f'Plaus_eval total: {t2_pgt - t0_pgt}sec | Attribution: {t1_attr - t0_attr}s | backprop: {t3_pgt - t2_pgt}s | {opt.add_pl} plaus_loss')
             
             # Optimize
             if ni % accumulate == 0:
@@ -767,13 +767,13 @@ if __name__ == '__main__':
      
     
     # opt.seg_labels = True
-    # opt.add_plaus_loss = True
+    opt.add_plaus_loss = True
     # opt.class_specific_attr = True
     # opt.sweep = True 
     opt.seg_size_factor = 0.0 # max 1.0, min 0.0 (clean training), reduces weight/scale of segmentation maps that cover entire image
-    opt.loss_attr = True 
+    # opt.loss_attr = True 
     # opt.out_num_attrs = [0,1,2,] # unused if opt.loss_attr == True 
-    opt.out_num_attrs = [2,] 
+    opt.out_num_attrs = [1,] 
     opt.n_max_attr_labels = 50 # only used if class_specific_attr == True
     opt.pgt_lr = 0.9 
     opt.pgt_lr_decay = 1.0 # float(7.0/9.0) # 0.75 
@@ -792,7 +792,7 @@ if __name__ == '__main__':
     # lambda03
     # source /home/nielseni6/envs/yolo/bin/activate
     # cd /home/nielseni6/PythonScripts/yolov7_mavrc
-    # nohup python train_pgt.py > ./output_logs/gpu6_trpgt_coco_loss_lr0_9.log 2>&1 &
+    # nohup python train_pgt.py > ./output_logs/gpu6_trpgt_coco_out2_lr0_9.log 2>&1 &
     # nohup python -m torch.distributed.launch --nproc_per_node 4 --master_port 9528 train_pgt.py --sync-bn > ./output_logs/gpu0123_coco_pgtlr0_7.log 2>&1 &
     # nohup python -m torch.distributed.launch --nproc_per_node 3 --master_port 9529 train_pgt.py --sync-bn > ./output_logs/gpu456_coco_pgtlr0_9.log 2>&1 &
     opt.quad = True # Helps for multiple gpu training 
@@ -838,7 +838,10 @@ if __name__ == '__main__':
         
         # opt.clean_plaus_eval = True
 
-        
+    if opt.add_plaus_loss:
+        opt.add_pl = 'adding'
+    else:
+        opt.add_pl = 'subtracting'  
 
     opt.data = check_file(opt.data)  # check file 
     
