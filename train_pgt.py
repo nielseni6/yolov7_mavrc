@@ -366,27 +366,30 @@ def train(hyp, opt, device, tb_writer=None):
             imgs = imgs.to(device, non_blocking=True).float() / 255.0  # uint8 to float32, 0-255 to 0.0-1.0
             targets = targets.to(device)
             
+            if not opt.clean_plaus_eval: # Works for both datasets
+                ################ Below is for augmented image labels ################
+                labels_list = [[targets[i] for i in range(len(targets)) if int(targets[i][0]) == j] for j in range(len(imgs))] # **
+                labels_list_seg = [[targets[i] for i in range(len(targets)) if int(targets[i][0]) == j] for j in range(len(imgs))] # **
+                for il in range(len(labels_list)):
+                    try:
+                        labels_list[il] = torch.stack(labels_list[il])
+                    except:
+                        labels_list[il] = torch.tensor([[]])
+                            
             if opt.dataset == 'real_world_drone':
-                path_labels, labels = [], []
-                for il, path in enumerate(paths):
-                    path_ = str('/' + path.replace('images', 'labels').replace('.jpg', '.txt').replace('../', ''))
-                    lab_txt = np.loadtxt(path_, dtype=np.float32, delimiter='\s')
-                    label = torch.tensor(np.insert(lab_txt, 0, il))
-                    labels.append(label.to(device))
-                    path_labels.append(path_)
-                # labels = torch.stack(labels).to(device)
+                if opt.clean_plaus_eval:
+                    path_labels, labels_list = [], []
+                    for il, path in enumerate(paths):
+                        path_ = str('/' + path.replace('images', 'labels').replace('.jpg', '.txt').replace('../', ''))
+                        lab_txt = np.loadtxt(path_, dtype=np.float32, delimiter=' ')
+                        label = torch.tensor(np.insert(lab_txt, 0, il))
+                        labels_list.append(label.to(device))
+                        path_labels.append(path_)
+                    labels = torch.stack(labels_list).to(device)
+                    labels_list_seg = labels_list
             if opt.dataset == 'coco':
                 path_labels = [path.replace('images', 'labels').replace('.jpg', '.txt').replace('../', '') for path in paths]
-                if not opt.clean_plaus_eval:
-                    ################ Below is for augmented image labels ################
-                    labels_list = [[targets[i] for i in range(len(targets)) if int(targets[i][0]) == j] for j in range(len(imgs))] # **
-                    labels_list_seg = [[targets[i] for i in range(len(targets)) if int(targets[i][0]) == j] for j in range(len(imgs))] # **
-                    for il in range(len(labels_list)):
-                        try:
-                            labels_list[il] = torch.stack(labels_list[il])
-                        except:
-                            labels_list[il] = torch.tensor([[]])
-                else:
+                if opt.clean_plaus_eval:
                     ############### Below is for unaugmented image labels ###############
                     labels_list, labels_list_seg = [], []
                     for il, path in enumerate(path_labels):
@@ -421,11 +424,11 @@ def train(hyp, opt, device, tb_writer=None):
                         labels_list.append(label.to(device))
                         labels_list_seg.append(lab_seg)
                     #####################################################################
-                try:
-                    labels = torch.cat(labels_list, dim=0) # labels as single tensor
-                except:
-                    filtered_list = [tensor for tensor in labels_list if tensor.numel() > 0]
-                    labels = torch.cat(filtered_list, dim=0) # labels as single tensor
+            try:
+                labels = torch.cat(labels_list, dim=0) # labels as single tensor
+            except:
+                filtered_list = [tensor for tensor in labels_list if tensor.numel() > 0]
+                labels = torch.cat(filtered_list, dim=0) # labels as single tensor
 
                 
                 
@@ -513,17 +516,20 @@ def train(hyp, opt, device, tb_writer=None):
                                                         use_seg_labels=opt.seg_labels, n_max_labels=opt.n_max_attr_labels, 
                                                         class_specific_attr=opt.class_specific_attr, seg_size_factor=opt.seg_size_factor,
                                                         device=device, debug=False)
-                        del attribution_map # delete attribution to free up gpu space
-                        del imgs_clean # delete imgs_clean to free up gpu space
-                        torch.cuda.empty_cache() # empty cache to after deleting tensors to remove from gpu memory 
+                        # del attribution_map # delete attribution to free up gpu space
+                        # del imgs_clean # delete imgs_clean to free up gpu space
+                        # torch.cuda.empty_cache() # empty cache to after deleting tensors to remove from gpu memory 
                         
                         plaus_loss = (opt.pgt_lr * plaus_score)
                         # plaus_loss_np = plaus_loss.cpu().clone().detach().numpy()
                         
+                        if opt.loss_alpha != 1.0:
+                            loss = (loss * opt.loss_alpha)
+                        
                         if opt.add_plaus_loss:
-                            loss = (loss * opt.loss_alpha) + plaus_loss
+                            loss = loss + plaus_loss
                         else:
-                            loss = (loss * opt.loss_alpha) - plaus_loss
+                            loss = loss - plaus_loss
                         
                         ploss = (float(plaus_loss) / float(len(opt.out_num_attrs))) / float(batch_size)
                         pscore = (float(plaus_score) / float(len(opt.out_num_attrs))) / float(batch_size)
@@ -775,17 +781,17 @@ if __name__ == '__main__':
     # opt.loss_attr = True 
     # opt.out_num_attrs = [0,1,2,] # unused if opt.loss_attr == True 
     opt.out_num_attrs = [1,] 
-    opt.n_max_attr_labels = 50 # only used if class_specific_attr == True
-    opt.pgt_lr = 0.9 
+    opt.n_max_attr_labels = 100 # only used if class_specific_attr == True
+    opt.pgt_lr = 1.5 
     opt.pgt_lr_decay = 1.0 # float(7.0/9.0) # 0.75 
     opt.pgt_lr_decay_step = 300 
     opt.epochs = 300 
     opt.no_trace = True 
     opt.conf_thres = 0.50 
-    opt.batch_size = 16
-    # opt.batch_size = 12 
+    opt.batch_size = 8
+    # opt.batch_size = 64 
     opt.save_dir = str('runs/' + opt.name + '_lr' + str(opt.pgt_lr)) 
-    opt.device = '4,5' 
+    opt.device = '6' 
     # opt.device = "0,1,2,3" 
     # opt.device = "4,5,6,7" 
     # opt.weights = 'weights/yolov7.pt'
@@ -793,11 +799,12 @@ if __name__ == '__main__':
     # lambda03
     # source /home/nielseni6/envs/yolo/bin/activate
     # cd /home/nielseni6/PythonScripts/yolov7_mavrc
-    # nohup python train_pgt.py > ./output_logs/gpu6_trpgt_coco_out2_lr0_9.log 2>&1 &
+    # nohup python train_pgt.py > ./output_logs/gpu6_trpgt_coco_out1_lr1_5.log 2>&1 &
     # nohup python -m torch.distributed.launch --nproc_per_node 4 --master_port 9528 train_pgt.py --sync-bn > ./output_logs/gpu0123_coco_pgtlr0_7.log 2>&1 &
     # nohup python -m torch.distributed.launch --nproc_per_node 2 --master_port 9529 train_pgt.py --sync-bn > ./output_logs/gpu45_coco_pgtlossonly_lr0_9.log 2>&1 &
     # opt.quad = True # Helps for multiple gpu training 
     opt.dataset = 'coco' # 'real_world_drone'
+    # opt.dataset = 'real_world_drone'
     # opt.sync_bn = True
     
     opt.seed = random.randrange(sys.maxsize)
@@ -816,24 +823,24 @@ if __name__ == '__main__':
     # opt.local_rank = -1 # os.environ["LOCAL_RANK"]
     
     if opt.dataset == 'real_world_drone':
-        if ('lambda02' == opt.host_name) or ('lambda03' == opt.host_name):    
+        if ('lambda02' == opt.host_name) or ('lambda03' == opt.host_name) or ('lambda05' == opt.host_name):    
             opt.source = '/data/Koutsoubn8/ijcnn_v7data/Real_world_test/images' 
             opt.data = 'data/real_world.yaml' 
             opt.hyp = 'data/hyp.real_world.yaml' 
-        if ('lambda01' == opt.host_name) or ('lambda05' == opt.host_name):
+        if ('lambda01' == opt.host_name):
             opt.source = '/data/nielseni6/ijcnn_v7data/Real_world_test/images' 
             opt.data = 'data/real_world_lambda01.yaml' 
             opt.hyp = 'data/hyp.real_world_lambda01.yaml' 
     if opt.dataset == 'coco':
         opt.source = "/data/nielseni6/coco/images"
-        # ######### scratch #########
-        # opt.weights = ''
-        # opt.hyp = 'data/hyp.scratch.p5.yaml'
-        # ###########################
-        ######## pretrained #######
-        opt.weights = 'weights/yolov7.pt'
-        opt.hyp = 'data/hyp.pretrained.yolov7.yaml'
+        ######### scratch #########
+        opt.weights = ''
+        opt.hyp = 'data/hyp.scratch.p5.yaml'
         ###########################
+        # ######## pretrained #######
+        # opt.weights = 'weights/yolov7.pt'
+        # opt.hyp = 'data/hyp.pretrained.yolov7.yaml'
+        # ###########################
         opt.data = 'data/coco_lambda01.yaml'
         opt.cfg = 'cfg/training/yolov7.yaml'
         
