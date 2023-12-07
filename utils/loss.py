@@ -1814,7 +1814,7 @@ class ComputePGTLossOTA:
         # img_seg_percent = (torch.sum(coords_map) / coords_map.flatten().shape[0])
         # # seg_size_factor = 1.0 has largest effect on IoU, 0.0 has no effect
         IoU = IoU_ / float(len(imgs)) # * (1.0 - (img_seg_percent * seg_size_factor)) if not math.isnan(IoU_) else torch.tensor(0.0)
-        lplaus = - (IoU * pgt_coeff)
+        lplaus = -(IoU * pgt_coeff).unsqueeze(0)
         ####################################################################
         
         # Losses
@@ -1874,7 +1874,7 @@ class ComputePGTLossOTA:
         lobj=lobj.clamp(max=2)
         loss_r = lbox + lobj + lcls + lplaus
         loss=loss_r.clamp(max=2)
-        return loss * bs, torch.cat((lbox, lobj, lcls, loss)).detach()
+        return loss * bs, torch.cat((lbox, lobj, lcls, lplaus, loss)).detach()
 
     def build_targets(self, p, targets, imgs):
         
