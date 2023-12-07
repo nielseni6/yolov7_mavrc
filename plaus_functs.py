@@ -132,7 +132,7 @@ def generate_vanilla_grad(model, input_tensor, loss_func = None,
 
             # Convert gradients to numpy array and back to ensure full separation from graph
             # attribution_map = torch.tensor(torch.sum(gradients[0], 1, keepdim=True).clone().detach().cpu().numpy())
-            attribution_map = gradients[0].clone().detach() # without converting to numpy
+            attribution_map = gradients[0]#.clone().detach() # without converting to numpy
             
             if grayscale: # Convert to grayscale, saves vram and computation time for plaus_eval
                 attribution_map = torch.sum(attribution_map, 1, keepdim=True)
@@ -327,6 +327,13 @@ def corners_coords(center_xywh):
     x = center_x - w/2
     y = center_y - h/2
     return torch.tensor([x, y, x+w, y+h])
+
+def corners_coords_batch(center_xywh):
+    center_x, center_y = center_xywh[:,0], center_xywh[:,1]
+    w, h = center_xywh[:,2], center_xywh[:,3]
+    x = center_x - w/2
+    y = center_y - h/2
+    return torch.stack([x, y, x+w, y+h], dim=1)
     
 def normalize_batch(x):
     """

@@ -27,14 +27,14 @@ from utils.datasets import LoadStreams, LoadImages, LoadImagesAndLabels
 
 import test  # import test.py to get mAP after each epoch
 from models.experimental import attempt_load
-from models.yolo import Model
+from models.yolo import Model, ModelPGT
 from utils.autoanchor import check_anchors
 from utils.datasets import create_dataloader
 from utils.general import labels_to_class_weights, increment_path, labels_to_image_weights, init_seeds, \
     fitness, strip_optimizer, get_latest_run, check_dataset, check_file, check_git_status, check_img_size, \
     check_requirements, print_mutation, set_logging, one_cycle, colorstr
 from utils.google_utils import attempt_download
-from utils.loss import ComputeLoss, ComputeLossOTA
+from utils.loss import ComputeLoss, ComputeLossOTA, ComputePGTLossOTA
 from utils.plots import plot_images, plot_labels, plot_results, plot_evolution
 from utils.torch_utils import ModelEMA, select_device, intersect_dicts, torch_distributed_zero_first, is_parallel
 from utils.wandb_logging.wandb_utils import WandbLogger, check_wandb_resume
@@ -97,14 +97,16 @@ def train(hyp, opt, device, tb_writer=None):
         with torch_distributed_zero_first(rank):
             attempt_download(weights)  # download if not found locally
         ckpt = torch.load(weights, map_location=device)  # load checkpoint
-        model = Model(opt.cfg or ckpt['model'].yaml, ch=3, nc=nc, anchors=hyp.get('anchors')).to(device)  # create
+        model = ModelPGT(opt.cfg or ckpt['model'].yaml, ch=3, nc=nc, anchors=hyp.get('anchors')).to(device)
+        # model = Model(opt.cfg or ckpt['model'].yaml, ch=3, nc=nc, anchors=hyp.get('anchors')).to(device)  # create
         exclude = ['anchor'] if (opt.cfg or hyp.get('anchors')) and not opt.resume else []  # exclude keys
         state_dict = ckpt['model'].float().state_dict()  # to FP32
         state_dict = intersect_dicts(state_dict, model.state_dict(), exclude=exclude)  # intersect
         model.load_state_dict(state_dict, strict=False)  # load
         logger.info('Transferred %g/%g items from %s' % (len(state_dict), len(model.state_dict()), weights))  # report
     else:
-        model = Model(opt.cfg, ch=3, nc=nc, anchors=hyp.get('anchors')).to(device)  # create
+        model = ModelPGT(opt.cfg, ch=3, nc=nc, anchors=hyp.get('anchors')).to(device)  # create
+        # model = Model(opt.cfg, ch=3, nc=nc, anchors=hyp.get('anchors')).to(device)  # create
     with torch_distributed_zero_first(rank):
         check_dataset(data_dict)  # check
     train_path = data_dict['train']
@@ -316,6 +318,7 @@ def train(hyp, opt, device, tb_writer=None):
     results = (0, 0, 0, 0, 0, 0, 0)  # P, R, mAP@.5, mAP@.5-.95, val_loss(box, obj, cls)
     scheduler.last_epoch = start_epoch - 1  # do not move
     scaler = amp.GradScaler(enabled=cuda)
+    compute_pgt_loss = ComputePGTLossOTA(model)  # init loss class for plausibility guided training
     compute_loss_ota = ComputeLossOTA(model)  # init loss class
     compute_loss = ComputeLoss(model)  # init loss class
     logger.info(f'Image sizes {imgsz} train, {imgsz_test} test\n'
@@ -453,13 +456,16 @@ def train(hyp, opt, device, tb_writer=None):
 
             # Forward
             with amp.autocast(enabled=cuda):
-                pred = model(imgs)  # forward
+                pred, attr = model(imgs, pgt = opt.pgt_built_in)  # forward
                 if 'loss_ota' not in hyp or hyp['loss_ota'] == 1:
                     print('Using loss_ota') if i == 0 else None
-                    loss, loss_items = compute_loss_ota(pred, targets.to(device), imgs,metric=opt.loss_metric)  # loss scaled by batch_size
+                    if opt.pgt_built_in:
+                        loss, loss_items = compute_pgt_loss(pred, targets.to(device), imgs, attr, pgt_coeff = opt.pgt_lr, metric=opt.loss_metric)  # loss scaled by batch_size
+                    else:
+                        loss, loss_items = compute_loss_ota(pred, targets.to(device), imgs, metric=opt.loss_metric)  # loss scaled by batch_size
                 else:
                     print('Using loss') if i == 0 else None
-                    loss, loss_items = compute_loss(pred, targets.to(device),metric=opt.loss_metric)  # loss scaled by batch_size
+                    loss, loss_items = compute_loss(pred, targets.to(device), metric=opt.loss_metric)  # loss scaled by batch_size
                 if rank != -1:
                     loss *= opt.world_size  # gradient averaged between devices in DDP mode
                 if opt.quad:
@@ -468,88 +474,91 @@ def train(hyp, opt, device, tb_writer=None):
             # ADD PLAUSIBILITY LOSS FOR VALIDATION #
             # ADD EXPLAINABILITY TO THE MEDIA OUTPUTS ON WANDB #
             #################################################################################
-                
-                if opt.loss_attr:
-                    loss_attr = compute_loss_ota
-                    opt.out_num_attrs = [None,]
-                else:
-                    loss_attr = None
-                
-                for out_num_attr in opt.out_num_attrs:
-                    t0_pgt = time.time()
-                    if not (opt.pgt_lr == 0):
-                        t0_img = time.time()
-                        if opt.clean_plaus_eval:
-                            ############ Load clean images for clean image labels ############
-                            # to_tensor = torchvision.transforms.ToTensor()
-                            transform_img = torchvision.transforms.Compose([
-                                torchvision.transforms.ToTensor(),
-                                torchvision.transforms.Resize((640, 640))
-                            ])
-                            imgs_clean = [transform_img(Image.open(image_path)).to(device).to(imgs.dtype) for image_path in paths]
-                            try:
-                                imgs_clean = torch.stack(imgs_clean)
-                            except:
-                                for i_img, img in enumerate(imgs_clean):
-                                    if img.shape[0] == 1:
-                                        imgs_clean[i_img] = torch.cat([img, img, img], dim=0)
-                                imgs_clean = torch.stack(imgs_clean)
-                            ##################################################################
-                        else:
-                            imgs_clean = imgs
-                        t0_attr = time.time()
-                        
-                        ## TO IMPROVE EFFICIENCY: Combine generate_vanilla_grad and eval_plausibility into one function
-                        ########################  and delete each attribution map after calculating plausibility for each label
-                        
-                        # Add attribution maps
-                        attribution_map = generate_vanilla_grad(model, imgs_clean, loss_func=loss_attr, 
-                                                                targets_list=labels_list, targets=labels, metric=opt.loss_metric, 
-                                                                out_num=out_num_attr, n_max_labels=opt.n_max_attr_labels, 
-                                                                norm=True, abs=True, class_specific_attr=opt.class_specific_attr, 
-                                                                device=device) # mlc = max label class
-                        # norm and abs should be true to get quality results
-                        t1_attr = time.time()
-
-                        # Calculate Plausibility IoU with attribution maps
-                        plaus_score = eval_plausibility(imgs_clean, labels_list, labels_list_seg, attribution_map,
-                                                        use_seg_labels=opt.seg_labels, n_max_labels=opt.n_max_attr_labels, 
-                                                        class_specific_attr=opt.class_specific_attr, seg_size_factor=opt.seg_size_factor,
-                                                        device=device, debug=False)
-                        # del attribution_map # delete attribution to free up gpu space
-                        # del imgs_clean # delete imgs_clean to free up gpu space
-                        # torch.cuda.empty_cache() # empty cache to after deleting tensors to remove from gpu memory 
-                        
-                        plaus_loss = (opt.pgt_lr * plaus_score)
-                        # plaus_loss_np = plaus_loss.cpu().clone().detach().numpy()
-                        
-                        if opt.loss_alpha != 1.0:
-                            loss = (loss * opt.loss_alpha)
-                        
-                        if opt.add_plaus_loss:
-                            loss = loss + plaus_loss
-                        else:
-                            loss = loss - plaus_loss
-                        
-                        ploss = (float(plaus_loss) / float(len(opt.out_num_attrs))) / float(batch_size)
-                        pscore = (float(plaus_score) / float(len(opt.out_num_attrs))) / float(batch_size)
-                        plaus_loss_total_train += ploss if not math.isnan(ploss) else 0.0
-                        plaus_score_total_train += pscore if not math.isnan(pscore) else 0.0
-                        # print(f'Plausibility eval and loss took {t1_pgt - t0_pgt} seconds')
+                if not opt.pgt_built_in:
+                    if opt.loss_attr:
+                        loss_attr = compute_loss_ota
+                        opt.out_num_attrs = [None,]
                     else:
-                        plaus_loss, plaus_score = torch.tensor([0.0]), torch.tensor([0.0])
-                        t0_attr = time.time()
-                        t1_attr = time.time()
+                        loss_attr = None
                     
-                    t2_pgt = time.time()
-            model.zero_grad()
+                    for out_num_attr in opt.out_num_attrs:
+                        t0_pgt = time.time()
+                        if not (opt.pgt_lr == 0):
+                            t0_img = time.time()
+                            if opt.clean_plaus_eval:
+                                ############ Load clean images for clean image labels ############
+                                # to_tensor = torchvision.transforms.ToTensor()
+                                transform_img = torchvision.transforms.Compose([
+                                    torchvision.transforms.ToTensor(),
+                                    torchvision.transforms.Resize((640, 640))
+                                ])
+                                imgs_clean = [transform_img(Image.open(image_path)).to(device).to(imgs.dtype) for image_path in paths]
+                                try:
+                                    imgs_clean = torch.stack(imgs_clean)
+                                except:
+                                    for i_img, img in enumerate(imgs_clean):
+                                        if img.shape[0] == 1:
+                                            imgs_clean[i_img] = torch.cat([img, img, img], dim=0)
+                                    imgs_clean = torch.stack(imgs_clean)
+                                ##################################################################
+                            else:
+                                imgs_clean = imgs
+                            t0_attr = time.time()
+                            
+                            ## TO IMPROVE EFFICIENCY: Combine generate_vanilla_grad and eval_plausibility into one function
+                            ########################  and delete each attribution map after calculating plausibility for each label
+                            
+                            # Add attribution maps
+                            attribution_map = generate_vanilla_grad(model, imgs_clean, loss_func=loss_attr, 
+                                                                    targets_list=labels_list, targets=labels, metric=opt.loss_metric, 
+                                                                    out_num=out_num_attr, n_max_labels=opt.n_max_attr_labels, 
+                                                                    norm=True, abs=True, class_specific_attr=opt.class_specific_attr, 
+                                                                    device=device) # mlc = max label class
+                            # norm and abs should be true to get quality results
+                            t1_attr = time.time()
+
+                            # Calculate Plausibility IoU with attribution maps
+                            plaus_score = eval_plausibility(imgs_clean, labels_list, labels_list_seg, attribution_map,
+                                                            use_seg_labels=opt.seg_labels, n_max_labels=opt.n_max_attr_labels, 
+                                                            class_specific_attr=opt.class_specific_attr, seg_size_factor=opt.seg_size_factor,
+                                                            device=device, debug=False)
+                            # del attribution_map # delete attribution to free up gpu space
+                            # del imgs_clean # delete imgs_clean to free up gpu space
+                            # torch.cuda.empty_cache() # empty cache to after deleting tensors to remove from gpu memory 
+                            
+                            # add division below for batch consistency and remove from ploss and pscore
+                            # plaus_score /= (float(batch_size) * float(len(opt.out_num_attrs)))
+                            plaus_loss = (opt.pgt_lr * plaus_score)
+                            # plaus_loss_np = plaus_loss.cpu().clone().detach().numpy()
+                            
+                            if opt.loss_alpha != 1.0:
+                                loss = (loss * opt.loss_alpha)
+                            
+                            if opt.add_plaus_loss:
+                                loss = loss + plaus_loss
+                            else:
+                                loss = loss - plaus_loss
+                            
+                            # Move division up for batch consistency
+                            ploss = float(plaus_loss) / (float(batch_size) * float(len(opt.out_num_attrs)))
+                            pscore = float(plaus_score) / (float(batch_size) * float(len(opt.out_num_attrs)))
+                            plaus_loss_total_train += ploss if not math.isnan(ploss) else 0.0
+                            plaus_score_total_train += pscore if not math.isnan(pscore) else 0.0
+                            # print(f'Plausibility eval and loss took {t1_pgt - t0_pgt} seconds')
+                        else:
+                            plaus_loss, plaus_score = torch.tensor([0.0]), torch.tensor([0.0])
+                            t0_attr = time.time()
+                            t1_attr = time.time()
+                        
+                        t2_pgt = time.time()
+            # model.zero_grad()
             #################################################################################
 
             # Backward
             scaler.scale(loss).backward()
             t3_pgt = time.time()
             
-            if (i % 25) == 0:
+            if (i % 25) == 0 and not opt.pgt_built_in:
                 print(f'Plaus_eval total: {t2_pgt - t0_pgt}sec | Attribution: {t1_attr - t0_attr}s | backprop: {t3_pgt - t2_pgt}s | {opt.add_pl} plaus_loss')
             
             # Optimize
@@ -768,10 +777,12 @@ if __name__ == '__main__':
     parser.add_argument('--seg-labels', action='store_true', help='If true, calculate plaus score with segmentation maps rather than bbox')
     parser.add_argument('--add_plaus_loss', action='store_true', help='If true, add plausibility loss to total loss rather than subtracting')
     parser.add_argument('--seg_size_factor', type=float, default=1.0, help='Factor to reduce weight of segmentation maps that cover entire image')
+    parser.add_argument('--loss_alpha', type=float, default=1.0, help='Factor to multiply loss by')
+    parser.add_argument('--pgt_built_in', action='store_true', help='If true, use built in plausibility guided training')
     ############################################################################
     opt = parser.parse_args() 
      
-    
+    opt.pgt_built_in = True
     # opt.seg_labels = True
     # opt.add_plaus_loss = True
     opt.loss_alpha = 1.0
@@ -782,16 +793,17 @@ if __name__ == '__main__':
     # opt.out_num_attrs = [0,1,2,] # unused if opt.loss_attr == True 
     opt.out_num_attrs = [1,] 
     opt.n_max_attr_labels = 100 # only used if class_specific_attr == True
-    opt.pgt_lr = 1.5 
-    opt.pgt_lr_decay = 1.0 # float(7.0/9.0) # 0.75 
-    opt.pgt_lr_decay_step = 300 
+    # --nproc_per_node 4 | multiply pgt_lr to match the results from 4 gpu training (the resulting plaus for 4 gpus is 4x higher than 1 gpu)
+    opt.pgt_lr = 0.5 
+    opt.pgt_lr_decay = 0.5 # float(7.0/9.0) # 0.75 
+    opt.pgt_lr_decay_step = 100 
     opt.epochs = 300 
     opt.no_trace = True 
     opt.conf_thres = 0.50 
     opt.batch_size = 8
     # opt.batch_size = 64 
     opt.save_dir = str('runs/' + opt.name + '_lr' + str(opt.pgt_lr)) 
-    opt.device = '6' 
+    opt.device = '3' 
     # opt.device = "0,1,2,3" 
     # opt.device = "4,5,6,7" 
     # opt.weights = 'weights/yolov7.pt'
@@ -799,9 +811,9 @@ if __name__ == '__main__':
     # lambda03
     # source /home/nielseni6/envs/yolo/bin/activate
     # cd /home/nielseni6/PythonScripts/yolov7_mavrc
-    # nohup python train_pgt.py > ./output_logs/gpu6_trpgt_coco_out1_lr1_5.log 2>&1 &
+    # nohup python train_pgt.py > ./output_logs/gpu3_trpgt_coco_out1_lr0_5.log 2>&1 &
     # nohup python -m torch.distributed.launch --nproc_per_node 4 --master_port 9528 train_pgt.py --sync-bn > ./output_logs/gpu0123_coco_pgtlr0_7.log 2>&1 &
-    # nohup python -m torch.distributed.launch --nproc_per_node 2 --master_port 9529 train_pgt.py --sync-bn > ./output_logs/gpu45_coco_pgtlossonly_lr0_9.log 2>&1 &
+    # nohup python -m torch.distributed.launch --nproc_per_node 3 --master_port 9527 train_pgt.py --sync-bn > ./output_logs/gpu367_coco_pgt_lr9_0.log 2>&1 &
     # opt.quad = True # Helps for multiple gpu training 
     opt.dataset = 'coco' # 'real_world_drone'
     # opt.dataset = 'real_world_drone'
