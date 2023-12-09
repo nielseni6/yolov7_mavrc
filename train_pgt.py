@@ -626,7 +626,7 @@ def train(hyp, opt, device, tb_writer=None):
                 os.system('gsutil cp %s gs://%s/results/results%s.txt' % (results_file, opt.bucket, opt.name))
 
             # Log
-            tags = ['train/box_loss', 'train/obj_loss', 'train/cls_loss',  # train loss
+            tags = ['train/box_loss', 'train/obj_loss', 'train/cls_loss', 'train/plaus_loss',  # train loss
                     'metrics/precision', 'metrics/recall', 'metrics/mAP_0.5', 'metrics/mAP_0.5:0.95',
                     'val/box_loss', 'val/obj_loss', 'val/cls_loss',  # val loss
                     'x/lr0', 'x/lr1', 'x/lr2',  # params
@@ -794,13 +794,13 @@ if __name__ == '__main__':
     opt.out_num_attrs = [1,] 
     opt.n_max_attr_labels = 100 # only used if class_specific_attr == True
     # --nproc_per_node 4 | multiply pgt_lr to match the results from 4 gpu training (the resulting plaus for 4 gpus is 4x higher than 1 gpu)
-    opt.pgt_lr = 0.5 
+    opt.pgt_lr = 0.25 
     opt.pgt_lr_decay = 0.5 # float(7.0/9.0) # 0.75 
-    opt.pgt_lr_decay_step = 100 
+    opt.pgt_lr_decay_step = 150 
     opt.epochs = 300 
     opt.no_trace = True 
     opt.conf_thres = 0.50 
-    opt.batch_size = 8
+    opt.batch_size = 16
     # opt.batch_size = 64 
     opt.save_dir = str('runs/' + opt.name + '_lr' + str(opt.pgt_lr)) 
     opt.device = '7' 
@@ -811,7 +811,7 @@ if __name__ == '__main__':
     # lambda03
     # source /home/nielseni6/envs/yolo/bin/activate
     # cd /home/nielseni6/PythonScripts/yolov7_mavrc
-    # nohup python train_pgt.py > ./output_logs/gpu3_trpgt_coco_out1_lr0_5.log 2>&1 &
+    # nohup python train_pgt.py > ./output_logs/gpu7_trpgt_coco_out1_lr1_0.log 2>&1 &
     # nohup python -m torch.distributed.launch --nproc_per_node 4 --master_port 9528 train_pgt.py --sync-bn > ./output_logs/gpu0123_coco_pgtlr0_7.log 2>&1 &
     # nohup python -m torch.distributed.launch --nproc_per_node 3 --master_port 9527 train_pgt.py --sync-bn > ./output_logs/gpu367_coco_pgt_lr9_0.log 2>&1 &
     # opt.quad = True # Helps for multiple gpu training 
