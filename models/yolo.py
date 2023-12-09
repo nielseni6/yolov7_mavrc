@@ -928,7 +928,7 @@ class ModelPGT(nn.Module):
         self.info()
         logger.info('')
     
-    def forward(self, x, augment=False, profile=False, pgt=False, out_num=1):
+    def forward(self, x, augment=False, profile=False, pgt=False, out_num=1): # Inputs modified for PGT
         if augment:
             img_size = x.shape[-2:]  # height, width
             s = [1, 0.83, 0.67]  # scales
@@ -950,7 +950,7 @@ class ModelPGT(nn.Module):
     
     def forward_once(self, x, profile=False, 
                      pgt=False, out_num=1, grayscale = True, 
-                     norm = True, absolute = True):
+                     norm = True, absolute = True): # Inputs modified for PGT
         if not hasattr(self, 'k'):
             self.k = 0
 
@@ -991,9 +991,10 @@ class ModelPGT(nn.Module):
             self.k += 1
 
             y.append(x if m.i in self.save else None)  # save output
-
+        
         if profile:
             print('%.1fms total' % sum(dt))
+        ######################################### PGT #########################################
         if not pgt:
             return x
         else:
@@ -1013,12 +1014,7 @@ class ModelPGT(nn.Module):
                 attribution_map = normalize_batch(attribution_map) # Normalize attribution maps per image in batch
 
             return x, attribution_map
-            # attribution_map = generate_vanilla_grad(self.model, img, loss_func=None, 
-            #                                         targets_list=None, targets=None, metric=opt.loss_metric, 
-            #                                         out_num=1, n_max_labels=100, 
-            #                                         norm=True, abs=True, class_specific_attr=False, 
-            #                                         device=x.device) # mlc = max label class
-            
+        #######################################################################################
             
 
     def _initialize_biases(self, cf=None):  # initialize biases into Detect(), cf is class frequency
