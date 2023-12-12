@@ -1794,9 +1794,10 @@ class ComputePGTLossOTA:
         # # weight each IoU by the percent of the image that is a target
         # img_seg_percent = (torch.sum(coords_map) / coords_map.flatten().shape[0])
         # # seg_size_factor = 1.0 has largest effect on IoU, 0.0 has no effect
-        IoU = (- IoU_) / float(len(imgs)) # * (1.0 - (img_seg_percent * seg_size_factor)) if not math.isnan(IoU_) else torch.tensor(0.0)
-        # IoU = (1 - IoU_) / float(len(imgs)) # This might work better for the PGT loss, more similar to lbox (iou loss) in for loop below 
-        lplaus = (IoU * pgt_coeff).unsqueeze(0)
+        # We were dividing IoU by the number of images, but this is not correct since the max IoU is already 1.0
+        # IoU = (- IoU_) # * (1.0 - (img_seg_percent * seg_size_factor)) if not math.isnan(IoU_) else torch.tensor(0.0)
+        plaus_score = (1 - IoU_) # This might work better for the PGT loss, more similar to lbox (iou loss) in for loop below 
+        lplaus = (plaus_score * pgt_coeff).unsqueeze(0)
         ####################################################################
         
         # Losses

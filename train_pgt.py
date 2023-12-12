@@ -456,7 +456,8 @@ def train(hyp, opt, device, tb_writer=None):
 
             # Forward
             with amp.autocast(enabled=cuda):
-                pred, attr = model(imgs, pgt = opt.pgt_built_in)  # forward
+                out_num_attr = opt.out_num_attrs[0] # built-in pgt only supports one out_num_attr
+                pred, attr = model(imgs, pgt = opt.pgt_built_in, out_num = out_num_attr)  # forward
                 if 'loss_ota' not in hyp or hyp['loss_ota'] == 1:
                     print('Using loss_ota') if i == 0 else None
                     if opt.pgt_built_in:
@@ -531,13 +532,7 @@ def train(hyp, opt, device, tb_writer=None):
                             plaus_loss = (opt.pgt_lr * plaus_score)
                             # plaus_loss_np = plaus_loss.cpu().clone().detach().numpy()
                             
-                            if opt.loss_alpha != 1.0:
-                                loss = (loss * opt.loss_alpha)
-                            
-                            if opt.add_plaus_loss:
-                                loss = loss + plaus_loss
-                            else:
-                                loss = loss - plaus_loss
+                            loss = loss - plaus_loss
                             
                             # Move division up for batch consistency
                             ploss = float(plaus_loss) / (float(batch_size) * float(len(opt.out_num_attrs)))
@@ -551,6 +546,9 @@ def train(hyp, opt, device, tb_writer=None):
                             t1_attr = time.time()
                         
                         t2_pgt = time.time()
+                else:
+                    plaus_loss_total_train = loss_items[3]
+                    plaus_score_total_train = (1 - (loss_items[3] / opt.pgt_lr))
             # model.zero_grad()
             #################################################################################
 
@@ -559,7 +557,7 @@ def train(hyp, opt, device, tb_writer=None):
             t3_pgt = time.time()
             
             if (i % 25) == 0 and not opt.pgt_built_in:
-                print(f'Plaus_eval total: {t2_pgt - t0_pgt}sec | Attribution: {t1_attr - t0_attr}s | backprop: {t3_pgt - t2_pgt}s | {opt.add_pl} plaus_loss')
+                print(f'Plaus_eval total: {t2_pgt - t0_pgt}sec | Attribution: {t1_attr - t0_attr}s | backprop: {t3_pgt - t2_pgt}s')
             
             # Optimize
             if ni % accumulate == 0:
@@ -589,8 +587,9 @@ def train(hyp, opt, device, tb_writer=None):
                                                   save_dir.glob('train*.jpg') if x.exists()]})
 
             # end batch ------------------------------------------------------------------------------------------------
-        plaus_loss_total_train /= float(i)
-        plaus_score_total_train /= float(i)
+        if not opt.pgt_built_in:
+            plaus_loss_total_train /= float(i)
+            plaus_score_total_train /= float(i)
         # end epoch ----------------------------------------------------------------------------------------------------
 
         # Scheduler
@@ -765,53 +764,59 @@ if __name__ == '__main__':
     parser.add_argument('--iou-thres', type=float, default=0.65, help='IOU threshold for NMS')
     parser.add_argument('--agnostic-nms', action='store_true', help='class-agnostic NMS')
     parser.add_argument('--classes', nargs='+', type=int, help='filter by class: --class 0, or --class 0 2 3')
+    ############################## PGT Variables ###############################
     parser.add_argument('--pgt-lr', type=float, default=0.5, help='learning rate for plausibility gradient')
     parser.add_argument('--pgt-lr-decay', type=float, default=0.75, help='learning rate decay for plausibility gradient')
     parser.add_argument('--pgt-lr-decay-step', type=int, default=100, help='learning rate decay step for plausibility gradient')
     parser.add_argument('--n-max-attr-labels', type=int, default=8, help='maximum number of attribution maps generated for each image')
     # parser.add_argument('--out_num_attr', type=float, default=1, help='Default output for generating attribution maps')
     parser.add_argument('--out_num_attrs', nargs='+', type=int, default=[1,], help='Default output for generating attribution maps')
-    parser.add_argument('--loss_attr', action='store_true', help='If true, use loss to generate attribution maps')
+    parser.add_argument('--loss_attr', action='store_true', help='If true, use loss to generate attribution maps') # Not yet implemented for built-in pgt
     parser.add_argument('--clean_plaus_eval', action='store_true', help='If true, calculate plausibility on clean, non-augmented images and labels')
     parser.add_argument('--class_specific_attr', action='store_true', help='If true, calculate attribution maps for each class individually')
     parser.add_argument('--seg-labels', action='store_true', help='If true, calculate plaus score with segmentation maps rather than bbox')
-    parser.add_argument('--add_plaus_loss', action='store_true', help='If true, add plausibility loss to total loss rather than subtracting')
     parser.add_argument('--seg_size_factor', type=float, default=1.0, help='Factor to reduce weight of segmentation maps that cover entire image')
-    parser.add_argument('--loss_alpha', type=float, default=1.0, help='Factor to multiply loss by')
     parser.add_argument('--pgt_built_in', action='store_true', help='If true, use built in plausibility guided training')
     ############################################################################
+    # parser.add_argument('--seed', type=int, default=None, help='reproduce results')
     opt = parser.parse_args() 
      
     opt.pgt_built_in = True
     # opt.seg_labels = True
-    # opt.add_plaus_loss = True
-    opt.loss_alpha = 1.0
     # opt.class_specific_attr = True
     # opt.sweep = True 
     opt.seg_size_factor = 0.0 # max 1.0, min 0.0 (clean training), reduces weight/scale of segmentation maps that cover entire image
-    # opt.loss_attr = True 
+    # opt.loss_attr = True # Not yet implemented for built-in pgt
     # opt.out_num_attrs = [0,1,2,] # unused if opt.loss_attr == True 
-    opt.out_num_attrs = [1,] 
+    opt.out_num_attrs = [1,] # built-in pgt only supports one out_num_attr, will only select first element of list 
     opt.n_max_attr_labels = 100 # only used if class_specific_attr == True
     # --nproc_per_node 4 | multiply pgt_lr to match the results from 4 gpu training (the resulting plaus for 4 gpus is 4x higher than 1 gpu)
-    opt.pgt_lr = 0.25 
-    opt.pgt_lr_decay = 0.5 # float(7.0/9.0) # 0.75 
-    opt.pgt_lr_decay_step = 150 
+    opt.pgt_lr = 1.0 
+    opt.pgt_lr_decay = 1.5 # float(7.0/9.0) # 0.75 
+    opt.pgt_lr_decay_step = 300 
     opt.epochs = 300 
     opt.no_trace = True 
     opt.conf_thres = 0.50 
     opt.batch_size = 16
     # opt.batch_size = 64 
     opt.save_dir = str('runs/' + opt.name + '_lr' + str(opt.pgt_lr)) 
-    opt.device = '7' 
+    opt.device = '5' 
     # opt.device = "0,1,2,3" 
     # opt.device = "4,5,6,7" 
     # opt.weights = 'weights/yolov7.pt'
     
-    # lambda03
+    # lambda03 Console Commands
     # source /home/nielseni6/envs/yolo/bin/activate
     # cd /home/nielseni6/PythonScripts/yolov7_mavrc
-    # nohup python train_pgt.py > ./output_logs/gpu7_trpgt_coco_out1_lr1_0.log 2>&1 &
+    # watch -n 0.5 --color 'gpustat -p --color | head ; ps -up `nvidia-smi -q -x | grep pid | sed -e "s/<pid>//g" -e "s/<\/pid>//g" -e "s/^[[:space:]]*//"`'
+    # watch -n 0.5 ps -up `nvidia-smi -q -x | grep pid | sed -e 's/<pid>//g' -e 's/<\/pid>//g' -e 's/^[[:space:]]*//'`
+    
+    # Resume run
+    # nohup python train_pgt.py --resume runs/pgt/train-pgt-yolov7/pgt5_145/weights/last.pt > ./output_logs/gpu6_trpgt_drone_out1_lr0_5.log 2>&1 &
+    # nohup python -m torch.distributed.launch --nproc_per_node 4 --master_port 9528 train_pgt.py --sync-bn --resume runs/pgt/train-pgt-yolov7/pgt3_17/weights/last.pt > ./output_logs/gpu0123_coco_pgtlr0_1.log 2>&1 &
+    # opt.weights = 'runs/pgt/train-pgt-yolov7/pgt5_145/weights/last.pt'
+    
+    # nohup python train_pgt.py > ./output_logs/gpu5_trpgt_drone_out1_pretrained_lr1_5.log 2>&1 &
     # nohup python -m torch.distributed.launch --nproc_per_node 4 --master_port 9528 train_pgt.py --sync-bn > ./output_logs/gpu0123_coco_pgtlr0_7.log 2>&1 &
     # nohup python -m torch.distributed.launch --nproc_per_node 3 --master_port 9527 train_pgt.py --sync-bn > ./output_logs/gpu367_coco_pgt_lr9_0.log 2>&1 &
     # opt.quad = True # Helps for multiple gpu training 
@@ -820,6 +825,8 @@ if __name__ == '__main__':
     # opt.sync_bn = True
     
     opt.seed = random.randrange(sys.maxsize)
+    # if opt.seed is None:
+    #     opt.seed = random.randrange(sys.maxsize)
     rng = random.Random(opt.seed)
     torch.manual_seed(opt.seed)
     print(f'Seed: {opt.seed}')
@@ -845,23 +852,18 @@ if __name__ == '__main__':
             opt.hyp = 'data/hyp.real_world_lambda01.yaml' 
     if opt.dataset == 'coco':
         opt.source = "/data/nielseni6/coco/images"
-        ######### scratch #########
-        opt.weights = ''
-        opt.hyp = 'data/hyp.scratch.p5.yaml'
-        ###########################
-        # ######## pretrained #######
-        # opt.weights = 'weights/yolov7.pt'
-        # opt.hyp = 'data/hyp.pretrained.yolov7.yaml'
+        # ######### scratch #########
+        # opt.weights = ''
+        # opt.hyp = 'data/hyp.scratch.p5.yaml'
         # ###########################
+        ######## pretrained #######
+        opt.weights = 'weights/yolov7.pt'
+        opt.hyp = 'data/hyp.pretrained.yolov7.yaml'
+        ###########################
         opt.data = 'data/coco_lambda01.yaml'
         opt.cfg = 'cfg/training/yolov7.yaml'
         
         # opt.clean_plaus_eval = True
-
-    if opt.add_plaus_loss:
-        opt.add_pl = 'adding'
-    else:
-        opt.add_pl = 'subtracting'  
 
     opt.data = check_file(opt.data)  # check file 
     
