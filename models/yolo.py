@@ -928,7 +928,7 @@ class ModelPGT(nn.Module):
         self.info()
         logger.info('')
     
-    def forward(self, x, augment=False, profile=False, pgt=False, out_num=1): # Inputs modified for PGT
+    def forward(self, x, augment=False, profile=False, pgt=False, out_nums=[1]): # Inputs modified for PGT
         if augment:
             img_size = x.shape[-2:]  # height, width
             s = [1, 0.83, 0.67]  # scales
@@ -946,10 +946,10 @@ class ModelPGT(nn.Module):
                 y.append(yi)
             return torch.cat(y, 1), None  # augmented inference, train
         else:
-            return self.forward_once(x, profile, pgt, out_num=out_num)  # single-scale inference, train
+            return self.forward_once(x, profile, pgt, out_nums=out_nums)  # single-scale inference, train
     
     def forward_once(self, x, profile=False, 
-                     pgt=False, out_num=1, grayscale = True, 
+                     pgt=False, out_nums=[1], grayscale = True, 
                      norm = True, absolute = True): # Inputs modified for PGT
         if not hasattr(self, 'k'):
             self.k = 0
@@ -998,22 +998,28 @@ class ModelPGT(nn.Module):
         if not pgt:
             return x
         else:
-            grad_wrt = x[out_num]
-            grad_wrt_outputs = torch.ones_like(grad_wrt)
-            gradients = torch.autograd.grad(grad_wrt, img, 
-                                                grad_outputs=grad_wrt_outputs, 
-                                                retain_graph=True, 
-                                                # create_graph=True, # Create graph to allow for higher order derivatives but slows down computation significantly
-                                                )
-            attribution_map = gradients[0]
-            if grayscale: # Convert to grayscale, saves vram and computation time for plaus_eval
-                attribution_map = torch.sum(attribution_map, 1, keepdim=True)
-            if absolute:
-                attribution_map = torch.abs(attribution_map) # Take absolute values of gradients
-            if norm:
-                attribution_map = normalize_batch(attribution_map) # Normalize attribution maps per image in batch
+            attr_list = []
+            for out_num in out_nums:
+                grad_wrt = x[out_num]
+                grad_wrt_outputs = torch.ones_like(grad_wrt)
+                gradients = torch.autograd.grad(grad_wrt, img, 
+                                                    grad_outputs=grad_wrt_outputs, 
+                                                    retain_graph=True, 
+                                                    # create_graph=True, # Create graph to allow for higher order derivatives but slows down computation significantly
+                                                    )
+                attribution_map = gradients[0]
+                if grayscale: # Convert to grayscale, saves vram and computation time for plaus_eval
+                    attribution_map = torch.sum(attribution_map, 1, keepdim=True)
+                if absolute:
+                    attribution_map = torch.abs(attribution_map) # Take absolute values of gradients
+                if norm:
+                    attribution_map = normalize_batch(attribution_map) # Normalize attribution maps per image in batch
+                attr_list.append(attribution_map)
 
-            return x, attribution_map
+            if len(out_nums) == 1:
+                return x, attribution_map
+            else:
+                return x, torch.stack(attr_list, dim=2).squeeze(1)
         #######################################################################################
             
 

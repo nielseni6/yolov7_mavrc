@@ -456,8 +456,8 @@ def train(hyp, opt, device, tb_writer=None):
 
             # Forward
             with amp.autocast(enabled=cuda):
-                out_num_attr = opt.out_num_attrs[0] # built-in pgt only supports one out_num_attr
-                pred, attr = model(imgs, pgt = opt.pgt_built_in, out_num = out_num_attr)  # forward
+                # out_num_attr = opt.out_num_attrs[0] # built-in pgt only supports one out_num_attr
+                pred, attr = model(imgs, pgt = opt.pgt_built_in, out_nums = opt.out_num_attrs)  # forward
                 if 'loss_ota' not in hyp or hyp['loss_ota'] == 1:
                     print('Using loss_ota') if i == 0 else None
                     if opt.pgt_built_in:
@@ -788,16 +788,16 @@ if __name__ == '__main__':
     opt.seg_size_factor = 0.0 # max 1.0, min 0.0 (clean training), reduces weight/scale of segmentation maps that cover entire image
     # opt.loss_attr = True # Not yet implemented for built-in pgt
     # opt.out_num_attrs = [0,1,2,] # unused if opt.loss_attr == True 
-    opt.out_num_attrs = [1,] # built-in pgt only supports one out_num_attr, will only select first element of list 
+    opt.out_num_attrs = [1,] 
     opt.n_max_attr_labels = 100 # only used if class_specific_attr == True
     # --nproc_per_node 4 | multiply pgt_lr to match the results from 4 gpu training (the resulting plaus for 4 gpus is 4x higher than 1 gpu)
-    opt.pgt_lr = 1.0 
-    opt.pgt_lr_decay = 1.5 # float(7.0/9.0) # 0.75 
+    opt.pgt_lr = 0.1 
+    opt.pgt_lr_decay = 1.0 
     opt.pgt_lr_decay_step = 300 
     opt.epochs = 300 
     opt.no_trace = True 
     opt.conf_thres = 0.50 
-    opt.batch_size = 16
+    opt.batch_size = 8
     # opt.batch_size = 64 
     opt.save_dir = str('runs/' + opt.name + '_lr' + str(opt.pgt_lr)) 
     opt.device = '5' 
@@ -816,7 +816,7 @@ if __name__ == '__main__':
     # nohup python -m torch.distributed.launch --nproc_per_node 4 --master_port 9528 train_pgt.py --sync-bn --resume runs/pgt/train-pgt-yolov7/pgt3_17/weights/last.pt > ./output_logs/gpu0123_coco_pgtlr0_1.log 2>&1 &
     # opt.weights = 'runs/pgt/train-pgt-yolov7/pgt5_145/weights/last.pt'
     
-    # nohup python train_pgt.py > ./output_logs/gpu5_trpgt_drone_out1_pretrained_lr1_5.log 2>&1 &
+    # nohup python train_pgt.py > ./output_logs/gpu5_trpgt_coco_out0_pretrained_lr0_1.log 2>&1 &
     # nohup python -m torch.distributed.launch --nproc_per_node 4 --master_port 9528 train_pgt.py --sync-bn > ./output_logs/gpu0123_coco_pgtlr0_7.log 2>&1 &
     # nohup python -m torch.distributed.launch --nproc_per_node 3 --master_port 9527 train_pgt.py --sync-bn > ./output_logs/gpu367_coco_pgt_lr9_0.log 2>&1 &
     # opt.quad = True # Helps for multiple gpu training 

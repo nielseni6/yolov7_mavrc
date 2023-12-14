@@ -35,13 +35,11 @@ def normalize_tensor(image_3d):
     return (image_2d / torch.max(image_2d))
 
 def format_img(img_):
-    img_ = img_     # unnormalize
     np_img = img_.numpy()
     tp_img = np.transpose(np_img, (1, 2, 0))
     return tp_img
 
 def imshow(img, save_path=None):
-    img = img     # unnormalize
     try:
         npimg = img.cpu().detach().numpy()
     except:
