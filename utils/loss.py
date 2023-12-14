@@ -1724,7 +1724,7 @@ class ComputeLossAuxOTA:
 ############################################ BELOW IS PGT LOSS ############################################
 ###########################################################################################################
 
-from plaus_functs import corners_coords_batch # generate_vanilla_grad, eval_plausibility, corners_coords
+from plaus_functs import get_plaus_score, corners_coords_batch # generate_vanilla_grad, eval_plausibility, corners_coords
 import numpy as np
 from plot_functs import imshow
 
@@ -1761,43 +1761,13 @@ class ComputePGTLossOTA:
         bs, as_, gjs, gis, targets, anchors = self.build_targets(p, targets, imgs)
         pre_gen_gains = [torch.tensor(pp.shape, device=device)[[3, 2, 3, 2]] for pp in p] 
         ####################### PGT CODE ADDED BELOW #######################
-        debug = False # Set breakpoint and set to true to visualize attributions and bboxes
-        targets_out = targets_
-        target_inds = targets_out[:, 0].int()
-        xyxy_batch = targets_out[:, 2:6]# * pre_gen_gains[out_num]
-        num_pixels = torch.tile(torch.tensor([imgs.shape[2], imgs.shape[3], imgs.shape[2], imgs.shape[3]], device=imgs.device), (xyxy_batch.shape[0], 1))
-        # num_pixels = torch.tile(torch.tensor([1.0, 1.0, 1.0, 1.0], device=imgs.device), (xyxy_batch.shape[0], 1))
-        xyxy_corners = (corners_coords_batch(xyxy_batch) * num_pixels).int()
-        co = xyxy_corners
-        coords_map = torch.zeros_like(attr, dtype=torch.bool)
-        # rows = np.arange(co.shape[0])
-        x1, x2 = co[:,1], co[:,3]
-        y1, y2 = co[:,0], co[:,2]
-        
-        for ic in range(co.shape[0]): # potential for speedup here with torch indexing instead of for loop
-            coords_map[target_inds[ic], :,x1[ic]:x2[ic],y1[ic]:y2[ic]] = True
-        
-        if torch.isnan(attr).any():
-            attr = torch.nan_to_num(attr, nan=0.0)
-        if debug:
-            for i in range(len(coords_map)):
-                coords_map3ch = torch.cat([coords_map[i][:1], coords_map[i][:1], coords_map[i][:1]], dim=0)
-                test_bbox = torch.zeros_like(imgs[i])
-                test_bbox[coords_map3ch] = imgs[i][coords_map3ch]
-                imshow(test_bbox, save_path='figs/test_bbox')
-                imshow(imgs[i], save_path='figs/im0')
-                imshow(attr[i], save_path='figs/attr')
-        
-        IoU_num = (torch.sum(attr[coords_map]))
-        IoU_denom = torch.sum(attr)
-        IoU_ = (IoU_num / IoU_denom)
+        plaus_score = get_plaus_score(imgs, targets_out = targets_, attr = attr)
         # # weight each IoU by the percent of the image that is a target
         # img_seg_percent = (torch.sum(coords_map) / coords_map.flatten().shape[0])
         # # seg_size_factor = 1.0 has largest effect on IoU, 0.0 has no effect
         # We were dividing IoU by the number of images, but this is not correct since the max IoU is already 1.0
         # IoU = (- IoU_) # * (1.0 - (img_seg_percent * seg_size_factor)) if not math.isnan(IoU_) else torch.tensor(0.0)
-        plaus_score = (1 - IoU_) # This might work better for the PGT loss, more similar to lbox (iou loss) in for loop below 
-        lplaus = (plaus_score * pgt_coeff).unsqueeze(0)
+        lplaus = ((1 - plaus_score) * pgt_coeff).unsqueeze(0)
         ####################################################################
         
         # Losses

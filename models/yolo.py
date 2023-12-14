@@ -853,7 +853,7 @@ if __name__ == '__main__':
 ############################################ BELOW IS PGT MODEL ############################################
 ############################################################################################################
 
-from plaus_functs import generate_vanilla_grad, eval_plausibility, normalize_batch
+from plaus_functs import get_gradient, generate_vanilla_grad, eval_plausibility, normalize_batch
 
 class ModelPGT(nn.Module):
     def __init__(self, cfg='yolor-csp-c.yaml', ch=3, nc=None, anchors=None):  # model, input channels, number of classes
@@ -1000,20 +1000,7 @@ class ModelPGT(nn.Module):
         else:
             attr_list = []
             for out_num in out_nums:
-                grad_wrt = x[out_num]
-                grad_wrt_outputs = torch.ones_like(grad_wrt)
-                gradients = torch.autograd.grad(grad_wrt, img, 
-                                                    grad_outputs=grad_wrt_outputs, 
-                                                    retain_graph=True, 
-                                                    # create_graph=True, # Create graph to allow for higher order derivatives but slows down computation significantly
-                                                    )
-                attribution_map = gradients[0]
-                if grayscale: # Convert to grayscale, saves vram and computation time for plaus_eval
-                    attribution_map = torch.sum(attribution_map, 1, keepdim=True)
-                if absolute:
-                    attribution_map = torch.abs(attribution_map) # Take absolute values of gradients
-                if norm:
-                    attribution_map = normalize_batch(attribution_map) # Normalize attribution maps per image in batch
+                attribution_map = get_gradient(img, grad_wrt = x[out_num])
                 attr_list.append(attribution_map)
 
             if len(out_nums) == 1:

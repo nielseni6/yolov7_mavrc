@@ -794,7 +794,7 @@ if __name__ == '__main__':
     opt.pgt_lr = 0.1 
     opt.pgt_lr_decay = 1.0 
     opt.pgt_lr_decay_step = 300 
-    opt.epochs = 300 
+    opt.epochs = 300
     opt.no_trace = True 
     opt.conf_thres = 0.50 
     opt.batch_size = 8
@@ -852,14 +852,14 @@ if __name__ == '__main__':
             opt.hyp = 'data/hyp.real_world_lambda01.yaml' 
     if opt.dataset == 'coco':
         opt.source = "/data/nielseni6/coco/images"
-        # ######### scratch #########
-        # opt.weights = ''
-        # opt.hyp = 'data/hyp.scratch.p5.yaml'
-        # ###########################
-        ######## pretrained #######
-        opt.weights = 'weights/yolov7.pt'
-        opt.hyp = 'data/hyp.pretrained.yolov7.yaml'
+        ######### scratch #########
+        opt.weights = ''
+        opt.hyp = 'data/hyp.scratch.p5.yaml'
         ###########################
+        # ######## pretrained #######
+        # opt.weights = 'weights/yolov7.pt'
+        # opt.hyp = 'data/hyp.pretrained.yolov7.yaml'
+        # ###########################
         opt.data = 'data/coco_lambda01.yaml'
         opt.cfg = 'cfg/training/yolov7.yaml'
         
