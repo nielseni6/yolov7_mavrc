@@ -25,7 +25,7 @@ def get_gradient(img, grad_wrt, norm=True, absolute=True, grayscale=True):
     grad_wrt_outputs = torch.ones_like(grad_wrt)
     gradients = torch.autograd.grad(grad_wrt, img, 
                                     grad_outputs=grad_wrt_outputs, 
-                                    retain_graph=True, 
+                                    retain_graph=True,
                                     # create_graph=True, # Create graph to allow for higher order derivatives but slows down computation significantly
                                     )
     attribution_map = gradients[0]
@@ -71,6 +71,98 @@ def get_plaus_score(imgs, targets_out, attr, debug = False):
 
     return plaus_score
 
+
+def point_in_polygon(poly, grid):
+    # t0 = time.time()
+    num_points = poly.shape[0]
+    j = num_points - 1
+    oddNodes = torch.zeros_like(grid[..., 0], dtype=torch.bool)
+    for i in range(num_points):
+        cond1 = (poly[i, 1] < grid[..., 1]) & (poly[j, 1] >= grid[..., 1])
+        cond2 = (poly[j, 1] < grid[..., 1]) & (poly[i, 1] >= grid[..., 1])
+        cond3 = (grid[..., 0] - poly[i, 0]) < (poly[j, 0] - poly[i, 0]) * (grid[..., 1] - poly[i, 1]) / (poly[j, 1] - poly[i, 1])
+        oddNodes = oddNodes ^ (cond1 | cond2) & cond3
+        j = i
+    # t1 = time.time()
+    # print(f'point in polygon time: {t1-t0}')
+    return oddNodes
+    
+def point_in_polygon_gpu(poly, grid):
+    num_points = poly.shape[0]
+    i = torch.arange(num_points)
+    j = (i - 1) % num_points
+    # Expand dimensions
+    # t0 = time.time()
+    poly_expanded = poly.unsqueeze(-1).unsqueeze(-1).expand(-1, -1, grid.shape[0], grid.shape[0])
+    # t1 = time.time()
+    cond1 = (poly_expanded[i, 1] < grid[..., 1]) & (poly_expanded[j, 1] >= grid[..., 1])
+    cond2 = (poly_expanded[j, 1] < grid[..., 1]) & (poly_expanded[i, 1] >= grid[..., 1])
+    cond3 = (grid[..., 0] - poly_expanded[i, 0]) < (poly_expanded[j, 0] - poly_expanded[i, 0]) * (grid[..., 1] - poly_expanded[i, 1]) / (poly_expanded[j, 1] - poly_expanded[i, 1])
+    # t2 = time.time()
+    oddNodes = torch.zeros_like(grid[..., 0], dtype=torch.bool)
+    cond = (cond1 | cond2) & cond3
+    # t3 = time.time()
+    # efficiently perform xor using gpu and avoiding cpu as much as possible
+    c = []
+    while len(cond) > 1: 
+        if len(cond) % 2 == 1: # odd number of elements
+            c.append(cond[-1])
+            cond = cond[:-1]
+        cond = torch.bitwise_xor(cond[:int(len(cond)/2)], cond[int(len(cond)/2):])
+    for c_ in c:
+        cond = torch.bitwise_xor(cond, c_)
+    oddNodes = cond
+    # t4 = time.time()
+    # for c in cond:
+    #     oddNodes = oddNodes ^ c
+    # print(f'expand time: {t1-t0} | cond123 time: {t2-t1} | cond logic time: {t3-t2} |  bitwise xor time: {t4-t3}')
+    # print(f'point in polygon time gpu: {t4-t0}')
+    # oddNodes = oddNodes ^ (cond1 | cond2) & cond3
+    return oddNodes
+
+
+def bitmap_for_polygon(poly, h, w):
+    y = torch.arange(h).to(poly.device).float()
+    x = torch.arange(w).to(poly.device).float()
+    grid_y, grid_x = torch.meshgrid(y, x)
+    grid = torch.stack((grid_x, grid_y), dim=-1)
+    bitmap = point_in_polygon(poly, grid)
+    return bitmap.unsqueeze(0)
+
+
+def corners_coords(center_xywh):
+    center_x, center_y, w, h = center_xywh
+    x = center_x - w/2
+    y = center_y - h/2
+    return torch.tensor([x, y, x+w, y+h])
+
+def corners_coords_batch(center_xywh):
+    center_x, center_y = center_xywh[:,0], center_xywh[:,1]
+    w, h = center_xywh[:,2], center_xywh[:,3]
+    x = center_x - w/2
+    y = center_y - h/2
+    return torch.stack([x, y, x+w, y+h], dim=1)
+    
+def normalize_batch(x):
+    """
+    Normalize a batch of tensors along each channel.
+    
+    Args:
+        x (torch.Tensor): Input tensor of shape (batch_size, channels, height, width).
+        
+    Returns:
+        torch.Tensor: Normalized tensor of the same shape as the input.
+    """
+    mins = torch.zeros((x.shape[0], *(1,)*len(x.shape[1:])), device=x.device)
+    maxs = torch.zeros((x.shape[0], *(1,)*len(x.shape[1:])), device=x.device)
+    for i in range(x.shape[0]):
+        mins[i] = x[i].min()
+        maxs[i] = x[i].max()
+    x_ = (x - mins) / (maxs - mins)
+    
+    return x_
+
+#### ALL FUNCTIONS BELOW ARE DEPRECIATED AND WILL BE REMOVED IN FUTURE VERSIONS ####
 def generate_vanilla_grad(model, input_tensor, loss_func = None, 
                           targets_list=None, targets=None, metric=None, out_num = 1, 
                           n_max_labels=3, norm=True, abs=True, grayscale=True, 
@@ -219,7 +311,6 @@ def generate_vanilla_grad(model, input_tensor, loss_func = None,
     
     return out_attr
 
-
 def eval_plausibility(imgs, targets, seg_targets, attr_tensor, 
                       use_seg_labels, n_max_labels=3, class_specific_attr = True, 
                       seg_size_factor = 1.0, device='cpu', debug=False):
@@ -327,93 +418,3 @@ def eval_plausibility(imgs, targets, seg_targets, attr_tensor,
         eval_data_all_attr.append(eval_individual_data)
     
     return eval_totals.clone().detach().requires_grad_(True)#, eval_data_all_attr
-
-def point_in_polygon(poly, grid):
-    # t0 = time.time()
-    num_points = poly.shape[0]
-    j = num_points - 1
-    oddNodes = torch.zeros_like(grid[..., 0], dtype=torch.bool)
-    for i in range(num_points):
-        cond1 = (poly[i, 1] < grid[..., 1]) & (poly[j, 1] >= grid[..., 1])
-        cond2 = (poly[j, 1] < grid[..., 1]) & (poly[i, 1] >= grid[..., 1])
-        cond3 = (grid[..., 0] - poly[i, 0]) < (poly[j, 0] - poly[i, 0]) * (grid[..., 1] - poly[i, 1]) / (poly[j, 1] - poly[i, 1])
-        oddNodes = oddNodes ^ (cond1 | cond2) & cond3
-        j = i
-    # t1 = time.time()
-    # print(f'point in polygon time: {t1-t0}')
-    return oddNodes
-    
-def point_in_polygon_gpu(poly, grid):
-    num_points = poly.shape[0]
-    i = torch.arange(num_points)
-    j = (i - 1) % num_points
-    # Expand dimensions
-    # t0 = time.time()
-    poly_expanded = poly.unsqueeze(-1).unsqueeze(-1).expand(-1, -1, grid.shape[0], grid.shape[0])
-    # t1 = time.time()
-    cond1 = (poly_expanded[i, 1] < grid[..., 1]) & (poly_expanded[j, 1] >= grid[..., 1])
-    cond2 = (poly_expanded[j, 1] < grid[..., 1]) & (poly_expanded[i, 1] >= grid[..., 1])
-    cond3 = (grid[..., 0] - poly_expanded[i, 0]) < (poly_expanded[j, 0] - poly_expanded[i, 0]) * (grid[..., 1] - poly_expanded[i, 1]) / (poly_expanded[j, 1] - poly_expanded[i, 1])
-    # t2 = time.time()
-    oddNodes = torch.zeros_like(grid[..., 0], dtype=torch.bool)
-    cond = (cond1 | cond2) & cond3
-    # t3 = time.time()
-    # efficiently perform xor using gpu and avoiding cpu as much as possible
-    c = []
-    while len(cond) > 1: 
-        if len(cond) % 2 == 1: # odd number of elements
-            c.append(cond[-1])
-            cond = cond[:-1]
-        cond = torch.bitwise_xor(cond[:int(len(cond)/2)], cond[int(len(cond)/2):])
-    for c_ in c:
-        cond = torch.bitwise_xor(cond, c_)
-    oddNodes = cond
-    # t4 = time.time()
-    # for c in cond:
-    #     oddNodes = oddNodes ^ c
-    # print(f'expand time: {t1-t0} | cond123 time: {t2-t1} | cond logic time: {t3-t2} |  bitwise xor time: {t4-t3}')
-    # print(f'point in polygon time gpu: {t4-t0}')
-    # oddNodes = oddNodes ^ (cond1 | cond2) & cond3
-    return oddNodes
-
-
-def bitmap_for_polygon(poly, h, w):
-    y = torch.arange(h).to(poly.device).float()
-    x = torch.arange(w).to(poly.device).float()
-    grid_y, grid_x = torch.meshgrid(y, x)
-    grid = torch.stack((grid_x, grid_y), dim=-1)
-    bitmap = point_in_polygon(poly, grid)
-    return bitmap.unsqueeze(0)
-
-
-def corners_coords(center_xywh):
-    center_x, center_y, w, h = center_xywh
-    x = center_x - w/2
-    y = center_y - h/2
-    return torch.tensor([x, y, x+w, y+h])
-
-def corners_coords_batch(center_xywh):
-    center_x, center_y = center_xywh[:,0], center_xywh[:,1]
-    w, h = center_xywh[:,2], center_xywh[:,3]
-    x = center_x - w/2
-    y = center_y - h/2
-    return torch.stack([x, y, x+w, y+h], dim=1)
-    
-def normalize_batch(x):
-    """
-    Normalize a batch of tensors along each channel.
-    
-    Args:
-        x (torch.Tensor): Input tensor of shape (batch_size, channels, height, width).
-        
-    Returns:
-        torch.Tensor: Normalized tensor of the same shape as the input.
-    """
-    mins = torch.zeros((x.shape[0], *(1,)*len(x.shape[1:])), device=x.device)
-    maxs = torch.zeros((x.shape[0], *(1,)*len(x.shape[1:])), device=x.device)
-    for i in range(x.shape[0]):
-        mins[i] = x[i].min()
-        maxs[i] = x[i].max()
-    x_ = (x - mins) / (maxs - mins)
-    
-    return x_

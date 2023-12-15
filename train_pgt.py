@@ -42,7 +42,7 @@ import sys
 from PIL import Image
 import torchvision
 
-from plaus_functs import generate_vanilla_grad, eval_plausibility
+from plaus_functs import get_gradient, generate_vanilla_grad, eval_plausibility
 
 logger = logging.getLogger(__name__)
 # import torch
@@ -359,8 +359,8 @@ def train(hyp, opt, device, tb_writer=None):
         #################################################################################
         # Set PGT learning rate scheduler
         if (((epoch - start_epoch) % opt.pgt_lr_decay_step) == 0) and (epoch != start_epoch):
-            opt.pgt_lr *= opt.pgt_lr_decay
-            print(f'PGT learning rate decayed to {opt.pgt_lr} at epoch {epoch}')
+            opt.pgt_coeff *= opt.pgt_lr_decay
+            print(f'PGT learning rate decayed to {opt.pgt_coeff} at epoch {epoch}')
         #################################################################################
             
         plaus_loss_total_train, plaus_score_total_train = 0.0, 0.0
@@ -457,11 +457,23 @@ def train(hyp, opt, device, tb_writer=None):
             # Forward
             with amp.autocast(enabled=cuda):
                 # out_num_attr = opt.out_num_attrs[0] # built-in pgt only supports one out_num_attr
-                pred, attr = model(imgs, pgt = opt.pgt_built_in, out_nums = opt.out_num_attrs)  # forward
+                pred, attr = model(imgs, pgt = True, out_nums = opt.out_num_attrs)  # forward
+                
+                if cuda and rank != -1: # DDP Mode was causing 
+                    attr_list = []
+                    for out_num in opt.out_num_attrs:
+                        attribution_map = get_gradient(imgs, grad_wrt = pred[out_num])
+                        attr_list.append(attribution_map)
+
+                    if len(opt.out_num_attrs) == 1:
+                        attr = attribution_map
+                    else:
+                        attr = torch.stack(attr_list, dim=2).squeeze(1)
+                        
                 if 'loss_ota' not in hyp or hyp['loss_ota'] == 1:
                     print('Using loss_ota') if i == 0 else None
-                    if opt.pgt_built_in:
-                        loss, loss_items = compute_pgt_loss(pred, targets.to(device), imgs, attr, pgt_coeff = opt.pgt_lr, metric=opt.loss_metric)  # loss scaled by batch_size
+                    if opt.pgt_coeff != 0.0:
+                        loss, loss_items = compute_pgt_loss(pred, targets.to(device), imgs, attr, pgt_coeff = opt.pgt_coeff, metric=opt.loss_metric)  # loss scaled by batch_size
                     else:
                         loss, loss_items = compute_loss_ota(pred, targets.to(device), imgs, metric=opt.loss_metric)  # loss scaled by batch_size
                 else:
@@ -475,80 +487,8 @@ def train(hyp, opt, device, tb_writer=None):
             # ADD PLAUSIBILITY LOSS FOR VALIDATION #
             # ADD EXPLAINABILITY TO THE MEDIA OUTPUTS ON WANDB #
             #################################################################################
-                if not opt.pgt_built_in:
-                    if opt.loss_attr:
-                        loss_attr = compute_loss_ota
-                        opt.out_num_attrs = [None,]
-                    else:
-                        loss_attr = None
-                    
-                    for out_num_attr in opt.out_num_attrs:
-                        t0_pgt = time.time()
-                        if not (opt.pgt_lr == 0):
-                            t0_img = time.time()
-                            if opt.clean_plaus_eval:
-                                ############ Load clean images for clean image labels ############
-                                # to_tensor = torchvision.transforms.ToTensor()
-                                transform_img = torchvision.transforms.Compose([
-                                    torchvision.transforms.ToTensor(),
-                                    torchvision.transforms.Resize((640, 640))
-                                ])
-                                imgs_clean = [transform_img(Image.open(image_path)).to(device).to(imgs.dtype) for image_path in paths]
-                                try:
-                                    imgs_clean = torch.stack(imgs_clean)
-                                except:
-                                    for i_img, img in enumerate(imgs_clean):
-                                        if img.shape[0] == 1:
-                                            imgs_clean[i_img] = torch.cat([img, img, img], dim=0)
-                                    imgs_clean = torch.stack(imgs_clean)
-                                ##################################################################
-                            else:
-                                imgs_clean = imgs
-                            t0_attr = time.time()
-                            
-                            ## TO IMPROVE EFFICIENCY: Combine generate_vanilla_grad and eval_plausibility into one function
-                            ########################  and delete each attribution map after calculating plausibility for each label
-                            
-                            # Add attribution maps
-                            attribution_map = generate_vanilla_grad(model, imgs_clean, loss_func=loss_attr, 
-                                                                    targets_list=labels_list, targets=labels, metric=opt.loss_metric, 
-                                                                    out_num=out_num_attr, n_max_labels=opt.n_max_attr_labels, 
-                                                                    norm=True, abs=True, class_specific_attr=opt.class_specific_attr, 
-                                                                    device=device) # mlc = max label class
-                            # norm and abs should be true to get quality results
-                            t1_attr = time.time()
-
-                            # Calculate Plausibility IoU with attribution maps
-                            plaus_score = eval_plausibility(imgs_clean, labels_list, labels_list_seg, attribution_map,
-                                                            use_seg_labels=opt.seg_labels, n_max_labels=opt.n_max_attr_labels, 
-                                                            class_specific_attr=opt.class_specific_attr, seg_size_factor=opt.seg_size_factor,
-                                                            device=device, debug=False)
-                            # del attribution_map # delete attribution to free up gpu space
-                            # del imgs_clean # delete imgs_clean to free up gpu space
-                            # torch.cuda.empty_cache() # empty cache to after deleting tensors to remove from gpu memory 
-                            
-                            # add division below for batch consistency and remove from ploss and pscore
-                            # plaus_score /= (float(batch_size) * float(len(opt.out_num_attrs)))
-                            plaus_loss = (opt.pgt_lr * plaus_score)
-                            # plaus_loss_np = plaus_loss.cpu().clone().detach().numpy()
-                            
-                            loss = loss - plaus_loss
-                            
-                            # Move division up for batch consistency
-                            ploss = float(plaus_loss) / (float(batch_size) * float(len(opt.out_num_attrs)))
-                            pscore = float(plaus_score) / (float(batch_size) * float(len(opt.out_num_attrs)))
-                            plaus_loss_total_train += ploss if not math.isnan(ploss) else 0.0
-                            plaus_score_total_train += pscore if not math.isnan(pscore) else 0.0
-                            # print(f'Plausibility eval and loss took {t1_pgt - t0_pgt} seconds')
-                        else:
-                            plaus_loss, plaus_score = torch.tensor([0.0]), torch.tensor([0.0])
-                            t0_attr = time.time()
-                            t1_attr = time.time()
-                        
-                        t2_pgt = time.time()
-                else:
-                    plaus_loss_total_train = loss_items[3]
-                    plaus_score_total_train = (1 - (loss_items[3] / opt.pgt_lr))
+                plaus_loss_total_train = loss_items[3]
+                plaus_score_total_train = (1 - (loss_items[3] / opt.pgt_coeff))
             # model.zero_grad()
             #################################################################################
 
@@ -556,8 +496,6 @@ def train(hyp, opt, device, tb_writer=None):
             scaler.scale(loss).backward()
             t3_pgt = time.time()
             
-            if (i % 25) == 0 and not opt.pgt_built_in:
-                print(f'Plaus_eval total: {t2_pgt - t0_pgt}sec | Attribution: {t1_attr - t0_attr}s | backprop: {t3_pgt - t2_pgt}s')
             
             # Optimize
             if ni % accumulate == 0:
@@ -587,9 +525,6 @@ def train(hyp, opt, device, tb_writer=None):
                                                   save_dir.glob('train*.jpg') if x.exists()]})
 
             # end batch ------------------------------------------------------------------------------------------------
-        if not opt.pgt_built_in:
-            plaus_loss_total_train /= float(i)
-            plaus_score_total_train /= float(i)
         # end epoch ----------------------------------------------------------------------------------------------------
 
         # Scheduler
@@ -629,8 +564,8 @@ def train(hyp, opt, device, tb_writer=None):
                     'metrics/precision', 'metrics/recall', 'metrics/mAP_0.5', 'metrics/mAP_0.5:0.95',
                     'val/box_loss', 'val/obj_loss', 'val/cls_loss',  # val loss
                     'x/lr0', 'x/lr1', 'x/lr2',  # params
-                    ] + ['plaus_loss_train', 'plaus_score_train','pgt_lr']
-            for x, tag in zip(list(mloss[:-1]) + list((results)) + lr + [plaus_loss_total_train, plaus_score_total_train, opt.pgt_lr,], tags):
+                    ] + ['plaus_loss_train', 'plaus_score_train','pgt_coeff']
+            for x, tag in zip(list(mloss[:-1]) + list((results)) + lr + [plaus_loss_total_train, plaus_score_total_train, opt.pgt_coeff,], tags):
                 if tb_writer:
                     tb_writer.add_scalar(tag, x, epoch)  # tensorboard
                 if wandb_logger.wandb:
@@ -776,12 +711,10 @@ if __name__ == '__main__':
     parser.add_argument('--class_specific_attr', action='store_true', help='If true, calculate attribution maps for each class individually')
     parser.add_argument('--seg-labels', action='store_true', help='If true, calculate plaus score with segmentation maps rather than bbox')
     parser.add_argument('--seg_size_factor', type=float, default=1.0, help='Factor to reduce weight of segmentation maps that cover entire image')
-    parser.add_argument('--pgt_built_in', action='store_true', help='If true, use built in plausibility guided training')
     ############################################################################
     # parser.add_argument('--seed', type=int, default=None, help='reproduce results')
     opt = parser.parse_args() 
-     
-    opt.pgt_built_in = True
+
     # opt.seg_labels = True
     # opt.class_specific_attr = True
     # opt.sweep = True 
@@ -790,19 +723,19 @@ if __name__ == '__main__':
     # opt.out_num_attrs = [0,1,2,] # unused if opt.loss_attr == True 
     opt.out_num_attrs = [1,] 
     opt.n_max_attr_labels = 100 # only used if class_specific_attr == True
-    # --nproc_per_node 4 | multiply pgt_lr to match the results from 4 gpu training (the resulting plaus for 4 gpus is 4x higher than 1 gpu)
-    opt.pgt_lr = 0.1 
+    # --nproc_per_node 4 | multiply pgt_coeff to match the results from 4 gpu training (the resulting plaus for 4 gpus is 4x higher than 1 gpu)
+    opt.pgt_coeff = 0.25
     opt.pgt_lr_decay = 1.0 
     opt.pgt_lr_decay_step = 300 
     opt.epochs = 300
     opt.no_trace = True 
     opt.conf_thres = 0.50 
-    opt.batch_size = 8
+    opt.batch_size = 32
     # opt.batch_size = 64 
-    opt.save_dir = str('runs/' + opt.name + '_lr' + str(opt.pgt_lr)) 
+    opt.save_dir = str('runs/' + opt.name + '_lr' + str(opt.pgt_coeff)) 
     opt.device = '5' 
     # opt.device = "0,1,2,3" 
-    # opt.device = "4,5,6,7" 
+    # opt.device = "1,2,4,5" 
     # opt.weights = 'weights/yolov7.pt'
     
     # lambda03 Console Commands
@@ -816,8 +749,8 @@ if __name__ == '__main__':
     # nohup python -m torch.distributed.launch --nproc_per_node 4 --master_port 9528 train_pgt.py --sync-bn --resume runs/pgt/train-pgt-yolov7/pgt3_17/weights/last.pt > ./output_logs/gpu0123_coco_pgtlr0_1.log 2>&1 &
     # opt.weights = 'runs/pgt/train-pgt-yolov7/pgt5_145/weights/last.pt'
     
-    # nohup python train_pgt.py > ./output_logs/gpu5_trpgt_coco_out0_pretrained_lr0_1.log 2>&1 &
-    # nohup python -m torch.distributed.launch --nproc_per_node 4 --master_port 9528 train_pgt.py --sync-bn > ./output_logs/gpu0123_coco_pgtlr0_7.log 2>&1 &
+    # nohup python train_pgt.py > ./output_logs/gpu5_trpgt_coco_out0_pretrained_lr0_25.log 2>&1 &
+    # nohup python -m torch.distributed.launch --nproc_per_node 4 --master_port 9528 train_pgt.py --sync-bn > ./output_logs/gpu1245_coco_pgtlr0_15.log 2>&1 &
     # nohup python -m torch.distributed.launch --nproc_per_node 3 --master_port 9527 train_pgt.py --sync-bn > ./output_logs/gpu367_coco_pgt_lr9_0.log 2>&1 &
     # opt.quad = True # Helps for multiple gpu training 
     opt.dataset = 'coco' # 'real_world_drone'
@@ -852,16 +785,23 @@ if __name__ == '__main__':
             opt.hyp = 'data/hyp.real_world_lambda01.yaml' 
     if opt.dataset == 'coco':
         opt.source = "/data/nielseni6/coco/images"
-        ######### scratch #########
-        opt.weights = ''
-        opt.hyp = 'data/hyp.scratch.p5.yaml'
-        ###########################
-        # ######## pretrained #######
-        # opt.weights = 'weights/yolov7.pt'
-        # opt.hyp = 'data/hyp.pretrained.yolov7.yaml'
+        # ######### scratch #########
+        # opt.cfg = 'cfg/training/yolov7.yaml'
+        # opt.weights = ''
+        # opt.hyp = 'data/hyp.scratch.p5.yaml'
         # ###########################
+        # ######## pretrained #######
+        # opt.cfg = 'cfg/training/yolov7.yaml'
+        # opt.weights = 'weights/yolov7_training.pt'
+        # opt.hyp = 'data/hyp.scratch.custom.yaml'
+        # ###########################
+        ####### pretrained-x ######
+        opt.cfg = 'cfg/training/yolov7x.yaml'
+        opt.weights = 'weights/yolov7x_training.pt'
+        opt.hyp = 'data/hyp.scratch.custom.yaml'
+        ###########################
         opt.data = 'data/coco_lambda01.yaml'
-        opt.cfg = 'cfg/training/yolov7.yaml'
+        
         
         # opt.clean_plaus_eval = True
 

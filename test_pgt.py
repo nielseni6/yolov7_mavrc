@@ -15,6 +15,8 @@ from utils.metrics import ap_per_class, ConfusionMatrix
 from utils.plots import plot_images, output_to_target, plot_study_txt
 from utils.torch_utils import select_device, time_synchronized, TracedModel
 
+from xai.EvalAttAI import EvalAttAI
+from plaus_functs import get_gradient
 
 def test(data,
          weights=None,
@@ -100,6 +102,10 @@ def test(data,
     p, r, f1, mp, mr, map50, map, t0, t1 = 0., 0., 0., 0., 0., 0., 0., 0., 0.
     loss = torch.zeros(3, device=device)
     jdict, stats, ap, ap_class, wandb_images = [], [], [], [], []
+    
+    evalattai = EvalAttAI(model, nsteps = 10, epsilon = 0.05)
+    evalattai.__init_attr__(attr_method = get_gradient, norm=True, absolute=False, grayscale=False)
+    
     for batch_i, (img, targets, paths, shapes) in enumerate(tqdm(dataloader, desc=s)):
         img = img.to(device, non_blocking=True)
         img = img.half() if half else img.float()  # uint8 to fp16/32
@@ -112,7 +118,7 @@ def test(data,
             t = time_synchronized()
             out, train_out = model(img, augment=augment)  # inference and training outputs
             t0 += time_synchronized() - t
-
+            
             # Compute loss
             if compute_loss:
                 loss += compute_loss([x.float() for x in train_out], targets,metric=loss_metric)[1][:3]  # box, obj, cls
@@ -210,6 +216,8 @@ def test(data,
             # Append statistics (correct, conf, pcls, tcls)
             stats.append((correct.cpu(), pred[:, 4].cpu(), pred[:, 5].cpu(), tcls))
 
+        evalattai.collect_stats(img, train_out[1])
+        
         # Plot images
         if plots and batch_i < 3:
             f = save_dir / f'test_batch{batch_i}_labels.jpg'  # labels
@@ -217,6 +225,7 @@ def test(data,
             f = save_dir / f'test_batch{batch_i}_pred.jpg'  # predictions
             Thread(target=plot_images, args=(img, output_to_target(out), paths, f, names), daemon=True).start()
 
+############################################################################################
     # Compute statistics
     stats = [np.concatenate(x, 0) for x in zip(*stats)]  # to numpy
     if len(stats) and stats[0].any():
@@ -314,6 +323,7 @@ if __name__ == '__main__':
     print(opt)
     #check_requirements()
 
+    opt.device = '5'
     opt.batch_size = 8 
     opt.data = 'data/real_world.yaml'
     opt.img_size = 480 
