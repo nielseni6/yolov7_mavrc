@@ -456,10 +456,9 @@ def train(hyp, opt, device, tb_writer=None):
 
             # Forward
             with amp.autocast(enabled=cuda):
-                # out_num_attr = opt.out_num_attrs[0] # built-in pgt only supports one out_num_attr
-                pred, attr = model(imgs, pgt = True, out_nums = opt.out_num_attrs)  # forward
-                
-                if cuda and rank != -1: # DDP Mode was causing 
+                # out_num_attr = opt.out_num_attrs[0] # built-in pgt only supports one out_num_attr 
+                if cuda and rank != -1: # DDP Mode was causing nans
+                    pred = model(imgs.requires_grad_(True), out_nums = opt.out_num_attrs)  # forward
                     attr_list = []
                     for out_num in opt.out_num_attrs:
                         attribution_map = get_gradient(imgs, grad_wrt = pred[out_num])
@@ -469,7 +468,9 @@ def train(hyp, opt, device, tb_writer=None):
                         attr = attribution_map
                     else:
                         attr = torch.stack(attr_list, dim=2).squeeze(1)
-                        
+                else:
+                    pred, attr = model(imgs, pgt = True, out_nums = opt.out_num_attrs)  # forward
+                
                 if 'loss_ota' not in hyp or hyp['loss_ota'] == 1:
                     print('Using loss_ota') if i == 0 else None
                     if opt.pgt_coeff != 0.0:
@@ -483,14 +484,14 @@ def train(hyp, opt, device, tb_writer=None):
                     loss *= opt.world_size  # gradient averaged between devices in DDP mode
                 if opt.quad:
                     loss *= 4.
-            #################################################################################
-            # ADD PLAUSIBILITY LOSS FOR VALIDATION #
-            # ADD EXPLAINABILITY TO THE MEDIA OUTPUTS ON WANDB #
-            #################################################################################
+            #########################################################
+            #         ADD PLAUSIBILITY LOSS FOR VALIDATION          #
+            #   ADD EXPLAINABILITY TO THE MEDIA OUTPUTS ON WANDB    #
+            #########################################################
                 plaus_loss_total_train = loss_items[3]
                 plaus_score_total_train = (1 - (loss_items[3] / opt.pgt_coeff))
             # model.zero_grad()
-            #################################################################################
+            #########################################################
 
             # Backward
             scaler.scale(loss).backward()
@@ -724,18 +725,18 @@ if __name__ == '__main__':
     opt.out_num_attrs = [1,] 
     opt.n_max_attr_labels = 100 # only used if class_specific_attr == True
     # --nproc_per_node 4 | multiply pgt_coeff to match the results from 4 gpu training (the resulting plaus for 4 gpus is 4x higher than 1 gpu)
-    opt.pgt_coeff = 0.25
+    opt.pgt_coeff = 0.03
     opt.pgt_lr_decay = 1.0 
     opt.pgt_lr_decay_step = 300 
     opt.epochs = 300
     opt.no_trace = True 
     opt.conf_thres = 0.50 
-    opt.batch_size = 32
+    opt.batch_size = 128
     # opt.batch_size = 64 
     opt.save_dir = str('runs/' + opt.name + '_lr' + str(opt.pgt_coeff)) 
-    opt.device = '5' 
+    # opt.device = '5' 
     # opt.device = "0,1,2,3" 
-    # opt.device = "1,2,4,5" 
+    opt.device = "1,2,3,4" 
     # opt.weights = 'weights/yolov7.pt'
     
     # lambda03 Console Commands
@@ -750,7 +751,7 @@ if __name__ == '__main__':
     # opt.weights = 'runs/pgt/train-pgt-yolov7/pgt5_145/weights/last.pt'
     
     # nohup python train_pgt.py > ./output_logs/gpu5_trpgt_coco_out0_pretrained_lr0_25.log 2>&1 &
-    # nohup python -m torch.distributed.launch --nproc_per_node 4 --master_port 9528 train_pgt.py --sync-bn > ./output_logs/gpu1245_coco_pgtlr0_15.log 2>&1 &
+    # nohup python -m torch.distributed.launch --nproc_per_node 4 --master_port 9528 train_pgt.py --sync-bn > ./output_logs/gpu1234_coco_pgtlr0_03.log 2>&1 &
     # nohup python -m torch.distributed.launch --nproc_per_node 3 --master_port 9527 train_pgt.py --sync-bn > ./output_logs/gpu367_coco_pgt_lr9_0.log 2>&1 &
     # opt.quad = True # Helps for multiple gpu training 
     opt.dataset = 'coco' # 'real_world_drone'
