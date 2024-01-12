@@ -98,9 +98,9 @@ def train(hyp, opt, device, tb_writer=None):
             attempt_download(weights)  # download if not found locally
         ckpt = torch.load(weights, map_location=device)  # load checkpoint
         #####################################################################################
-        if rank in [-1, 0]:
-            wandb_logger.wandb_run.starting_step = ckpt['epoch'] + 1
-            wandb_logger.wandb_run.step = wandb_logger.wandb_run.starting_step
+        # if rank in [-1, 0]:
+        #     wandb_logger.wandb_run.starting_step = ckpt['epoch'] + 1
+        #     wandb_logger.wandb_run.step = wandb_logger.wandb_run.starting_step
         #####################################################################################
         model = ModelPGT(opt.cfg or ckpt['model'].yaml, ch=3, nc=nc, anchors=hyp.get('anchors')).to(device)
         # model = Model(opt.cfg or ckpt['model'].yaml, ch=3, nc=nc, anchors=hyp.get('anchors')).to(device)  # create
@@ -724,18 +724,17 @@ if __name__ == '__main__':
     opt.out_num_attrs = [1,] 
     opt.n_max_attr_labels = 100 # only used if class_specific_attr == True
     # --nproc_per_node 4 | multiply pgt_coeff to match the results from 4 gpu training (the resulting plaus for 4 gpus is 4x higher than 1 gpu)
-    opt.pgt_coeff = 0.5
+    opt.pgt_coeff = 0.0
     opt.pgt_lr_decay = 1.0 
     opt.pgt_lr_decay_step = 300 
-    opt.epochs = 300
+    opt.epochs = 150
     opt.no_trace = True 
     opt.conf_thres = 0.50 
-    opt.batch_size = 32
+    opt.batch_size = 64
     # opt.batch_size = 96 
     opt.save_dir = str('runs/' + opt.name + '_lr' + str(opt.pgt_coeff)) 
-    opt.device = '2' 
-    # opt.device = "0,1,2,3" 
-    # opt.device = "5,6,7" 
+    opt.device = '2,3,6,0' 
+    # opt.device = "0,1,2,3"  
     # opt.weights = 'weights/yolov7.pt'
     
     # lambda03 Console Commands
@@ -751,11 +750,11 @@ if __name__ == '__main__':
     # opt.weights = 'runs/pgt/train-pgt-yolov7/pgt5_214/weights/last.pt'
     
     # nohup python train_pgt.py > ./output_logs/gpu5_trpgt_coco_out0_pretrained_lr0_25.log 2>&1 &
-    # nohup python -m torch.distributed.launch --nproc_per_node 4 --master_port 9528 train_pgt.py --sync-bn > ./output_logs/gpu1234_coco_pgtlr0_25.log 2>&1 &
+    # nohup python -m torch.distributed.launch --nproc_per_node 4 --master_port 9528 train_pgt.py --sync-bn > ./output_logs/gpu2360_coco_pgtlr0_25.log 2>&1 &
     # nohup python -m torch.distributed.launch --nproc_per_node 3 --master_port 9527 train_pgt.py --sync-bn > ./output_logs/gpu567_coco_pgt_lr0_05.log 2>&1 &
     # opt.quad = True # Helps for multiple gpu training 
-    # opt.dataset = 'coco' # 'real_world_drone'
-    opt.dataset = 'real_world_drone'
+    opt.dataset = 'coco' # 'real_world_drone'
+    # opt.dataset = 'real_world_drone'
     # opt.sync_bn = True
     
     opt.seed = random.randrange(sys.maxsize)
