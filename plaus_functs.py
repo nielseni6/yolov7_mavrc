@@ -8,19 +8,21 @@ import time
 import matplotlib.path as mplPath
 from matplotlib.path import Path
 
-def get_gradient(img, grad_wrt, norm=True, absolute=True, grayscale=True):
+def get_gradient(img, grad_wrt, norm=True, absolute=True, grayscale=True, keepmean=False):
     """
-    Compute the gradient of the image with respect to a given tensor.
+    Compute the gradient of an image with respect to a given tensor.
 
     Args:
         img (torch.Tensor): The input image tensor.
         grad_wrt (torch.Tensor): The tensor with respect to which the gradient is computed.
-        norm (bool, optional): Whether to normalize the attribution maps per image in the batch. Default is True.
-        absolute (bool, optional): Whether to take the absolute values of the gradients. Default is True.
-        grayscale (bool, optional): Whether to convert the attribution maps to grayscale. Default is True.
+        norm (bool, optional): Whether to normalize the gradient. Defaults to True.
+        absolute (bool, optional): Whether to take the absolute values of the gradients. Defaults to True.
+        grayscale (bool, optional): Whether to convert the gradient to grayscale. Defaults to True.
+        keepmean (bool, optional): Whether to keep the mean value of the attribution map. Defaults to False.
 
     Returns:
-        torch.Tensor: The computed gradient of the image with respect to the given tensor.
+        torch.Tensor: The computed attribution map.
+
     """
     grad_wrt_outputs = torch.ones_like(grad_wrt)
     gradients = torch.autograd.grad(grad_wrt, img, 
@@ -29,14 +31,56 @@ def get_gradient(img, grad_wrt, norm=True, absolute=True, grayscale=True):
                                     # create_graph=True, # Create graph to allow for higher order derivatives but slows down computation significantly
                                     )
     attribution_map = gradients[0]
-    if grayscale: # Convert to grayscale, saves vram and computation time for plaus_eval
-        attribution_map = torch.sum(attribution_map, 1, keepdim=True)
     if absolute:
         attribution_map = torch.abs(attribution_map) # Take absolute values of gradients
+    if grayscale: # Convert to grayscale, saves vram and computation time for plaus_eval
+        attribution_map = torch.sum(attribution_map, 1, keepdim=True)
     if norm:
+        if keepmean:
+            attmean = torch.mean(attribution_map)
+            attmin = torch.min(attribution_map)
+            attmax = torch.max(attribution_map)
         attribution_map = normalize_batch(attribution_map) # Normalize attribution maps per image in batch
-    
+        if keepmean:
+            attribution_map -= attribution_map.mean()
+            attribution_map += (attmean / (attmax - attmin))
+        
     return attribution_map
+
+def get_gaussian(img, grad_wrt, norm=True, absolute=True, grayscale=True, keepmean=False):
+    """
+    Generate Gaussian noise based on the input image.
+
+    Args:
+        img (torch.Tensor): Input image.
+        grad_wrt: Gradient with respect to the input image.
+        norm (bool, optional): Whether to normalize the generated noise. Defaults to True.
+        absolute (bool, optional): Whether to take the absolute values of the gradients. Defaults to True.
+        grayscale (bool, optional): Whether to convert the noise to grayscale. Defaults to True.
+        keepmean (bool, optional): Whether to keep the mean of the noise. Defaults to False.
+
+    Returns:
+        torch.Tensor: Generated Gaussian noise.
+    """
+    
+    gaussian_noise = torch.randn_like(img)
+    
+    if absolute:
+        gaussian_noise = torch.abs(gaussian_noise) # Take absolute values of gradients
+    if grayscale: # Convert to grayscale, saves vram and computation time for plaus_eval
+        gaussian_noise = torch.sum(gaussian_noise, 1, keepdim=True)
+    if norm:
+        if keepmean:
+            attmean = torch.mean(gaussian_noise)
+            attmin = torch.min(gaussian_noise)
+            attmax = torch.max(gaussian_noise)
+        gaussian_noise = normalize_batch(gaussian_noise) # Normalize attribution maps per image in batch
+        if keepmean:
+            gaussian_noise -= gaussian_noise.mean()
+            gaussian_noise += (attmean / (attmax - attmin))
+        
+    return gaussian_noise
+    
 
 def get_plaus_score(imgs, targets_out, attr, debug = False):
     target_inds = targets_out[:, 0].int()
@@ -183,7 +227,7 @@ def generate_vanilla_grad(model, input_tensor, loss_func = None,
         grayscale (bool, optional): Whether to convert the attribution map to grayscale. Defaults to True.
         class_specific_attr (bool, optional): Whether to compute class-specific attribution maps. Defaults to True.
         device (str, optional): The device to use for computation. Defaults to 'cpu'.
-
+    
     Returns:
         torch.Tensor: The generated vanilla gradients.
     """

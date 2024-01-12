@@ -3,7 +3,39 @@ import matplotlib.pyplot as plt
 import torch
 import torch.nn as nn
 
+class Subplots:
+    def __init__(self, figsize = (40, 5)):
+        self.fig = plt.figure(figsize=figsize)
+        
+    def plot_img_list(self, img_list, savedir='figs/test', 
+                    nrows = 1, rownum = 0, 
+                    hold = False, coltitles=[], rowtitle=''):
+        
+        for i, img in enumerate(img_list):
+            try:
+                npimg = img.clone().detach().cpu().numpy()
+            except:
+                npimg = img
+            tpimg = np.transpose(npimg, (1, 2, 0))
+            lenrow = int((len(img_list)))
+            ax = self.fig.add_subplot(nrows, lenrow, i+1+(rownum*lenrow))
+            if len(coltitles) > i:
+                ax.set_title(coltitles[i])
+            if i == 0:
+                ax.annotate(rowtitle, xy=((-0.06 * len(rowtitle)), 0.4),# xytext=(-ax.yaxis.labelpad - pad, 0),
+                xycoords='axes fraction', textcoords='offset points',
+                size='large', ha='center', va='baseline')
+                # ax.set_ylabel(rowtitle, rotation=90)
+            ax.imshow(tpimg)
+            ax.axis('off')
 
+        if not hold:
+            self.fig.tight_layout()
+            plt.savefig(f'{savedir}.png')
+            plt.clf()
+            plt.close('all')
+            
+                    
 def VisualizeNumpyImageGrayscale(image_3d):
     r"""Returns a 3D tensor as a grayscale normalized between 0 and 1 2D tensor.
     """
@@ -41,14 +73,16 @@ def format_img(img_):
 
 def imshow(img, save_path=None):
     try:
-        npimg = img.cpu().detach().numpy()
+        npimg = img.clone().detach().cpu().numpy()
     except:
         npimg = img
     tpimg = np.transpose(npimg, (1, 2, 0))
     plt.imshow(tpimg)
+    # plt.axis('off')
+    plt.tight_layout()
     if save_path != None:
         plt.savefig(str(str(save_path) + ".png"))
-    #plt.show()
+    #plt.show()a
 
 def imshow_img(img, imsave_path):
     # works for tensors and numpy arrays

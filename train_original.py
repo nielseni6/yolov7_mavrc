@@ -35,11 +35,8 @@ from utils.plots import plot_images, plot_labels, plot_results, plot_evolution
 from utils.torch_utils import ModelEMA, select_device, intersect_dicts, torch_distributed_zero_first, is_parallel
 from utils.wandb_logging.wandb_utils import WandbLogger, check_wandb_resume
 
-import socket
-
 logger = logging.getLogger(__name__)
-# import torch
-torch.manual_seed(8)
+
 
 def train(hyp, opt, device, tb_writer=None):
     logger.info(colorstr('hyperparameters: ') + ', '.join(f'{k}={v}' for k, v in hyp.items()))
@@ -193,11 +190,9 @@ def train(hyp, opt, device, tb_writer=None):
     # Scheduler https://arxiv.org/pdf/1812.01187.pdf
     # https://pytorch.org/docs/stable/_modules/torch/optim/lr_scheduler.html#OneCycleLR
     if opt.linear_lr:
-        lf = lambda x: (1 - x / (epochs - 1)) * (1.0 - hyp['lrf']) + hyp['lrf']  # linear 
+        lf = lambda x: (1 - x / (epochs - 1)) * (1.0 - hyp['lrf']) + hyp['lrf']  # linear
     else:
         lf = one_cycle(1, hyp['lrf'], epochs)  # cosine 1->hyp['lrf']
-        
-
     scheduler = lr_scheduler.LambdaLR(optimizer, lr_lambda=lf)
     # plot_lr_scheduler(optimizer, scheduler, epochs)
 
@@ -365,9 +360,9 @@ def train(hyp, opt, device, tb_writer=None):
             with amp.autocast(enabled=cuda):
                 pred = model(imgs)  # forward
                 if 'loss_ota' not in hyp or hyp['loss_ota'] == 1:
-                    loss, loss_items = compute_loss_ota(pred, targets.to(device), imgs,metric=opt.loss_metric)  # loss scaled by batch_size
+                    loss, loss_items = compute_loss_ota(pred, targets.to(device), imgs)  # loss scaled by batch_size
                 else:
-                    loss, loss_items = compute_loss(pred, targets.to(device),metric=opt.loss_metric)  # loss scaled by batch_size
+                    loss, loss_items = compute_loss(pred, targets.to(device))  # loss scaled by batch_size
                 if rank != -1:
                     loss *= opt.world_size  # gradient averaged between devices in DDP mode
                 if opt.quad:
@@ -429,8 +424,7 @@ def train(hyp, opt, device, tb_writer=None):
                                                  wandb_logger=wandb_logger,
                                                  compute_loss=compute_loss,
                                                  is_coco=is_coco,
-                                                 v5_metric=opt.v5_metric,
-                                                 loss_metric=opt.loss_metric)
+                                                 v5_metric=opt.v5_metric)
 
             # Write
             with open(results_file, 'a') as f:
@@ -532,8 +526,7 @@ def train(hyp, opt, device, tb_writer=None):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--weights', type=str, default='yolov7.pt', help='initial weights path')
-    # parser.add_argument('--weights', type=str, default='yolo7.pt', help='initial weights path')
+    parser.add_argument('--weights', type=str, default='yolo7.pt', help='initial weights path')
     parser.add_argument('--cfg', type=str, default='', help='model.yaml path')
     parser.add_argument('--data', type=str, default='data/coco.yaml', help='data.yaml path')
     parser.add_argument('--hyp', type=str, default='data/hyp.scratch.p5.yaml', help='hyperparameters path')
@@ -554,14 +547,11 @@ if __name__ == '__main__':
     parser.add_argument('--single-cls', action='store_true', help='train multi-class data as single-class')
     parser.add_argument('--adam', action='store_true', help='use torch.optim.Adam() optimizer')
     parser.add_argument('--sync-bn', action='store_true', help='use SyncBatchNorm, only available in DDP mode')
-    if socket.gethostname() == 'lambda05':
-        parser.add_argument('--local-rank', type=int, default=-1, help='DDP parameter, do not modify')
-    else:
-        parser.add_argument('--local_rank', type=int, default=-1, help='DDP parameter, do not modify')
+    parser.add_argument('--local_rank', type=int, default=-1, help='DDP parameter, do not modify')
     parser.add_argument('--workers', type=int, default=8, help='maximum number of dataloader workers')
-    parser.add_argument('--project', default='runs/pgt/train-pgt-yolov7', help='save to project/name')
+    parser.add_argument('--project', default='runs/train', help='save to project/name')
     parser.add_argument('--entity', default=None, help='W&B entity')
-    parser.add_argument('--name', default='baseline', help='save to project/name')
+    parser.add_argument('--name', default='exp', help='save to project/name')
     parser.add_argument('--exist-ok', action='store_true', help='existing project/name ok, do not increment')
     parser.add_argument('--quad', action='store_true', help='quad dataloader')
     parser.add_argument('--linear-lr', action='store_true', help='linear LR')
@@ -572,46 +562,8 @@ if __name__ == '__main__':
     parser.add_argument('--artifact_alias', type=str, default="latest", help='version of dataset artifact to be used')
     parser.add_argument('--freeze', nargs='+', type=int, default=[0], help='Freeze layers: backbone of yolov7=50, first3=0 1 2')
     parser.add_argument('--v5-metric', action='store_true', help='assume maximum recall as 1.0 in AP calculation')
-    parser.add_argument('--loss_metric', type=str, default="CIoU",help='metric to minimize: CIoU, NWD')
     opt = parser.parse_args()
-    
-    ############### Real World Drone Dataset ###############
-    # opt.device = '2' 
-    # opt.data = 'data/coco_lambda01.yaml'
-    # opt.weights = 'weights/yolov7-tiny.pt'
-    ########################################################
-    
-    ##################### COCO Dataset #####################
-    opt.device = "2"
-    opt.data = 'data/coco_lambda01.yaml'
-    opt.dataset = 'coco'
-    opt.weights = ''
-    opt.project = 'runs/pgt/train-pgt-yolov7'
-    
-    opt.batch_size = 32
-    opt.save_dir = str('runs/' + opt.name) 
-    opt.cfg = 'cfg/training/yolov7.yaml'
-    opt.hyp = 'data/hyp.scratch.p5.yaml'
-    ########################################################
-    # nohup python -m torch.distributed.launch --nproc_per_node 3 --master_port 9527 train.py --sync-bn > ./output_logs/gpu567_coco_baseline.log 2>&1 &
-    
-    # opt.seed = random.randrange(sys.maxsize)
-    # rng = random.Random(opt.seed)
-    # torch.manual_seed(opt.seed)
-    # print(f'Seed: {opt.seed}')
-    
-    opt.entity = os.popen('whoami').read().strip()
-    opt.host_name = socket.gethostname()
-    username = os.getenv('USER')
-    os.environ["WANDB_ENTITY"] = username
-    opt.username = username
-    
-    # opt.data = check_file(opt.data)  # check file 
-    
-    # Set CUDA device
-    os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID" 
-    os.environ["CUDA_VISIBLE_DEVICES"] = opt.device 
-    
+
     # Set DDP variables
     opt.world_size = int(os.environ['WORLD_SIZE']) if 'WORLD_SIZE' in os.environ else 1
     opt.global_rank = int(os.environ['RANK']) if 'RANK' in os.environ else -1
@@ -619,11 +571,6 @@ if __name__ == '__main__':
     #if opt.global_rank in [-1, 0]:
     #    check_git_status()
     #    check_requirements()
-
-    if opt.loss_metric=="NWD":
-        print("USING NWD LOSS")
-    else:
-        print("USING CIOU LOSS")
 
     # Resume
     wandb_run = check_wandb_resume(opt)

@@ -97,6 +97,11 @@ def train(hyp, opt, device, tb_writer=None):
         with torch_distributed_zero_first(rank):
             attempt_download(weights)  # download if not found locally
         ckpt = torch.load(weights, map_location=device)  # load checkpoint
+        #####################################################################################
+        if rank in [-1, 0]:
+            wandb_logger.wandb_run.starting_step = ckpt['epoch'] + 1
+            wandb_logger.wandb_run.step = wandb_logger.wandb_run.starting_step
+        #####################################################################################
         model = ModelPGT(opt.cfg or ckpt['model'].yaml, ch=3, nc=nc, anchors=hyp.get('anchors')).to(device)
         # model = Model(opt.cfg or ckpt['model'].yaml, ch=3, nc=nc, anchors=hyp.get('anchors')).to(device)  # create
         exclude = ['anchor'] if (opt.cfg or hyp.get('anchors')) and not opt.resume else []  # exclude keys
@@ -456,29 +461,22 @@ def train(hyp, opt, device, tb_writer=None):
 
             # Forward
             with amp.autocast(enabled=cuda):
-                # out_num_attr = opt.out_num_attrs[0] # built-in pgt only supports one out_num_attr 
-                if cuda and rank != -1: # DDP Mode was causing nans
-                    pred = model(imgs.requires_grad_(True), out_nums = opt.out_num_attrs)  # forward
-                    attr_list = []
-                    for out_num in opt.out_num_attrs:
-                        attribution_map = get_gradient(imgs, grad_wrt = pred[out_num])
-                        attr_list.append(attribution_map)
-
-                    if len(opt.out_num_attrs) == 1:
-                        attr = attribution_map
-                    else:
-                        attr = torch.stack(attr_list, dim=2).squeeze(1)
+                # out_num_attr = opt.out_num_attrs[0]  
+                out = model(imgs, pgt = (opt.pgt_coeff != 0.0), out_nums = opt.out_num_attrs)  # forward
+                if opt.pgt_coeff != 0.0:
+                    pred, attr = out
                 else:
-                    pred, attr = model(imgs, pgt = True, out_nums = opt.out_num_attrs)  # forward
-                
+                    pred = out
+                    attr = None
                 if 'loss_ota' not in hyp or hyp['loss_ota'] == 1:
                     print('Using loss_ota') if i == 0 else None
-                    if opt.pgt_coeff != 0.0:
-                        loss, loss_items = compute_pgt_loss(pred, targets.to(device), imgs, attr, pgt_coeff = opt.pgt_coeff, metric=opt.loss_metric)  # loss scaled by batch_size
-                    else:
-                        loss, loss_items = compute_loss_ota(pred, targets.to(device), imgs, metric=opt.loss_metric)  # loss scaled by batch_size
+                    # if opt.pgt_coeff != 0.0:
+                    loss, loss_items = compute_pgt_loss(pred, targets.to(device), imgs, attr, pgt_coeff = opt.pgt_coeff, metric=opt.loss_metric)  # loss scaled by batch_size
+                    # else:
+                    #     loss, loss_items = compute_loss_ota(pred, targets.to(device), imgs, metric=opt.loss_metric)  # loss scaled by batch_size
                 else:
                     print('Using loss') if i == 0 else None
+                    # This is currently broken due to the addition of plaussibility loss
                     loss, loss_items = compute_loss(pred, targets.to(device), metric=opt.loss_metric)  # loss scaled by batch_size
                 if rank != -1:
                     loss *= opt.world_size  # gradient averaged between devices in DDP mode
@@ -488,8 +486,9 @@ def train(hyp, opt, device, tb_writer=None):
             #         ADD PLAUSIBILITY LOSS FOR VALIDATION          #
             #   ADD EXPLAINABILITY TO THE MEDIA OUTPUTS ON WANDB    #
             #########################################################
-                plaus_loss_total_train = loss_items[3]
-                plaus_score_total_train = (1 - (loss_items[3] / opt.pgt_coeff))
+                if opt.pgt_coeff != 0.0:
+                    plaus_loss_total_train = loss_items[3]
+                    plaus_score_total_train = (1 - (loss_items[3] / opt.pgt_coeff))
             # model.zero_grad()
             #########################################################
 
@@ -704,7 +703,7 @@ if __name__ == '__main__':
     parser.add_argument('--pgt-lr', type=float, default=0.5, help='learning rate for plausibility gradient')
     parser.add_argument('--pgt-lr-decay', type=float, default=0.75, help='learning rate decay for plausibility gradient')
     parser.add_argument('--pgt-lr-decay-step', type=int, default=100, help='learning rate decay step for plausibility gradient')
-    parser.add_argument('--n-max-attr-labels', type=int, default=8, help='maximum number of attribution maps generated for each image')
+    parser.add_argument('--n-max-attr-labels', type=int, default=100, help='maximum number of attribution maps generated for each image')
     # parser.add_argument('--out_num_attr', type=float, default=1, help='Default output for generating attribution maps')
     parser.add_argument('--out_num_attrs', nargs='+', type=int, default=[1,], help='Default output for generating attribution maps')
     parser.add_argument('--loss_attr', action='store_true', help='If true, use loss to generate attribution maps') # Not yet implemented for built-in pgt
@@ -725,18 +724,18 @@ if __name__ == '__main__':
     opt.out_num_attrs = [1,] 
     opt.n_max_attr_labels = 100 # only used if class_specific_attr == True
     # --nproc_per_node 4 | multiply pgt_coeff to match the results from 4 gpu training (the resulting plaus for 4 gpus is 4x higher than 1 gpu)
-    opt.pgt_coeff = 0.03
+    opt.pgt_coeff = 0.5
     opt.pgt_lr_decay = 1.0 
     opt.pgt_lr_decay_step = 300 
     opt.epochs = 300
     opt.no_trace = True 
     opt.conf_thres = 0.50 
-    opt.batch_size = 128
-    # opt.batch_size = 64 
+    opt.batch_size = 32
+    # opt.batch_size = 96 
     opt.save_dir = str('runs/' + opt.name + '_lr' + str(opt.pgt_coeff)) 
-    # opt.device = '5' 
+    opt.device = '2' 
     # opt.device = "0,1,2,3" 
-    opt.device = "1,2,3,4" 
+    # opt.device = "5,6,7" 
     # opt.weights = 'weights/yolov7.pt'
     
     # lambda03 Console Commands
@@ -746,16 +745,17 @@ if __name__ == '__main__':
     # watch -n 0.5 ps -up `nvidia-smi -q -x | grep pid | sed -e 's/<pid>//g' -e 's/<\/pid>//g' -e 's/^[[:space:]]*//'`
     
     # Resume run
-    # nohup python train_pgt.py --resume runs/pgt/train-pgt-yolov7/pgt5_145/weights/last.pt > ./output_logs/gpu6_trpgt_drone_out1_lr0_5.log 2>&1 &
-    # nohup python -m torch.distributed.launch --nproc_per_node 4 --master_port 9528 train_pgt.py --sync-bn --resume runs/pgt/train-pgt-yolov7/pgt3_17/weights/last.pt > ./output_logs/gpu0123_coco_pgtlr0_1.log 2>&1 &
-    # opt.weights = 'runs/pgt/train-pgt-yolov7/pgt5_145/weights/last.pt'
+    # nohup python train_pgt.py --resume runs/pgt/train-pgt-yolov7/pgt5_214/weights/last.pt > ./output_logs/gpu5_trpgt_coco_out1_lr0_25.log 2>&1 &
+    # nohup python -m torch.distributed.launch --nproc_per_node 4 --master_port 9527 train_pgt.py --sync-bn --resume runs/pgt/train-pgt-yolov7/pgt5_214/weights/last.pt > ./output_logs/gpu1245_coco_pgtlr0_25.log 2>&1 &
+    # opt.resume = "runs/pgt/train-pgt-yolov7/pgt5_214/weights/last.pt"
+    # opt.weights = 'runs/pgt/train-pgt-yolov7/pgt5_214/weights/last.pt'
     
     # nohup python train_pgt.py > ./output_logs/gpu5_trpgt_coco_out0_pretrained_lr0_25.log 2>&1 &
-    # nohup python -m torch.distributed.launch --nproc_per_node 4 --master_port 9528 train_pgt.py --sync-bn > ./output_logs/gpu1234_coco_pgtlr0_03.log 2>&1 &
-    # nohup python -m torch.distributed.launch --nproc_per_node 3 --master_port 9527 train_pgt.py --sync-bn > ./output_logs/gpu367_coco_pgt_lr9_0.log 2>&1 &
+    # nohup python -m torch.distributed.launch --nproc_per_node 4 --master_port 9528 train_pgt.py --sync-bn > ./output_logs/gpu1234_coco_pgtlr0_25.log 2>&1 &
+    # nohup python -m torch.distributed.launch --nproc_per_node 3 --master_port 9527 train_pgt.py --sync-bn > ./output_logs/gpu567_coco_pgt_lr0_05.log 2>&1 &
     # opt.quad = True # Helps for multiple gpu training 
-    opt.dataset = 'coco' # 'real_world_drone'
-    # opt.dataset = 'real_world_drone'
+    # opt.dataset = 'coco' # 'real_world_drone'
+    opt.dataset = 'real_world_drone'
     # opt.sync_bn = True
     
     opt.seed = random.randrange(sys.maxsize)
@@ -786,21 +786,21 @@ if __name__ == '__main__':
             opt.hyp = 'data/hyp.real_world_lambda01.yaml' 
     if opt.dataset == 'coco':
         opt.source = "/data/nielseni6/coco/images"
-        # ######### scratch #########
-        # opt.cfg = 'cfg/training/yolov7.yaml'
-        # opt.weights = ''
-        # opt.hyp = 'data/hyp.scratch.p5.yaml'
-        # ###########################
+        ######### scratch #########
+        opt.cfg = 'cfg/training/yolov7.yaml'
+        opt.weights = ''
+        opt.hyp = 'data/hyp.scratch.p5.yaml'
+        ###########################
         # ######## pretrained #######
         # opt.cfg = 'cfg/training/yolov7.yaml'
         # opt.weights = 'weights/yolov7_training.pt'
         # opt.hyp = 'data/hyp.scratch.custom.yaml'
         # ###########################
-        ####### pretrained-x ######
-        opt.cfg = 'cfg/training/yolov7x.yaml'
-        opt.weights = 'weights/yolov7x_training.pt'
-        opt.hyp = 'data/hyp.scratch.custom.yaml'
-        ###########################
+        # ####### pretrained-x ######
+        # opt.cfg = 'cfg/training/yolov7x.yaml'
+        # opt.weights = 'weights/yolov7x_training.pt'
+        # opt.hyp = 'data/hyp.scratch.custom.yaml'
+        # ###########################
         opt.data = 'data/coco_lambda01.yaml'
         
         

@@ -1753,6 +1753,8 @@ class ComputePGTLossOTA:
         self.BCEcls, self.BCEobj, self.gr, self.hyp, self.autobalance = BCEcls, BCEobj, model.gr, h, autobalance
         for k in 'na', 'nc', 'nl', 'anchors', 'stride':
             setattr(self, k, getattr(det, k))
+        
+        self.n_nans = 0
 
     def __call__(self, p, targets, imgs, attr, pgt_coeff = 1.0, metric='CIoU'):  # predictions, targets, model   
         device = targets.device
@@ -1761,13 +1763,20 @@ class ComputePGTLossOTA:
         bs, as_, gjs, gis, targets, anchors = self.build_targets(p, targets, imgs)
         pre_gen_gains = [torch.tensor(pp.shape, device=device)[[3, 2, 3, 2]] for pp in p] 
         ####################### PGT CODE ADDED BELOW #######################
-        plaus_score = get_plaus_score(imgs, targets_out = targets_, attr = attr)
-        # # weight each IoU by the percent of the image that is a target
-        # img_seg_percent = (torch.sum(coords_map) / coords_map.flatten().shape[0])
-        # # seg_size_factor = 1.0 has largest effect on IoU, 0.0 has no effect
-        # We were dividing IoU by the number of images, but this is not correct since the max IoU is already 1.0
-        # IoU = (- IoU_) # * (1.0 - (img_seg_percent * seg_size_factor)) if not math.isnan(IoU_) else torch.tensor(0.0)
-        lplaus = ((1 - plaus_score) * pgt_coeff).unsqueeze(0)
+        if pgt_coeff != 0.0:
+            plaus_score = get_plaus_score(imgs, targets_out = targets_, attr = attr)
+            if torch.isnan(plaus_score).any():
+                self.n_nans += 1
+                plaus_score = torch.tensor(0.0, device=device)
+                print(f"plaus_score is nan, number of nans: {self.n_nans}")
+            # # weight each IoU by the percent of the image that is a target
+            # img_seg_percent = (torch.sum(coords_map) / coords_map.flatten().shape[0])
+            # # seg_size_factor = 1.0 has largest effect on IoU, 0.0 has no effect
+            # We were dividing IoU by the number of images, but this is not correct since the max IoU is already 1.0
+            # IoU = (- IoU_) # * (1.0 - (img_seg_percent * seg_size_factor)) if not math.isnan(IoU_) else torch.tensor(0.0)
+            lplaus = ((1 - plaus_score) * pgt_coeff).unsqueeze(0)
+        else:
+            lplaus = torch.zeros(1, device=device)
         ####################################################################
         
         # Losses
@@ -1825,7 +1834,10 @@ class ComputePGTLossOTA:
         lcls *= self.hyp['cls']
         bs = tobj.shape[0]  # batch size
         lobj=lobj.clamp(max=2)
-        loss_r = lbox + lobj + lcls + lplaus # lplaus is the PGT loss added to the original loss
+        if pgt_coeff != 0.0:
+            loss_r = lbox + lobj + lcls + lplaus # lplaus is the PGT loss added to the original loss
+        else:
+            loss_r = lbox + lobj + lcls
         loss=loss_r.clamp(max=2)
         return loss * bs, torch.cat((lbox, lobj, lcls, lplaus, loss)).detach() # lplaus added to loss_items as well
 

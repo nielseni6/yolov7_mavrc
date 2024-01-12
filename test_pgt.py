@@ -15,10 +15,22 @@ from utils.metrics import ap_per_class, ConfusionMatrix
 from utils.plots import plot_images, output_to_target, plot_study_txt
 from utils.torch_utils import select_device, time_synchronized, TracedModel
 
-from xai.EvalAttAI import EvalAttAI
-from plaus_functs import get_gradient
+from xai.Perturbation import Perturbation
+from plaus_functs import get_gradient, get_gaussian
+import socket
+from plot_functs import imshow
 
-def test(data,
+from utils.wandb_logging.wandb_utils import WandbLogger, check_wandb_resume
+import wandb
+from models.yolo import Model, ModelPGT
+from utils.loss import ComputeLoss, ComputeLossOTA, ComputePGTLossOTA
+# parser = argparse.ArgumentParser(prog='test_pgt.py')
+# parser.add_argument('--debug', action='store_true', help='debug mode for visualizing figures')
+# import logging
+
+# logger = logging.getLogger(__name__)
+
+def test_pgt(data,
          weights=None,
          batch_size=32,
          imgsz=640,
@@ -41,9 +53,14 @@ def test(data,
          trace=False,
          is_coco=False,
          v5_metric=False,
-         loss_metric="CIoU"):
+         loss_metric="CIoU",
+         opt=None):
+    opt.plots = plots
+    opt.loss_metric = loss_metric
+    opt.save_txt = save_txt
     # Initialize/load model and set device
     training = model is not None
+    opt.training = training
     if training:  # called by train.py
         device = next(model.parameters()).device  # get model device
 
@@ -54,20 +71,29 @@ def test(data,
         # Directories
         save_dir = Path(increment_path(Path(opt.project) / opt.name, exist_ok=opt.exist_ok))  # increment run
         (save_dir / 'labels' if save_txt else save_dir).mkdir(parents=True, exist_ok=True)  # make dir
-
+        opt.save_dir = save_dir
+        
         # Load model
         model = attempt_load(weights, map_location=device)  # load FP32 model
         gs = max(int(model.stride.max()), 32)  # grid size (max stride)
         imgsz = check_img_size(imgsz, s=gs)  # check img_size
         
+        if compute_loss is not None:
+            compute_loss = compute_loss(model)
+        opt.compute_loss = compute_loss
+        
         if trace:
             model = TracedModel(model, device, imgsz)
-
+    opt.imgsz = imgsz
+    opt.device = device
+    
     # Half
-    half = device.type != 'cpu' and half_precision  # half precision only supported on CUDA
+    half = False
+    # half = device.type != 'cpu' and half_precision  # half precision only supported on CUDA
     if half:
         model.half()
-
+    opt.half = half
+    
     # Configure
     model.eval()
     if isinstance(data, str):
@@ -76,13 +102,20 @@ def test(data,
             data = yaml.load(f, Loader=yaml.SafeLoader)
     check_dataset(data)  # check
     nc = 1 if single_cls else int(data['nc'])  # number of classes
+    opt.nc = nc
     iouv = torch.linspace(0.5, 0.95, 10).to(device)  # iou vector for mAP@0.5:0.95
+    opt.iouv = iouv
     niou = iouv.numel()
-
+    opt.niou = niou
+    opt.is_coco = is_coco
+    
     # Logging
     log_imgs = 0
     if wandb_logger and wandb_logger.wandb:
         log_imgs = min(wandb_logger.log_imgs, 100)
+    opt.wandb_logger = wandb_logger
+    opt.log_imgs = log_imgs
+    opt.save_json = save_json
     # Dataloader
     if not training:
         if device.type != 'cpu':
@@ -96,23 +129,53 @@ def test(data,
     
     seen = 0
     confusion_matrix = ConfusionMatrix(nc=nc)
+    opt.confusion_matrix = confusion_matrix
     names = {k: v for k, v in enumerate(model.names if hasattr(model, 'names') else model.module.names)}
+    opt.names = names
     coco91class = coco80_to_coco91_class()
+    opt.coco91class = coco91class
     s = ('%20s' + '%12s' * 6) % ('Class', 'Images', 'Labels', 'P', 'R', 'mAP@.5', 'mAP@.5:.95')
     p, r, f1, mp, mr, map50, map, t0, t1 = 0., 0., 0., 0., 0., 0., 0., 0., 0.
     loss = torch.zeros(3, device=device)
     jdict, stats, ap, ap_class, wandb_images = [], [], [], [], []
     
-    evalattai = EvalAttAI(model, nsteps = 10, epsilon = 0.05)
-    evalattai.__init_attr__(attr_method = get_gradient, norm=True, absolute=False, grayscale=False)
+    ##########################################################################################
+    # evalattai = Perturbation(model, opt, nsteps = 10, epsilon = 0.05)
+    # evalattai.__init_attr__(attr_method = get_gradient, norm=True, keepmean=True, absolute=False, grayscale=False)
     
+    if opt.eval_type == 'robust':
+        nsteps = 2
+        # desired_snr = 10.0
+    elif opt.eval_type == 'evalattai':
+        nsteps = 10
+        # desired_snr = 5.0
+    elif opt.eval_type == 'default':
+        nsteps = 1
+        # desired_snr = 1e+100
+    desired_snr = opt.desired_snr
+    
+    robust_eval = Perturbation(model, opt, nsteps = nsteps, desired_snr = desired_snr)
+    
+    if opt.atk == 'grad':
+        robust_eval.__init_attr__(attr_method = get_gradient, norm=True, keepmean=True, absolute=False, grayscale=False)
+    if opt.atk == 'gaussian':
+        robust_eval.__init_attr__(attr_method = get_gaussian, norm=True, keepmean=True, absolute=False, grayscale=False)
+    ##########################################################################################
     for batch_i, (img, targets, paths, shapes) in enumerate(tqdm(dataloader, desc=s)):
         img = img.to(device, non_blocking=True)
+        
+        debug = False
+        if debug:
+            from plot_functs import imshow
+            for i_num in range(len(img)):
+                imshow(img[i_num].float(), save_path='figs/img')
+                
         img = img.half() if half else img.float()  # uint8 to fp16/32
         img /= 255.0  # 0 - 255 to 0.0 - 1.0
         targets = targets.to(device)
+        img_, targets_ = img.clone().detach(), targets.clone().detach()
         nb, _, height, width = img.shape  # batch size, channels, height, width
-
+        """                
         with torch.no_grad():
             # Run model
             t = time_synchronized()
@@ -215,17 +278,30 @@ def test(data,
 
             # Append statistics (correct, conf, pcls, tcls)
             stats.append((correct.cpu(), pred[:, 4].cpu(), pred[:, 5].cpu(), tcls))
-
-        evalattai.collect_stats(img, train_out[1])
-        
+        """
+        ##########################################################################################
+        # evalattai.collect_stats(img_, targets_, paths, shapes)
+        robust_eval.collect_stats(img_, targets_, paths, shapes, batch_i)
+        ##########################################################################################
+        """
         # Plot images
         if plots and batch_i < 3:
             f = save_dir / f'test_batch{batch_i}_labels.jpg'  # labels
             Thread(target=plot_images, args=(img, targets, paths, f, names), daemon=True).start()
             f = save_dir / f'test_batch{batch_i}_pred.jpg'  # predictions
             Thread(target=plot_images, args=(img, output_to_target(out), paths, f, names), daemon=True).start()
-
+        """
 ############################################################################################
+    ##########################################################################################
+    # evalattai_results = evalattai.compute_stats()
+    robust_eval_results, stats_all = robust_eval.compute_stats()
+    for ir in range(len(robust_eval_results)):
+        r_loss = torch.zeros(3, device=device)
+        ((r_mp, r_mr, r_map50, r_map, r_loss[0], r_loss[1], r_loss[2]), r_maps, r_t) = robust_eval_results[ir][0]
+        robust_eval_results[ir][0] = (r_mp, r_mr, r_map50, r_map, *(r_loss.cpu()).tolist()), r_maps, r_t
+    return robust_eval_results
+    ##########################################################################################
+    """
     # Compute statistics
     stats = [np.concatenate(x, 0) for x in zip(*stats)]  # to numpy
     if len(stats) and stats[0].any():
@@ -292,16 +368,17 @@ def test(data,
     maps = np.zeros(nc) + map
     for i, c in enumerate(ap_class):
         maps[c] = ap[i]
+    results = (mp, mr, map50, map, *(loss.cpu() / len(dataloader)).tolist()), maps, t
     return (mp, mr, map50, map, *(loss.cpu() / len(dataloader)).tolist()), maps, t
-
+    """
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(prog='test.py')
+    parser = argparse.ArgumentParser()
     parser.add_argument('--weights', nargs='+', type=str, default='yolov7.pt', help='model.pt path(s)')
     parser.add_argument('--data', type=str, default='data/coco.yaml', help='*.data path')
     parser.add_argument('--batch-size', type=int, default=32, help='size of each image batch')
     parser.add_argument('--img-size', type=int, default=640, help='inference size (pixels)')
-    parser.add_argument('--conf-thres', type=float, default=0.001, help='object confidence threshold')
+    parser.add_argument('--conf-thres', type=float, default=0.01, help='object confidence threshold')
     parser.add_argument('--iou-thres', type=float, default=0.65, help='IOU threshold for NMS')
     parser.add_argument('--task', default='val', help='train, val, test, speed or study')
     parser.add_argument('--device', default='', help='cuda device, i.e. 0 or 0,1,2,3 or cpu')
@@ -312,27 +389,103 @@ if __name__ == '__main__':
     parser.add_argument('--save-hybrid', action='store_true', help='save label+prediction hybrid results to *.txt')
     parser.add_argument('--save-conf', action='store_true', help='save confidences in --save-txt labels')
     parser.add_argument('--save-json', action='store_true', help='save a cocoapi-compatible JSON results file')
-    parser.add_argument('--project', default='runs/test', help='save to project/name')
-    parser.add_argument('--name', default='exp', help='save to project/name')
+    parser.add_argument('--project', default='runs/r_test', help='save to project/name')
+    parser.add_argument('--name', default=f'test{socket.gethostname()[-1]}_', help='save to project/name')
     parser.add_argument('--exist-ok', action='store_true', help='existing project/name ok, do not increment')
     parser.add_argument('--no-trace', action='store_true', help='don`t trace model')
     parser.add_argument('--v5-metric', action='store_true', help='assume maximum recall as 1.0 in AP calculation')
+    parser.add_argument('--half-precision', action='store_true', help='use half precision')
+    ############################################################################
+    parser.add_argument('--bbox_interval', type=int, default=-1, help='Set bounding-box image logging interval for W&B')
+    parser.add_argument('--artifact_alias', type=str, default="latest", help='version of dataset artifact to be used')
+    ############################################################################
+    parser.add_argument('--dataset', default='real_world_drone', help='coco or real_world_drone')
+    # parser.add_argument('--hyp', type=str, default='data/hyp.coco.yaml', help='')
+    parser.add_argument('--atk', type=str, default='gaussian', help='grad, pgd, gaussian')
+    parser.add_argument('--eval_type', type=str, default='robust', help='robust, evalattai, default')
+    parser.add_argument('--desired_snr', type=float, default=25.0, help='desired snr')
+    # parser.add_argument('--allow_val_change', type=bool, default=True, help='allow val change')
+    # parser.add_argument('--debug', action='store_true', help='debug mode for visualizing figures')
+    
     opt = parser.parse_args()
+
+    #check_requirements()
+    # opt.eval_type = 'evalattai'
+    opt.atk = 'gaussian'
+    # opt.atk = 'grad'
+    
+    opt.entity = os.popen('whoami').read().strip()
+    opt.host_name = socket.gethostname()
+    username = os.getenv('USER')
+    os.environ["WANDB_ENTITY"] = username
+    opt.username = username
+    
+    opt.half_precision = True
+    opt.device = '2'
+    opt.batch_size = 32
+    opt.dataset = 'real_world_drone'
+    opt.weights = 'weights/best_baseline.pt'
+    # opt.weights = 'weights/best_pgt_weights.pt'
+    if 'pgt' in opt.weights:
+        opt.name += 'pgt'
+
+    if opt.dataset == 'real_world_drone':
+        if ('lambda02' == opt.host_name) or ('lambda03' == opt.host_name) or ('lambda05' == opt.host_name):    
+            opt.source = '/data/Koutsoubn8/ijcnn_v7data/Real_world_test/images' 
+            opt.data = 'data/real_world.yaml' 
+            opt.hyp = 'data/hyp.real_world.yaml' 
+        if ('lambda01' == opt.host_name):
+            opt.source = '/data/nielseni6/ijcnn_v7data/Real_world_test/images' 
+            opt.data = 'data/real_world_lambda01.yaml' 
+            opt.hyp = 'data/hyp.real_world_lambda01.yaml' 
+    if opt.dataset == 'coco':
+        opt.source = "/data/nielseni6/coco/images"
+        ######### scratch #########
+        opt.cfg = 'cfg/training/yolov7.yaml'
+        opt.weights = ''
+        opt.hyp = 'data/hyp.scratch.p5.yaml'
+        ###########################
+        # ######## pretrained #######
+        # opt.cfg = 'cfg/training/yolov7.yaml'
+        # opt.weights = 'weights/yolov7_training.pt'
+        # opt.hyp = 'data/hyp.scratch.custom.yaml'
+        # ###########################
+        # ####### pretrained-x ######
+        # opt.cfg = 'cfg/training/yolov7x.yaml'
+        # opt.weights = 'weights/yolov7x_training.pt'
+        # opt.hyp = 'data/hyp.scratch.custom.yaml'
+        # ###########################
+        opt.data = 'data/coco_lambda01.yaml'
+    
     opt.save_json |= opt.data.endswith('coco.yaml')
     opt.data = check_file(opt.data)  # check file
     print(opt)
-    #check_requirements()
-
-    opt.device = '5'
-    opt.batch_size = 8 
-    opt.data = 'data/real_world.yaml'
-    opt.img_size = 480 
-    opt.name = 'test1' 
-    opt.weights = 'weights/yolov7-tiny.pt' 
-    # opt.single_cls = True
-
+    # wandb.config.update(opt)
+    
+    opt.allow_val_change=True
+    # allow_val_change=True to config.update()
+    
     if opt.task in ('train', 'val', 'test'):  # run normally
-        test(opt.data,
+        
+        opt.resume, opt.upload_dataset, opt.epochs = False, False, 1
+
+        with open(opt.data) as f:
+            data_dict = yaml.load(f, Loader=yaml.SafeLoader)  # data dict
+        
+        save_dir = increment_path(Path(opt.project) / opt.name, exist_ok=opt.exist_ok | False)  # increment run
+        (Path(save_dir) / 'labels' if opt.save_txt else Path(save_dir)).mkdir(parents=True, exist_ok=True)  # make dir
+        
+        loggers = {'wandb': None}  # loggers dict
+        
+        weights = opt.weights
+        device = select_device(opt.device, batch_size=opt.batch_size)
+        # run_id = torch.load(weights, map_location=device).get('wandb_id') if weights.endswith('.pt') and os.path.isfile(weights) else None
+        run_id = None
+        wandb_logger = WandbLogger(opt, Path(save_dir).stem, run_id, data_dict)
+        loggers['wandb'] = wandb_logger.wandb
+        data_dict = wandb_logger.data_dict
+    
+        results = test_pgt(opt.data,
              opt.weights,
              opt.batch_size,
              opt.img_size,
@@ -345,25 +498,51 @@ if __name__ == '__main__':
              save_txt=opt.save_txt | opt.save_hybrid,
              save_hybrid=opt.save_hybrid,
              save_conf=opt.save_conf,
+             half_precision=opt.half_precision,
              trace=not opt.no_trace,
-             v5_metric=opt.v5_metric
+            #  trace=opt.no_trace,
+             v5_metric=opt.v5_metric,
+             opt = opt,
+             wandb_logger=wandb_logger,
+             compute_loss=ComputeLoss,
              )
+        
+        
+        # Log
+        tags = ['metrics/precision', 'metrics/recall', 'metrics/mAP_0.5', 'metrics/mAP_0.5:0.95',
+                'val/box_loss', 'val/obj_loss', 'val/cls_loss',  # val loss
+                ]
+        # for ir in range(len(robust_eval_results)):
+        #     r_loss = torch.zeros(3, device=device)
+        #     ((r_mp, r_mr, r_map50, r_map, r_loss[0], r_loss[1], r_loss[2]), r_maps, r_t) = robust_eval_results[ir][0]
+        #     results = (r_mp, r_mr, r_map50, r_map, *(r_loss.cpu()).tolist()), r_maps, r_t
+        for i_step, res in enumerate(results):
+            (result, maps, t) = res[0]
+            # wandb_logger.current_epoch = i_step
+            for x, tag in zip(list(result), tags):
+                if wandb_logger.wandb:
+                    wandb_logger.log({tag: x})  # W&B
+            wandb_logger.end_epoch()
 
+        wandb_logger.finish_run()
+        
     elif opt.task == 'speed':  # speed benchmarks
         for w in opt.weights:
-            test(opt.data, w, opt.batch_size, opt.img_size, 0.25, 0.45, save_json=False, plots=False, v5_metric=opt.v5_metric)
+            test_pgt(opt.data, w, opt.batch_size, opt.img_size, 0.25, 0.45, opt=opt, save_json=False, plots=False, v5_metric=opt.v5_metric)
 
     elif opt.task == 'study':  # run over a range of settings and save/plot
-        # python test.py --task study --data coco.yaml --iou 0.65 --weights yolov7.pt
+        # python test_pgt.py --task study --data coco.yaml --iou 0.65 --weights yolov7.pt
         x = list(range(256, 1536 + 128, 128))  # x axis (image sizes)
         for w in opt.weights:
             f = f'study_{Path(opt.data).stem}_{Path(w).stem}.txt'  # filename to save to
             y = []  # y axis
             for i in x:  # img-size
                 print(f'\nRunning {f} point {i}...')
-                r, _, t = test(opt.data, w, opt.batch_size, i, opt.conf_thres, opt.iou_thres, opt.save_json,
-                               plots=False, v5_metric=opt.v5_metric)
+                r, _, t = test_pgt(opt.data, w, opt.batch_size, i, opt.conf_thres, opt.iou_thres, opt.save_json,
+                               plots=False, v5_metric=opt.v5_metric, opt=opt)
                 y.append(r + t)  # results and times
             np.savetxt(f, y, fmt='%10.4g')  # save
         os.system('zip -r study.zip study_*.txt')
         plot_study_txt(x=x)  # plot
+
+    
