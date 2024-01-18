@@ -24,6 +24,8 @@ from utils.wandb_logging.wandb_utils import WandbLogger, check_wandb_resume
 import wandb
 from models.yolo import Model, ModelPGT
 from utils.loss import ComputeLoss, ComputeLossOTA, ComputePGTLossOTA
+import torchattacks
+
 # parser = argparse.ArgumentParser(prog='test_pgt.py')
 # parser.add_argument('--debug', action='store_true', help='debug mode for visualizing figures')
 # import logging
@@ -54,6 +56,7 @@ def test_pgt(data,
          is_coco=False,
          v5_metric=False,
          loss_metric="CIoU",
+         device=None,
          opt=None):
     opt.plots = plots
     opt.loss_metric = loss_metric
@@ -66,7 +69,8 @@ def test_pgt(data,
 
     else:  # called directly
         set_logging()
-        device = select_device(opt.device, batch_size=batch_size)
+        if device is None:  # set device
+            device = select_device(opt.device, batch_size=batch_size)
 
         # Directories
         save_dir = Path(increment_path(Path(opt.project) / opt.name, exist_ok=opt.exist_ok))  # increment run
@@ -143,8 +147,10 @@ def test_pgt(data,
     # evalattai = Perturbation(model, opt, nsteps = 10, epsilon = 0.05)
     # evalattai.__init_attr__(attr_method = get_gradient, norm=True, keepmean=True, absolute=False, grayscale=False)
     
+    start=0
     if opt.eval_type == 'robust':
         nsteps = 2
+        start=1
         # desired_snr = 10.0
     elif opt.eval_type == 'evalattai':
         nsteps = 10
@@ -153,12 +159,20 @@ def test_pgt(data,
         nsteps = 1
         # desired_snr = 1e+100
     desired_snr = opt.desired_snr
-    
-    robust_eval = Perturbation(model, opt, nsteps = nsteps, desired_snr = desired_snr)
+    if opt.atk == 'none':
+        desired_snr = 1e+100
+        
+    robust_eval = Perturbation(model, opt, nsteps = nsteps, desired_snr = desired_snr, start=start)
     
     if opt.atk == 'grad':
         robust_eval.__init_attr__(attr_method = get_gradient, norm=True, keepmean=True, absolute=False, grayscale=False)
     if opt.atk == 'gaussian':
+        robust_eval.__init_attr__(attr_method = get_gaussian, norm=True, keepmean=True, absolute=False, grayscale=False)
+    if opt.atk == 'pgd':
+        robust_eval.__init_attr__(attr_method = torchattacks.PGD(model, loss=compute_loss, metric=loss_metric, eps=8/255, alpha=2/255, steps=4), torchattacks_used=True)
+    if opt.atk == 'fgsm':
+        robust_eval.__init_attr__(attr_method = torchattacks.FGSM(model, loss=compute_loss, metric=loss_metric, eps=8/255), torchattacks_used=True)
+    if opt.atk == 'none':
         robust_eval.__init_attr__(attr_method = get_gaussian, norm=True, keepmean=True, absolute=False, grayscale=False)
     ##########################################################################################
     for batch_i, (img, targets, paths, shapes) in enumerate(tqdm(dataloader, desc=s)):
@@ -411,8 +425,16 @@ if __name__ == '__main__':
 
     #check_requirements()
     # opt.eval_type = 'evalattai'
-    opt.atk = 'gaussian'
+    
+    # opt.atk = 'gaussian'
     # opt.atk = 'grad'
+    # opt.atk = 'none'
+    atk_list = ['fgsm', 'pgd', 'gaussian', 'none']
+    # atk_list = ['grad', 'gaussian', 'none',] # 'pgd', 'fgsm'
+    # opt.desired_snr = 1e+100
+    opt.atk = ''
+    for atkname in atk_list:
+        opt.atk = f'{opt.atk}{atkname}'
     
     opt.entity = os.popen('whoami').read().strip()
     opt.host_name = socket.gethostname()
@@ -423,9 +445,14 @@ if __name__ == '__main__':
     opt.half_precision = True
     opt.device = '2'
     opt.batch_size = 32
+    # opt.dataset = 'coco'
     opt.dataset = 'real_world_drone'
-    opt.weights = 'weights/best_baseline.pt'
+    # opt.weights = 'weights/best_baseline.pt'
     # opt.weights = 'weights/best_pgt_weights.pt'
+    weights_dir = 'weights/eval_drone'
+    # weights_dir = 'weights/eval_coco'
+    weights_list = os.listdir(weights_dir)
+    opt.weights = f'{weights_dir}/{weights_list[0]}'
     if 'pgt' in opt.weights:
         opt.name += 'pgt'
 
@@ -440,21 +467,8 @@ if __name__ == '__main__':
             opt.hyp = 'data/hyp.real_world_lambda01.yaml' 
     if opt.dataset == 'coco':
         opt.source = "/data/nielseni6/coco/images"
-        ######### scratch #########
         opt.cfg = 'cfg/training/yolov7.yaml'
-        opt.weights = ''
         opt.hyp = 'data/hyp.scratch.p5.yaml'
-        ###########################
-        # ######## pretrained #######
-        # opt.cfg = 'cfg/training/yolov7.yaml'
-        # opt.weights = 'weights/yolov7_training.pt'
-        # opt.hyp = 'data/hyp.scratch.custom.yaml'
-        # ###########################
-        # ####### pretrained-x ######
-        # opt.cfg = 'cfg/training/yolov7x.yaml'
-        # opt.weights = 'weights/yolov7x_training.pt'
-        # opt.hyp = 'data/hyp.scratch.custom.yaml'
-        # ###########################
         opt.data = 'data/coco_lambda01.yaml'
     
     opt.save_json |= opt.data.endswith('coco.yaml')
@@ -484,46 +498,50 @@ if __name__ == '__main__':
         wandb_logger = WandbLogger(opt, Path(save_dir).stem, run_id, data_dict)
         loggers['wandb'] = wandb_logger.wandb
         data_dict = wandb_logger.data_dict
-    
-        results = test_pgt(opt.data,
-             opt.weights,
-             opt.batch_size,
-             opt.img_size,
-             opt.conf_thres,
-             opt.iou_thres,
-             opt.save_json,
-             opt.single_cls,
-             opt.augment,
-             opt.verbose,
-             save_txt=opt.save_txt | opt.save_hybrid,
-             save_hybrid=opt.save_hybrid,
-             save_conf=opt.save_conf,
-             half_precision=opt.half_precision,
-             trace=not opt.no_trace,
-            #  trace=opt.no_trace,
-             v5_metric=opt.v5_metric,
-             opt = opt,
-             wandb_logger=wandb_logger,
-             compute_loss=ComputeLoss,
-             )
-        
-        
-        # Log
-        tags = ['metrics/precision', 'metrics/recall', 'metrics/mAP_0.5', 'metrics/mAP_0.5:0.95',
-                'val/box_loss', 'val/obj_loss', 'val/cls_loss',  # val loss
-                ]
-        # for ir in range(len(robust_eval_results)):
-        #     r_loss = torch.zeros(3, device=device)
-        #     ((r_mp, r_mr, r_map50, r_map, r_loss[0], r_loss[1], r_loss[2]), r_maps, r_t) = robust_eval_results[ir][0]
-        #     results = (r_mp, r_mr, r_map50, r_map, *(r_loss.cpu()).tolist()), r_maps, r_t
-        for i_step, res in enumerate(results):
-            (result, maps, t) = res[0]
-            # wandb_logger.current_epoch = i_step
-            for x, tag in zip(list(result), tags):
-                if wandb_logger.wandb:
-                    wandb_logger.log({tag: x})  # W&B
-            wandb_logger.end_epoch()
 
+        for atk in atk_list:
+            opt.atk = atk
+            results = test_pgt(opt.data,
+                opt.weights,
+                opt.batch_size,
+                opt.img_size,
+                opt.conf_thres,
+                opt.iou_thres,
+                opt.save_json,
+                opt.single_cls,
+                opt.augment,
+                opt.verbose,
+                save_txt=opt.save_txt | opt.save_hybrid,
+                save_hybrid=opt.save_hybrid,
+                save_conf=opt.save_conf,
+                half_precision=opt.half_precision,
+                trace=not opt.no_trace,
+                #  trace=opt.no_trace,
+                v5_metric=opt.v5_metric,
+                opt = opt,
+                wandb_logger=wandb_logger,
+                compute_loss=ComputeLoss,
+                device=device,
+                )
+            
+            
+            # Log
+            tags = ['metrics/precision', 'metrics/recall', 'metrics/mAP_0.5', 'metrics/mAP_0.5:0.95',
+                    'val/box_loss', 'val/obj_loss', 'val/cls_loss',  # val loss
+                    ]
+            # for ir in range(len(robust_eval_results)):
+            #     r_loss = torch.zeros(3, device=device)
+            #     ((r_mp, r_mr, r_map50, r_map, r_loss[0], r_loss[1], r_loss[2]), r_maps, r_t) = robust_eval_results[ir][0]
+            #     results = (r_mp, r_mr, r_map50, r_map, *(r_loss.cpu()).tolist()), r_maps, r_t
+            for i_step, res in enumerate(results):
+                (result, maps, t) = res[0]
+                # wandb_logger.current_epoch = i_step
+                for x, tag in zip(list(result), tags):
+                    if wandb_logger.wandb:
+                        wandb_logger.log({tag: x})  # W&B
+                wandb_logger.end_epoch()
+
+        
         wandb_logger.finish_run()
         
     elif opt.task == 'speed':  # speed benchmarks

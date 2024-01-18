@@ -12,6 +12,8 @@ import matplotlib.pyplot as plt
 from PIL import Image
 from torchvision.transforms.functional import to_pil_image, pil_to_tensor
 from plot_functs import imshow, Subplots
+# from plaus_functs import normalize_batch
+from plot_functs import normalize_tensor
 
 def nlist(n, inp=None):
     if inp is None:
@@ -97,7 +99,7 @@ def overlay_attr(img, mask, colormap: str = "jet", alpha: float = 0.7):
     return overlayed_tensor
 
 class Perturbation:
-    def __init__(self, model, opt, nsteps = 10, desired_snr = 5):#, augment = False, compute_loss = None, loss_metric = "CIoU"):
+    def __init__(self, model, opt, nsteps = 10, desired_snr = 5, start=0):#, augment = False, compute_loss = None, loss_metric = "CIoU"):
         self.model = model
         self.nsteps = nsteps
         self.snr = desired_snr # Value of SNR in dB at the end of the perturbation steps (nsteps)
@@ -109,7 +111,7 @@ class Perturbation:
         self.loss = nlist(nsteps, torch.zeros(3, device=opt.device))#[torch.zeros(3, device=opt.device)  for _ in range(nsteps)]
         self.ap, self.ap_class, self.wandb_images = nlist(nsteps), nlist(nsteps), nlist(nsteps)
         self.wandb_figs = nlist(nsteps)
-        self.wandb_attr, self.wandb_attr_overlay = nlist(nsteps), nlist(nsteps)
+        self.wandb_attk, self.wandb_attk_overlay = nlist(nsteps), nlist(nsteps)
         self.p, self.r = nlist(nsteps, 0.), nlist(nsteps, 0.)
         self.f1, self.mp = nlist(nsteps, 0.), nlist(nsteps, 0.)
         self.mr, self.map50, self.map = nlist(nsteps, 0.), nlist(nsteps, 0.), nlist(nsteps, 0.)
@@ -117,11 +119,15 @@ class Perturbation:
         self.t0, self.t1 = nlist(nsteps, 0.), nlist(nsteps, 0.)
         self.debug1, self.debug2 = False, False
         self.debug3 = False
+        self.attr_method = None
+        self.start = start
    
-    def __init_attr__(self, attr_method = get_gradient, out_num_attr = 1, **kwargs):
+    def __init_attr__(self, attr_method = get_gradient, out_num_attr = 1, 
+                      torchattacks_used=False, **kwargs):
         self.attr_method = attr_method
         self.attr_kwargs = kwargs
         self.out_num_attr = out_num_attr
+        self.torchattacks_used = torchattacks_used
 
         
     def collect_stats(self, img, targets, paths, shapes, batch_i):
@@ -136,36 +142,50 @@ class Perturbation:
         
         
         out, train_out = model(im0, augment=opt.augment)  # inference and training outputs
-        self.attr = self.attr_method(im0,
-                                     grad_wrt=train_out[self.out_num_attr], 
-                                     **self.attr_kwargs)
-        attr = self.attr.clone().detach()
+        # self.attr = get_gradient(im0, grad_wrt=train_out[self.out_num_attr], norm=True, keepmean=True, absolute=True, grayscale=True)
+        if self.attr_method is not None:
+            if self.torchattacks_used:
+                self.attk = self.attr_method(im0, targets.clone().detach())
+            else:
+                self.attk = self.attr_method(im0,
+                                        grad_wrt=train_out[self.out_num_attr], 
+                                        **self.attr_kwargs)
+        else:
+            self.attk = torch.zeros_like(im0)
+        attk = self.attk.clone().detach()
         im0 = img.clone().detach()
         
         overlay_list, imgs_shifted = [[] for i in range(self.nsteps)], [[] for i in range(self.nsteps)]
+        attr_list = [[] for i in range(self.nsteps)]
         num_imgs = len(img)
-        for step_i in range(self.nsteps):
+        for step_i in range(self.start, self.nsteps):
             targets_ = targets.clone().detach()
-            img_ = im0.clone().detach()# * 255.0# + ((self.epsilon * step_i) * attr.clone().detach())
-
-            attr_ = change_noise_batch(img_, attr, desired_snr=self.snr) * (step_i / (self.nsteps - 1))
-            # attr_ = change_noise_snr(img_, attr, desired_snr=self.snr) * (step_i / (self.nsteps - 1))
+            img_ = im0.clone().detach()# * 255.0# + ((self.epsilon * step_i) * attk.clone().detach())
             
+            attk_ = attk
+            if not self.torchattacks_used:
+                if self.attr_method is not None:
+                    attk_ = change_noise_batch(img_, attk, desired_snr=self.snr) * (step_i / (self.nsteps - 1))
+                    
             # Verify SNR
             avg_snr = 0.0
             for ij in range(len(img_)):
-                estimated_snr = 10 * torch.log10(torch.mean(img_[ij] ** 2) / torch.mean(attr_[ij] ** 2))
+                estimated_snr = 10 * torch.log10(torch.mean(img_[ij] ** 2) / torch.mean(attk_[ij] ** 2))
                 avg_snr += estimated_snr.item()
             avg_snr /= len(img_)
             self.snr_list.append(round(avg_snr, 2))
-            if step_i != 0:
-                img_ += attr_
-                img_ = torch.clamp(img_, min=0.0, max=1.0)
+            
+            if self.torchattacks_used:
+                img_ = attk.clone().detach()
+            else:
+                if step_i != 0:
+                    img_ += attk_
+                    img_ = torch.clamp(img_, min=0.0, max=1.0)
             
             if self.debug1 and step_i != 0:
                 for i_num in range(len(img_)):
                     imshow(img_[i_num].float(), save_path='figs/img')
-                    imshow(self.attr[i_num].float(), save_path='figs/attr')
+                    imshow(self.attk[i_num].float(), save_path='figs/attk')
                     
             img_ = img_.half() if opt.half else img_.float()  # uint8 to fp16/32
             
@@ -188,28 +208,29 @@ class Perturbation:
                 self.t1[step_i] += time_synchronized() - t
             
             ####################################################################################################
-            # from plaus_functs import normalize_batch
-            from plot_functs import normalize_tensor
+
             # debug = False
+            attr_grad = get_gradient(img_, grad_wrt=train_out[self.out_num_attr], 
+                                     norm=True, keepmean=True, 
+                                     absolute=True, grayscale=True)
             
             im = normalize_batch(im0.clone().detach().float())
-            for si in range(len(attr)):
+            for si in range(len(attk)):
             
                 # Convert tensors to PIL Images
-                attribution_map = attr_[si].clone().detach()
-                attribution_map = torch.abs(attribution_map) # Take absolute values of gradients
-                attribution_map = torch.sum(attribution_map, 0, keepdim=True)
-                attribution_map = normalize_tensor(attribution_map) # Normalize attribution maps per image in batch
-                img_overlay = (overlay_attr(im[si].clone().detach(), attribution_map.clone(), alpha = 0.75))
+                atk_map = attk_[si].clone().detach()
+                atk_map = torch.abs(atk_map) # Take absolute values of gradients
+                atk_map = torch.sum(atk_map, 0, keepdim=True)
+                atk_map = normalize_tensor(atk_map) # Normalize attribution maps per image in batch
+                img_overlay = (overlay_attr(im[si].clone().detach(), atk_map.clone(), alpha = 0.75))
                 
                 overlay_list[step_i].append(img_overlay.clone().detach().cpu().numpy())
                 imgs_shifted[step_i].append((img_[si].clone().detach().float()).cpu().numpy())# / 255.0).cpu().numpy())
             
-            
             if step_i != 0:
                 if self.debug2:
                     imshow(img_overlay, save_path='figs/img_overlay')
-                    imshow(attribution_map.float(), save_path='figs/attribution_map')
+                    imshow(atk_map.float(), save_path='figs/atk_map')
                     imshow(im[si].float(), save_path='figs/img')
                     print("Saved images in ", 'figs/')
             ####################################################################################################
@@ -251,7 +272,7 @@ class Perturbation:
                                     "domain": "pixel"} for *xyxy, conf, cls in pred.tolist()]
                         boxes = {"predictions": {"box_data": box_data, "class_labels": opt.names}}  # inference-space
                         self.wandb_images[step_i].append(opt.wandb_logger.wandb.Image(img_[si], boxes=boxes, caption=path.name))
-                        self.wandb_attr[step_i].append(opt.wandb_logger.wandb.Image(attr_[si], caption=path.name))
+                        self.wandb_attk[step_i].append(opt.wandb_logger.wandb.Image(attk_[si], caption=path.name))
                 opt.wandb_logger.log_training_progress(predn, path, opt.names) if opt.wandb_logger and opt.wandb_logger.wandb_run else None
             
                 # Append to pycocotools JSON dictionary
@@ -321,7 +342,7 @@ class Perturbation:
                                 rownum=i, rowtitle=rowtitles[i],# coltitles=[f'Image {ip}' for ip in range(len(overlay_list[i]))], 
                                 hold=(i<len(figimlist)-1), savedir=sdir)
                 
-                imwandb = pil_to_tensor(Image.open(f"{sdir}.png")).float() / 255.0
+                imwandb = pil_to_tensor(Image.open(f"{sdir}.png")) / 255.0 # this needs to be fixed, does not allow for multiple runs at same time
                 self.wandb_figs.append(opt.wandb_logger.wandb.Image(imwandb, caption=sdir))
 
             # overlayfig.plot_img_list(imgs_shifted[1])
@@ -337,6 +358,7 @@ class Perturbation:
         nc = opt.nc  # number of classes
         loss = self.loss
         ap, ap_class, wandb_images = self.ap, self.ap_class, self.wandb_images
+        wandb_attk = self.wandb_attk
         p, r = self.p, self.r
         f1, mp = self.f1, self.mp
         mr, map50, map = self.mr, self.map50, self.map
@@ -347,7 +369,7 @@ class Perturbation:
         training = opt.training
         results = []
         # Compute statistics
-        for step_i in range(self.nsteps):
+        for step_i in range(self.start, self.nsteps):
             stats = stats_all[step_i]
             seen = self.seen[step_i]
             stats = [np.concatenate(x, 0) for x in zip(*stats)]  # to numpy
@@ -379,8 +401,10 @@ class Perturbation:
                 if wandb_logger and wandb_logger.wandb:
                     val_batches = [wandb_logger.wandb.Image(str(f), caption=f.name) for f in sorted(save_dir.glob('test*.jpg'))]
                     wandb_logger.log({"Validation": val_batches})
-            if wandb_images[step_i]:
-                wandb_logger.log({f"Bounding Box Debugger/Images for Perturbation Step {step_i} with SNR {self.snr_list[step_i]} {opt.atk}": wandb_images[step_i]})
+            if wandb_images[step_i-self.start]:
+                wandb_logger.log({f"Bounding Box Debugger/Images for Perturbation Step {step_i} with SNR {self.snr_list[step_i-self.start]} {opt.atk}": wandb_images[step_i-self.start]})
+            if wandb_attk[step_i-self.start]:
+                wandb_logger.log({f"Attribution at Step {step_i} with SNR {self.snr_list[step_i-self.start]} {opt.atk}": wandb_images[step_i-self.start]})
 
             
             # Return results
@@ -396,7 +420,7 @@ class Perturbation:
             print(f"Step {step_i} results: {rtemp}")
             # loss[step_i] = *(loss[step_i].cpu() / self.total_batches).tolist()
         for i_fig, figwb in enumerate(self.wandb_figs):
-            wandb_logger.log({f"Figure with Attr Overlay {i_fig} with SNR {self.snr_list[-1]} {opt.atk}": figwb})
+            wandb_logger.log({f"Figure with attk Overlay {i_fig} with SNR {self.snr_list[-1]} {opt.atk}": figwb})
                 
         # return (mp, mr, map50, map, loss), maps, t <- results
         return results, stats_all

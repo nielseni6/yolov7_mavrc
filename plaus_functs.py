@@ -8,7 +8,7 @@ import time
 import matplotlib.path as mplPath
 from matplotlib.path import Path
 
-def get_gradient(img, grad_wrt, norm=True, absolute=True, grayscale=True, keepmean=False):
+def get_gradient(img, grad_wrt, norm=False, absolute=True, grayscale=True, keepmean=False):
     """
     Compute the gradient of an image with respect to a given tensor.
 
