@@ -246,7 +246,7 @@ def test(opt,
         addsub = 'AddAttr'
     else:
         addsub = 'SubtractAttr'
-
+    
     normalize = False
     if normalize:
         norm = '_normalized'
@@ -258,13 +258,13 @@ def test(opt,
     img_num = 0
     skip = False
     # model_unseg = model
-
+    
     opt.hyp = 'data/hyp.real_world.yaml'
     with open(opt.hyp) as f:
         hyp = yaml.load(f, Loader=yaml.SafeLoader)  # load hyps
 
     nl = model.model[-1].nl  # number of detection layers (used for scaling hyp['obj'])
-
+    
     # Model parameters
     hyp['box'] *= 3. / nl  # scale to layers
     hyp['cls'] *= nc / 80. * 3. / nl  # scale to classes and layers

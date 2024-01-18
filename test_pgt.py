@@ -311,8 +311,8 @@ def test_pgt(data,
     robust_eval_results, stats_all = robust_eval.compute_stats()
     for ir in range(len(robust_eval_results)):
         r_loss = torch.zeros(3, device=device)
-        ((r_mp, r_mr, r_map50, r_map, r_loss[0], r_loss[1], r_loss[2]), r_maps, r_t) = robust_eval_results[ir][0]
-        robust_eval_results[ir][0] = (r_mp, r_mr, r_map50, r_map, *(r_loss.cpu()).tolist()), r_maps, r_t
+        ((r_mp, r_mr, r_map50, r_map, r_loss[0], r_loss[1], r_loss[2]), r_maps, r_t, r_plaus) = robust_eval_results[ir][0]
+        robust_eval_results[ir][0] = (r_mp, r_mr, r_map50, r_map, *(r_loss.cpu()).tolist()), r_maps, r_t, r_plaus
     return robust_eval_results
     ##########################################################################################
     """
@@ -528,11 +528,12 @@ if __name__ == '__main__':
             # Log
             tags = ['metrics/precision', 'metrics/recall', 'metrics/mAP_0.5', 'metrics/mAP_0.5:0.95',
                     'val/box_loss', 'val/obj_loss', 'val/cls_loss',  # val loss
+                    'plaus_score',
                     ]
             # for ir in range(len(robust_eval_results)):
             #     r_loss = torch.zeros(3, device=device)
-            #     ((r_mp, r_mr, r_map50, r_map, r_loss[0], r_loss[1], r_loss[2]), r_maps, r_t) = robust_eval_results[ir][0]
-            #     results = (r_mp, r_mr, r_map50, r_map, *(r_loss.cpu()).tolist()), r_maps, r_t
+            #     ((r_mp, r_mr, r_map50, r_map, r_loss[0], r_loss[1], r_loss[2]), r_maps, r_t, r_plaus) = robust_eval_results[ir][0]
+            #     results = (r_mp, r_mr, r_map50, r_map, *(r_loss.cpu()).tolist()), r_maps, r_t, r_plaus
             for i_step, res in enumerate(results):
                 (result, maps, t) = res[0]
                 # wandb_logger.current_epoch = i_step
