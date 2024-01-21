@@ -853,7 +853,7 @@ if __name__ == '__main__':
 ############################################ BELOW IS PGT MODEL ############################################
 ############################################################################################################
 
-from plaus_functs import get_gradient, generate_vanilla_grad, eval_plausibility, normalize_batch
+from plaus_functs import get_gradient, generate_vanilla_grad, normalize_batch
 
 class ModelPGT(nn.Module):
     def __init__(self, cfg='yolor-csp-c.yaml', ch=3, nc=None, anchors=None):  # model, input channels, number of classes

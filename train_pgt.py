@@ -42,7 +42,7 @@ import sys
 from PIL import Image
 import torchvision
 
-from plaus_functs import get_gradient, generate_vanilla_grad, eval_plausibility
+from plaus_functs import get_gradient, generate_vanilla_grad
 
 logger = logging.getLogger(__name__)
 # import torch
@@ -487,8 +487,8 @@ def train(hyp, opt, device, tb_writer=None):
             #   ADD EXPLAINABILITY TO THE MEDIA OUTPUTS ON WANDB    #
             #########################################################
                 if opt.pgt_coeff != 0.0:
-                    plaus_loss_total_train = loss_items[3]
-                    plaus_score_total_train = (1 - (loss_items[3] / opt.pgt_coeff))
+                    plaus_loss_total_train += loss_items[3]
+                    plaus_score_total_train += compute_pgt_loss.plaus_score #(1 - (loss_items[3] / opt.pgt_coeff))
             # model.zero_grad()
             #########################################################
 

@@ -311,8 +311,8 @@ def test_pgt(data,
     robust_eval_results, stats_all = robust_eval.compute_stats()
     for ir in range(len(robust_eval_results)):
         r_loss = torch.zeros(3, device=device)
-        ((r_mp, r_mr, r_map50, r_map, r_loss[0], r_loss[1], r_loss[2]), r_maps, r_t, r_plaus) = robust_eval_results[ir][0]
-        robust_eval_results[ir][0] = (r_mp, r_mr, r_map50, r_map, *(r_loss.cpu()).tolist()), r_maps, r_t, r_plaus
+        ((r_mp, r_mr, r_map50, r_map, r_loss[0], r_loss[1], r_loss[2], r_plaus), r_maps, r_t) = robust_eval_results[ir][0]
+        robust_eval_results[ir][0] = (r_mp, r_mr, r_map50, r_map, *(r_loss.cpu()).tolist(), r_plaus), r_maps, r_t
     return robust_eval_results
     ##########################################################################################
     """
@@ -392,7 +392,7 @@ if __name__ == '__main__':
     parser.add_argument('--data', type=str, default='data/coco.yaml', help='*.data path')
     parser.add_argument('--batch-size', type=int, default=32, help='size of each image batch')
     parser.add_argument('--img-size', type=int, default=640, help='inference size (pixels)')
-    parser.add_argument('--conf-thres', type=float, default=0.01, help='object confidence threshold')
+    parser.add_argument('--conf-thres', type=float, default=0.001, help='object confidence threshold')
     parser.add_argument('--iou-thres', type=float, default=0.65, help='IOU threshold for NMS')
     parser.add_argument('--task', default='val', help='train, val, test, speed or study')
     parser.add_argument('--device', default='', help='cuda device, i.e. 0 or 0,1,2,3 or cpu')
@@ -429,7 +429,8 @@ if __name__ == '__main__':
     # opt.atk = 'gaussian'
     # opt.atk = 'grad'
     # opt.atk = 'none'
-    atk_list = ['fgsm', 'pgd', 'gaussian', 'none']
+    # atk_list = ['none',]# 'gaussian',]
+    atk_list = ['gaussian', 'none', 'fgsm', 'pgd',]
     # atk_list = ['grad', 'gaussian', 'none',] # 'pgd', 'fgsm'
     # opt.desired_snr = 1e+100
     opt.atk = ''
@@ -443,14 +444,18 @@ if __name__ == '__main__':
     opt.username = username
     
     opt.half_precision = True
-    opt.device = '2'
-    opt.batch_size = 32
-    # opt.dataset = 'coco'
-    opt.dataset = 'real_world_drone'
-    # opt.weights = 'weights/best_baseline.pt'
-    # opt.weights = 'weights/best_pgt_weights.pt'
-    weights_dir = 'weights/eval_drone'
-    # weights_dir = 'weights/eval_coco'
+    opt.device = '0'
+    
+    ########## CHANGE THIS TO CHANGE DATASET ##########
+    # opt.dataset = 'real_world_drone'
+    # weights_dir = 'weights/eval_drone'
+    # opt.batch_size = 16
+    ###################################################
+    opt.dataset = 'coco'
+    weights_dir = 'weights/eval_coco'
+    opt.batch_size = 8
+    ###################################################
+    
     weights_list = os.listdir(weights_dir)
     opt.weights = f'{weights_dir}/{weights_list[0]}'
     if 'pgt' in opt.weights:

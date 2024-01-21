@@ -168,20 +168,23 @@ class Perturbation:
             if not self.torchattacks_used:
                 if self.attr_method is not None:
                     attk_ = change_noise_batch(img_, attk, desired_snr=self.snr) * (step_i / (self.nsteps - 1))
+                noise = attk_.clone().detach() - img.clone().detach()
+            else:
+                noise = attk_
                     
             # Verify SNR
             avg_snr = 0.0
-            for ij in range(len(img_)):
-                estimated_snr = 10 * torch.log10(torch.mean(img_[ij] ** 2) / torch.mean(attk_[ij] ** 2))
+            for ij in range(len(img)):
+                estimated_snr = 10 * torch.log10(torch.mean(img[ij] ** 2) / torch.mean(noise[ij] ** 2))
                 avg_snr += estimated_snr.item()
-            avg_snr /= len(img_)
+            avg_snr /= len(img)
             self.snr_list.append(round(avg_snr, 2))
             
             if self.torchattacks_used:
                 img_ = attk.requires_grad_(True)
             else:
                 if step_i != 0:
-                    img_ += attk_
+                    img_ = img_ + attk_
                     img_ = torch.clamp(img_, min=0.0, max=1.0)
             
             if self.debug1 and step_i != 0:
@@ -191,13 +194,30 @@ class Perturbation:
                     
             img_ = img_.half() if opt.half else img_.float()  # uint8 to fp16/32
             
-            # with torch.no_grad():
-            if True:
-                img_ = img_.requires_grad_(True)
+            ########################### Plausibility and Attribution ###########################
+            img_ = img_.requires_grad_(True)
+            out, train_out = model(img_, augment=opt.augment)
+            attr_grad = get_gradient(img_, 
+                                     grad_wrt=train_out[self.out_num_attr], 
+                                     norm=True, keepmean=True, 
+                                     absolute=True, grayscale=True)
+            plaus_score = get_plaus_score(img_, 
+                                          targets_out = targets.clone().detach(), 
+                                          attr = attr_grad)
+            self.plaus_score_total += plaus_score
+            self.plaus_list[step_i] += plaus_score
+            
+            img_ = img_.detach()
+            model.zero_grad()
+            # self.plaus_list[step_i].append(plaus_score)
+            ####################################################################################
+            
+            with torch.no_grad():
+            # if True:
                 # Run model
                 t = time_synchronized()
                 out, train_out = model(img_, augment=opt.augment)  # inference and training outputs
-                out, train_out = out.clone().detach(), [train_out[io].clone().detach() for io in range(len(train_out))]
+                # out, train_out = out.clone().detach(), [train_out[io].clone().detach() for io in range(len(train_out))]
                 self.t0[step_i] += time_synchronized() - t
                 
                 # Compute loss
@@ -214,16 +234,7 @@ class Perturbation:
             ####################################################################################################
 
             # debug = False
-            attr_grad = get_gradient(img_, 
-                                     grad_wrt=train_out[self.out_num_attr], 
-                                     norm=True, keepmean=True, 
-                                     absolute=True, grayscale=True)
-            plaus_score = get_plaus_score(img_, 
-                                          targets_out = targets.clone().detach(), 
-                                          attr = attr_grad)
-            self.plaus_score_total += plaus_score
-            self.plaus_list[step_i] += plaus_score
-            # self.plaus_list[step_i].append(plaus_score)
+
             
             im = normalize_batch(im0.clone().detach().float())
             for si in range(len(attk)):
@@ -232,7 +243,7 @@ class Perturbation:
                 atk_map = attk_[si].clone().detach()
                 atk_map = torch.abs(atk_map) # Take absolute values of gradients
                 atk_map = torch.sum(atk_map, 0, keepdim=True)
-                atk_map = normalize_tensor(atk_map) # Normalize attribution maps per image in batch
+                atk_map = normalize_tensor(atk_map) # Normalize attack maps per image in batch
                 img_overlay = (overlay_attr(im[si].clone().detach(), atk_map.clone(), alpha = 0.75))
                 
                 overlay_list[step_i].append(img_overlay.clone().detach().cpu().numpy())
@@ -414,14 +425,14 @@ class Perturbation:
                 if wandb_logger and wandb_logger.wandb:
                     val_batches = [wandb_logger.wandb.Image(str(f), caption=f.name) for f in sorted(save_dir.glob('test*.jpg'))]
                     wandb_logger.log({"Validation": val_batches})
-            if wandb_images[step_i-self.start]:
-                wandb_logger.log({f"Bounding Box Debugger/Images for Perturbation Step {step_i} with SNR {self.snr_list[step_i-self.start]} {opt.atk}": wandb_images[step_i-self.start]})
+            if wandb_images[step_i]:
+                wandb_logger.log({f"Bounding Box Debugger/Images for Perturbation Step {step_i} with SNR {self.snr_list[step_i-self.start]} {opt.atk}": wandb_images[step_i]})
             # wandb_attk is not displaying in wandb
-            if wandb_attk[step_i-self.start]:
-                wandb_logger.log({f"Adversarial Noise at Step {step_i} with SNR {self.snr_list[step_i-self.start]} {opt.atk}": wandb_attk[step_i-self.start]})
+            if wandb_attk[step_i]:
+                wandb_logger.log({f"Adversarial Noise at Step {step_i} with SNR {self.snr_list[step_i-self.start]} {opt.atk}": wandb_attk[step_i]})
             # add attribution map to wandb
-            if wandb_attr[step_i-self.start]:
-                wandb_logger.log({f"Attribution at Step {step_i}": wandb_attr[step_i-self.start]})
+            if wandb_attr[step_i]:
+                wandb_logger.log({f"Attribution at Step {step_i}": wandb_attr[step_i]})
 
             # Return results
             model.float()  # for training
@@ -436,9 +447,17 @@ class Perturbation:
             results.append([rtemp])
             print(f"Step {step_i} results: {rtemp}")
             # loss[step_i] = *(loss[step_i].cpu() / self.total_batches).tolist()
+        
+        # Log wandb image results
         for i_fig, figwb in enumerate(self.wandb_figs):
             wandb_logger.log({f"Figure with attk Overlay {i_fig} with SNR {self.snr_list[-1]} {opt.atk}": figwb})
-        
+        # for i_fig, figwb in enumerate(wandb_images):
+        #     wandb_logger.log({f"Bounding Box Debugger/Images for Perturbation Step {i_fig} with SNR {self.snr_list[i_fig]} {opt.atk}": figwb})
+        # for i_fig, figwb in enumerate(wandb_attk):
+        #     wandb_logger.log({f"Adversarial Noise at Step {i_fig} with SNR {self.snr_list[i_fig]} {opt.atk}": figwb})
+        # for i_fig, figwb in enumerate(wandb_attr):
+        #     wandb_logger.log({f"Attribution at Step {i_fig}": figwb})        
+
         # if wandb_attk[step_i-self.start]:
         #     wandb_logger.log({f"Attribution at Step {step_i} with SNR {self.snr_list[step_i-self.start]} {opt.atk}": wandb_attk[step_i-self.start]})
 

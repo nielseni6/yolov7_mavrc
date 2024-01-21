@@ -1577,16 +1577,16 @@ class ComputeLossAuxOTA:
                 matching_matrix[cost_argmin, anchor_matching_gt > 1] = 1.0
             fg_mask_inboxes = matching_matrix.sum(0) > 0.0
             matched_gt_inds = matching_matrix[:, fg_mask_inboxes].argmax(0)
-        
+            
             from_which_layer = from_which_layer[fg_mask_inboxes]
             all_b = all_b[fg_mask_inboxes]
             all_a = all_a[fg_mask_inboxes]
             all_gj = all_gj[fg_mask_inboxes]
             all_gi = all_gi[fg_mask_inboxes]
             all_anch = all_anch[fg_mask_inboxes]
-        
+
             this_target = this_target[matched_gt_inds]
-        
+
             for i in range(nl):
                 layer_idx = from_which_layer == i
                 matching_bs[i].append(all_b[layer_idx])
@@ -1724,7 +1724,7 @@ class ComputeLossAuxOTA:
 ############################################ BELOW IS PGT LOSS ############################################
 ###########################################################################################################
 
-from plaus_functs import get_plaus_score, corners_coords_batch # generate_vanilla_grad, eval_plausibility, corners_coords
+from plaus_functs import get_plaus_score, corners_coords_batch # generate_vanilla_grad, corners_coords
 import numpy as np
 from plot_functs import imshow
 
@@ -1769,6 +1769,7 @@ class ComputePGTLossOTA:
                 self.n_nans += 1
                 plaus_score = torch.tensor(0.0, device=device)
                 print(f"plaus_score is nan, number of nans: {self.n_nans}")
+            self.plaus_score = plaus_score
             # # weight each IoU by the percent of the image that is a target
             # img_seg_percent = (torch.sum(coords_map) / coords_map.flatten().shape[0])
             # # seg_size_factor = 1.0 has largest effect on IoU, 0.0 has no effect
@@ -1787,7 +1788,7 @@ class ComputePGTLossOTA:
             n = b.shape[0]  # number of targets
             if n:
                 ps = pi[b, a, gj, gi]  # prediction subset corresponding to targets
-
+                
                 # Regression
                 grid = torch.stack([gi, gj], dim=1)
                 pxy = ps[:, :2].sigmoid() * 2. - 0.5
@@ -1800,7 +1801,7 @@ class ComputePGTLossOTA:
                     print("pbox is nan", pbox.T)            #OTA!
                 iou = bbox_iou(pbox.T, selected_tbox, x1y1x2y2=False, metric=metric)
                 # print("iou",iou.min(),iou.shape)
-                  # iou(prediction, target)             
+                  # iou(prediction, target)
                 lbox += (1.0 - iou).mean()  # iou loss
 
                 # Objectness

@@ -82,7 +82,20 @@ def get_gaussian(img, grad_wrt, norm=True, absolute=True, grayscale=True, keepme
     return gaussian_noise
     
 
-def get_plaus_score(imgs, targets_out, attr, debug = False):
+def get_plaus_score(imgs, targets_out, attr, debug=False):
+    """
+    Calculates the plausibility score based on the given inputs.
+
+    Args:
+        imgs (torch.Tensor): The input images.
+        targets_out (torch.Tensor): The output targets.
+        attr (torch.Tensor): The attribute tensor.
+        debug (bool, optional): Whether to enable debug mode. Defaults to False.
+
+    Returns:
+        torch.Tensor: The plausibility score.
+    """
+    
     target_inds = targets_out[:, 0].int()
     xyxy_batch = targets_out[:, 2:6]# * pre_gen_gains[out_num]
     num_pixels = torch.tile(torch.tensor([imgs.shape[2], imgs.shape[3], imgs.shape[2], imgs.shape[3]], device=imgs.device), (xyxy_batch.shape[0], 1))
@@ -206,7 +219,10 @@ def normalize_batch(x):
     
     return x_
 
+####################################################################################
 #### ALL FUNCTIONS BELOW ARE DEPRECIATED AND WILL BE REMOVED IN FUTURE VERSIONS ####
+####################################################################################
+
 def generate_vanilla_grad(model, input_tensor, loss_func = None, 
                           targets_list=None, targets=None, metric=None, out_num = 1, 
                           n_max_labels=3, norm=True, abs=True, grayscale=True, 
@@ -355,110 +371,3 @@ def generate_vanilla_grad(model, input_tensor, loss_func = None,
     
     return out_attr
 
-def eval_plausibility(imgs, targets, seg_targets, attr_tensor, 
-                      use_seg_labels, n_max_labels=3, class_specific_attr = True, 
-                      seg_size_factor = 1.0, device='cpu', debug=False):
-    """
-    Evaluate the plausibility of an object detection prediction by computing the Intersection over Union (IoU) between
-    the predicted bounding box and the ground truth bounding box.
-
-    Args:
-        im0 (numpy.ndarray): The input image.
-        targets (list): A list of targets, where each target is a list containing the class label and the ground truth
-            bounding box coordinates in the format [class_label, x1, y1, x2, y2].
-        attr (torch.Tensor): A tensor containing the normalized attribute values for the predicted
-            bounding box.
-
-    Returns:
-        float: The total IoU score for all predicted bounding boxes.
-    """
-
-    # ALSO MIGHT NORMALIZE FOR THE SIZE OF THE BBOX
-    eval_totals = torch.tensor(0.0).to(device)
-    # plaus_num_nan = 0
-    
-    targets_ = targets
-    if class_specific_attr:
-        for i in range(len(targets_)):
-            if len(targets_[i]) > n_max_labels:
-                targets_[i] = targets_[i][:n_max_labels]
-
-    ## attr_tensor[img_num][attr_num][img_num] 
-    # # first img_num if for attributions generated from that images targets
-    # # second img_num is for all images in batch, but we only care about the one that matches the first img_num
-    
-    channels, height, width = imgs[0].shape
-    y = torch.arange(height).to(imgs[0].device).float()
-    x = torch.arange(width).to(imgs[0].device).float()
-    grid_y, grid_x = torch.meshgrid(y, x)
-    grid = torch.stack((grid_x, grid_y), dim=-1)
-    
-    eval_data_all_attr = [] 
-    for i, im0 in enumerate(imgs): # improve efficiency do entire batch at once
-        eval_individual_data = []
-        if len(targets_[i]) == 0:
-            eval_individual_data.append([torch.tensor(0).to(device),]) 
-        else:
-            IoU_list = []
-            coords = []
-            seg_coords = torch.zeros(len(targets_[i]), 1, im0.shape[1], im0.shape[2], dtype=torch.bool, device=device)
-            attr = attr_tensor[i % len(attr_tensor)][0][i].clone().detach() # used if class_specific_attr = False
-            if not targets_[i].numel() == 0:
-                # t0 = time.time()
-                # this for loop is the current bottleneck, consider changing it to tensor operation rather than for loop
-                for j in range(len(targets_[i])):
-                    # t0 = time.time()
-                    if use_seg_labels:
-                        # The two lines below are a relatively large bottleneck to fix
-                        seg = seg_targets[i][j][2:].clone().detach().unsqueeze(0)
-                        poly = seg.view(-1, 2) * torch.tensor([width, height], device=device)
-                        seg_coords[j] = point_in_polygon_gpu(poly, grid) # bitmap
-                    else:
-                        xyxy_pred = targets_[i][j][2:] # * torch.tensor([im0.shape[2], im0.shape[1], im0.shape[2], im0.shape[1]])
-                        xyxy_center = corners_coords(xyxy_pred) * torch.tensor([im0.shape[1], im0.shape[2], im0.shape[1], im0.shape[2]])
-                        c1, c2 = (int(xyxy_center[0]), int(xyxy_center[1])), (int(xyxy_center[2]), int(xyxy_center[3]))
-                        coords.append([c1, c2])
-                # t1 = time.time()
-                # print(f'bitmap time: {t1-t0}')
-                coords_map = torch.zeros_like(attr, dtype=torch.bool)
-                if use_seg_labels:
-                    coords_map = torch.sum(seg_coords, dim=0, dtype=bool)
-                else:
-                    for c1, c2 in coords:
-                        coords_map[:,c1[1]:c2[1], c1[0]:c2[0]] = True
-                for j in range(len(attr_tensor)):
-                    if class_specific_attr:
-                        attr = attr_tensor[i % len(attr_tensor)][j][i].clone().detach()
-                        coords_map = torch.zeros_like(attr, dtype=torch.bool)
-                    if torch.isnan(attr).any():
-                        attr = torch.nan_to_num(attr, nan=0.0)
-                    if debug:
-                        coords_map3ch = torch.cat([coords_map, coords_map, coords_map], dim=0)
-                        test_bbox = torch.zeros_like(im0)
-                        test_bbox[coords_map3ch] = im0[coords_map3ch]
-                        imshow(test_bbox, save_path='figs/test_bbox')
-                        imshow(im0, save_path='figs/im0')
-                        imshow(attr, save_path='figs/attr')
-                    IoU_num = (torch.sum(attr[coords_map]))
-                    IoU_denom = torch.sum(attr)
-                    IoU_ = (IoU_num / IoU_denom)
-                    # weight each IoU by the percent of the image that is a target
-                    img_seg_percent = (torch.sum(coords_map) / coords_map.flatten().shape[0])
-                    # seg_size_factor = 1.0 has largest effect on IoU, 0.0 has no effect
-                    IoU = IoU_ * (1.0 - (img_seg_percent * seg_size_factor)) if not math.isnan(IoU_) else torch.tensor(0.0)
-                    IoU_list.append(IoU.clone().detach())
-                # t2 = time.time()
-                # print(f'IoU time: {t2-t1}')
-            else:
-                IoU = torch.tensor(0.0).to(device)
-                IoU_list.append(IoU.clone().detach())
-            IoU_tensor = torch.tensor(IoU_list)
-            list_mean = torch.mean(IoU_tensor)
-            if class_specific_attr:
-                eval_totals += (list_mean / float(len(targets_[i]))) / float(len(imgs))
-            else:
-                eval_totals += (list_mean / float(len(imgs)))
-            eval_individual_data.append(IoU_tensor)
-        eval_data_all_attr.append(eval_individual_data)
-    
-    return eval_totals.clone().detach().requires_grad_(True)#, eval_data_all_attr
