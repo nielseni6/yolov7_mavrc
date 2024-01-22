@@ -259,7 +259,7 @@ def generate_vanilla_grad(model, input_tensor, loss_func = None,
     train_out = model(inpt) # training outputs (no inference outputs in train mode)
     
     # train_out[1] = torch.Size([4, 3, 80, 80, 7]) HxWx(#anchorxC) cls (class probabilities)
-    # train_out[0] = torch.Size([4, 3, 160, 160, 7]) HxWx(#anchorx4) reg (location and scaling)
+    # train_out[0] = torch.Size([4, 3, 160, 160, 7]) HxWx(#anchorx4) box or reg (location and scaling)
     # train_out[2] = torch.Size([4, 3, 40, 40, 7]) HxWx(#anchorx1) obj (objectness score or confidence)
     
     if class_specific_attr:

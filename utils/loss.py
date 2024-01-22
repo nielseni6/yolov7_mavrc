@@ -1725,6 +1725,7 @@ class ComputeLossAuxOTA:
 ###########################################################################################################
 
 from plaus_functs import get_plaus_score, corners_coords_batch # generate_vanilla_grad, corners_coords
+from plaus_functs import get_gradient
 import numpy as np
 from plot_functs import imshow
 
@@ -1762,23 +1763,23 @@ class ComputePGTLossOTA:
         lcls, lbox, lobj = torch.zeros(1, device=device), torch.zeros(1, device=device), torch.zeros(1, device=device)
         bs, as_, gjs, gis, targets, anchors = self.build_targets(p, targets, imgs)
         pre_gen_gains = [torch.tensor(pp.shape, device=device)[[3, 2, 3, 2]] for pp in p] 
-        ####################### PGT CODE ADDED BELOW #######################
-        if pgt_coeff != 0.0:
-            plaus_score = get_plaus_score(imgs, targets_out = targets_, attr = attr)
-            if torch.isnan(plaus_score).any():
-                self.n_nans += 1
-                plaus_score = torch.tensor(0.0, device=device)
-                print(f"plaus_score is nan, number of nans: {self.n_nans}")
-            self.plaus_score = plaus_score
-            # # weight each IoU by the percent of the image that is a target
-            # img_seg_percent = (torch.sum(coords_map) / coords_map.flatten().shape[0])
-            # # seg_size_factor = 1.0 has largest effect on IoU, 0.0 has no effect
-            # We were dividing IoU by the number of images, but this is not correct since the max IoU is already 1.0
-            # IoU = (- IoU_) # * (1.0 - (img_seg_percent * seg_size_factor)) if not math.isnan(IoU_) else torch.tensor(0.0)
-            lplaus = ((1 - plaus_score) * pgt_coeff).unsqueeze(0)
-        else:
-            lplaus = torch.zeros(1, device=device)
-        ####################################################################
+        # ####################### PGT CODE ADDED BELOW #######################
+        # if pgt_coeff != 0.0:
+        #     plaus_score = get_plaus_score(imgs, targets_out = targets_, attr = attr)
+        #     if torch.isnan(plaus_score).any():
+        #         self.n_nans += 1
+        #         plaus_score = torch.tensor(0.0, device=device)
+        #         print(f"plaus_score is nan, number of nans: {self.n_nans}")
+        #     self.plaus_score = plaus_score
+        #     # # weight each IoU by the percent of the image that is a target
+        #     # img_seg_percent = (torch.sum(coords_map) / coords_map.flatten().shape[0])
+        #     # # seg_size_factor = 1.0 has largest effect on IoU, 0.0 has no effect
+        #     # We were dividing IoU by the number of images, but this is not correct since the max IoU is already 1.0
+        #     # IoU = (- IoU_) # * (1.0 - (img_seg_percent * seg_size_factor)) if not math.isnan(IoU_) else torch.tensor(0.0)
+        #     lplaus = ((1 - plaus_score) * pgt_coeff).unsqueeze(0)
+        # else:
+        #     lplaus = torch.zeros(1, device=device)
+        # ####################################################################
         
         # Losses
         for i, pi in enumerate(p):  # layer index, layer predictions
@@ -1835,6 +1836,21 @@ class ComputePGTLossOTA:
         lcls *= self.hyp['cls']
         bs = tobj.shape[0]  # batch size
         lobj=lobj.clamp(max=2)
+        
+        attribution_map = get_gradient(imgs, grad_wrt = lcls)
+        ####################### PGT CODE ADDED BELOW #######################
+        if pgt_coeff != 0.0:
+            plaus_score = get_plaus_score(imgs, targets_out = targets_, attr = attribution_map)
+            if torch.isnan(plaus_score).any():
+                self.n_nans += 1
+                plaus_score = torch.tensor(0.0, device=device)
+                print(f"plaus_score is nan, number of nans: {self.n_nans}")
+            self.plaus_score = plaus_score
+            lplaus = ((1 - plaus_score) * pgt_coeff).unsqueeze(0)
+        else:
+            lplaus = torch.zeros(1, device=device)
+        ####################################################################
+        
         if pgt_coeff != 0.0:
             loss_r = lbox + lobj + lcls + lplaus # lplaus is the PGT loss added to the original loss
         else:

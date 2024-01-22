@@ -1004,9 +1004,11 @@ class ModelPGT(nn.Module):
                 attr_list.append(attribution_map)
 
             if len(out_nums) == 1:
-                return x, attribution_map
+                x.append(attribution_map)
+                return x
             else:
-                return x, torch.stack(attr_list, dim=2).squeeze(1)
+                x.append(torch.stack(attr_list, dim=2).squeeze(1))
+                return x
         #######################################################################################
             
 
