@@ -369,6 +369,7 @@ def train(hyp, opt, device, tb_writer=None):
         #################################################################################
             
         plaus_loss_total_train, plaus_score_total_train = 0.0, 0.0
+        num_batches = 0
         for i, (imgs, targets, paths, _) in pbar:  # batch -------------------------------------------------------------
             ni = i + nb * epoch  # number integrated batches (since train start)
             imgs = imgs.to(device, non_blocking=True).float() / 255.0  # uint8 to float32, 0-255 to 0.0-1.0
@@ -492,6 +493,7 @@ def train(hyp, opt, device, tb_writer=None):
                 if opt.pgt_coeff != 0.0:
                     plaus_loss_total_train += loss_items[3]
                     plaus_score_total_train += compute_pgt_loss.plaus_score #(1 - (loss_items[3] / opt.pgt_coeff))
+                    num_batches += 1
             # model.zero_grad()
             #########################################################
 
@@ -529,7 +531,9 @@ def train(hyp, opt, device, tb_writer=None):
 
             # end batch ------------------------------------------------------------------------------------------------
         # end epoch ----------------------------------------------------------------------------------------------------
-
+        if opt.pgt_coeff != 0.0:
+            plaus_score_total_train /= num_batches
+        
         # Scheduler
         lr = [x['lr'] for x in optimizer.param_groups]  # for tensorboard
         scheduler.step()
@@ -727,16 +731,16 @@ if __name__ == '__main__':
     opt.out_num_attrs = [1,] 
     opt.n_max_attr_labels = 100 # only used if class_specific_attr == True
     # --nproc_per_node 4 | multiply pgt_coeff to match the results from 4 gpu training (the resulting plaus for 4 gpus is 4x higher than 1 gpu)
-    opt.pgt_coeff = 2.5
+    opt.pgt_coeff = 0.0
     opt.pgt_lr_decay = 1.0 
     opt.pgt_lr_decay_step = 300 
-    opt.epochs = 150
+    opt.epochs = 300
     opt.no_trace = True 
     opt.conf_thres = 0.50 
-    opt.batch_size = 16
-    # opt.batch_size = 32 
+    # opt.batch_size = 16
+    opt.batch_size = 32 
     opt.save_dir = str('runs/' + opt.name + '_lr' + str(opt.pgt_coeff)) 
-    opt.device = '3' 
+    opt.device = '5' 
     # opt.device = "0,1,2,3"  
     # opt.weights = 'weights/yolov7.pt'
     
@@ -752,7 +756,7 @@ if __name__ == '__main__':
     # opt.resume = "runs/pgt/train-pgt-yolov7/pgt5_214/weights/last.pt"
     # opt.weights = 'runs/pgt/train-pgt-yolov7/pgt5_214/weights/last.pt'
     
-    # nohup python train_pgt.py > ./output_logs/gpu5_trpgt_coco_out0_pretrained_lr0_25.log 2>&1 &
+    # nohup python train_pgt.py > ./output_logs/gpu5_trpgt_drone_baseline_lr0_0.log 2>&1 &
     # nohup python -m torch.distributed.launch --nproc_per_node 4 --master_port 9528 train_pgt.py --sync-bn > ./output_logs/gpu2360_coco_pgtlr0_25.log 2>&1 &
     # nohup python -m torch.distributed.launch --nproc_per_node 3 --master_port 9527 train_pgt.py --sync-bn > ./output_logs/gpu567_coco_pgt_lr0_05.log 2>&1 &
     # opt.quad = True # Helps for multiple gpu training 

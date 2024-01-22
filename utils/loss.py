@@ -1837,9 +1837,9 @@ class ComputePGTLossOTA:
         bs = tobj.shape[0]  # batch size
         lobj=lobj.clamp(max=2)
         
-        attribution_map = get_gradient(imgs, grad_wrt = lcls)
         ####################### PGT CODE ADDED BELOW #######################
         if pgt_coeff != 0.0:
+            attribution_map = get_gradient(imgs, grad_wrt = lcls)
             plaus_score = get_plaus_score(imgs, targets_out = targets_, attr = attribution_map)
             if torch.isnan(plaus_score).any():
                 self.n_nans += 1
