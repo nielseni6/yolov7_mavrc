@@ -112,11 +112,13 @@ class Perturbation:
         self.ap, self.ap_class, self.wandb_images = nlist(nsteps), nlist(nsteps), nlist(nsteps)
         self.wandb_figs = nlist(nsteps)
         self.wandb_attk, self.wandb_attk_overlay = nlist(nsteps), nlist(nsteps)
+        self.wandb_attr_overlay = nlist(nsteps)
         self.wandb_attr = nlist(nsteps)
         self.p, self.r = nlist(nsteps, 0.), nlist(nsteps, 0.)
         self.f1, self.mp = nlist(nsteps, 0.), nlist(nsteps, 0.)
         self.mr, self.map50, self.map = nlist(nsteps, 0.), nlist(nsteps, 0.), nlist(nsteps, 0.)
         self.plaus_list, self.plaus_score_total = nlist(nsteps, 0.), 0.0
+        self.num_batches = nlist(nsteps, 0)
         self.seen = nlist(nsteps, 0)
         self.t0, self.t1 = nlist(nsteps, 0.), nlist(nsteps, 0.)
         self.debug1, self.debug2 = False, False
@@ -206,6 +208,7 @@ class Perturbation:
                                           attr = attr_grad)
             self.plaus_score_total += plaus_score
             self.plaus_list[step_i] += plaus_score
+            self.num_batches[step_i] += 1
             
             img_ = img_.detach()
             model.zero_grad()
@@ -297,6 +300,10 @@ class Perturbation:
                         self.wandb_images[step_i].append(opt.wandb_logger.wandb.Image(img_[si], boxes=boxes, caption=path.name))
                         self.wandb_attk[step_i].append(opt.wandb_logger.wandb.Image(attk_[si], caption=f'{path.name}_atk'))
                         self.wandb_attr[step_i].append(opt.wandb_logger.wandb.Image(attr_grad[si], caption=f'{path.name}_attr'))
+                        img_overlay = (overlay_attr(img_[si].clone().detach(), attr_grad.clone(), alpha = 0.75))
+                        self.wandb_attr_overlay[step_i].append(opt.wandb_logger.wandb.Image(img_overlay, caption=f'{path.name}_attr_overlay'))
+                        # self.images[step_i].append(img_[si].clone().detach())
+                        # self.attr[step_i].append(attr_grad[si].clone().detach())
                 opt.wandb_logger.log_training_progress(predn, path, opt.names) if opt.wandb_logger and opt.wandb_logger.wandb_run else None
             
                 # Append to pycocotools JSON dictionary
@@ -433,7 +440,8 @@ class Perturbation:
             # add attribution map to wandb
             if wandb_attr[step_i]:
                 wandb_logger.log({f"Attribution at Step {step_i}": wandb_attr[step_i]})
-
+            if self.wandb_attr_overlay[step_i]:
+                wandb_logger.log({f"Attribution Overlay at Step {step_i}": self.wandb_attr_overlay[step_i]})
             # Return results
             model.float()  # for training
             if not training:
@@ -443,7 +451,8 @@ class Perturbation:
             for i, c in enumerate(ap_class[step_i]):
                 maps[c] = ap[step_i][i]
             rtemp = (mp[step_i], mr[step_i], map50[step_i], map[step_i], 
-                     *(loss[step_i].cpu() / self.total_batches).tolist(), self.plaus_list[step_i]), maps, t
+                     *(loss[step_i].cpu() / self.total_batches).tolist(), 
+                     (self.plaus_list[step_i]/self.num_batches[step_i])), maps, t
             results.append([rtemp])
             print(f"Step {step_i} results: {rtemp}")
             # loss[step_i] = *(loss[step_i].cpu() / self.total_batches).tolist()

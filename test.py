@@ -15,6 +15,7 @@ from utils.metrics import ap_per_class, ConfusionMatrix
 from utils.plots import plot_images, output_to_target, plot_study_txt
 from utils.torch_utils import select_device, time_synchronized, TracedModel
 
+from plaus_functs import get_gradient, get_plaus_score
 
 def test(data,
          weights=None,
@@ -39,7 +40,8 @@ def test(data,
          trace=False,
          is_coco=False,
          v5_metric=False,
-         loss_metric="CIoU"):
+         loss_metric="CIoU",
+         plaus_results=False,):
     # Initialize/load model and set device
     training = model is not None
     if training:  # called by train.py
@@ -99,6 +101,8 @@ def test(data,
     s = ('%20s' + '%12s' * 6) % ('Class', 'Images', 'Labels', 'P', 'R', 'mAP@.5', 'mAP@.5:.95')
     p, r, f1, mp, mr, map50, map, t0, t1 = 0., 0., 0., 0., 0., 0., 0., 0., 0.
     loss = torch.zeros(3, device=device)
+    plaus_score, plaus_loss = 0., 0.
+    num_batches = 0 # len(dataloader)
     jdict, stats, ap, ap_class, wandb_images = [], [], [], [], []
     for batch_i, (img, targets, paths, shapes) in enumerate(tqdm(dataloader, desc=s)):
         img = img.to(device, non_blocking=True)
@@ -108,6 +112,8 @@ def test(data,
         nb, _, height, width = img.shape  # batch size, channels, height, width
 
         with torch.no_grad():
+            if plaus_results and compute_loss:
+                img = img.requires_grad(True)
             # Run model
             t = time_synchronized()
             out, train_out = model(img, augment=augment)  # inference and training outputs
@@ -115,7 +121,14 @@ def test(data,
 
             # Compute loss
             if compute_loss:
-                loss += compute_loss([x.float() for x in train_out], targets,metric=loss_metric)[1][:3]  # box, obj, cls
+                batch_loss = compute_loss([x.float() for x in train_out], targets,metric=loss_metric)[1][:3]  # box, obj, cls
+                loss += batch_loss
+                if plaus_results:
+                    attribution_map = get_gradient(img, grad_wrt = batch_loss)
+                    ps = get_plaus_score(img, targets_out = targets, attr = attribution_map)
+                    plaus_loss += (1-ps)
+                    plaus_score += ps
+            num_batches += 1
 
             # Run NMS
             targets[:, 2:] *= torch.Tensor([width, height, width, height]).to(device)  # to pixels
@@ -283,7 +296,10 @@ def test(data,
     maps = np.zeros(nc) + map
     for i, c in enumerate(ap_class):
         maps[c] = ap[i]
-    return (mp, mr, map50, map, *(loss.cpu() / len(dataloader)).tolist()), maps, t
+    if plaus_results:
+        return (mp, mr, map50, map, *(loss.cpu() / len(dataloader)).tolist()), maps, t, (plaus_score / len(dataloader))
+    else:
+        return (mp, mr, map50, map, *(loss.cpu() / len(dataloader)).tolist()), maps, t
 
 
 if __name__ == '__main__':

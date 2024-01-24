@@ -42,7 +42,7 @@ import sys
 from PIL import Image
 import torchvision
 
-from plaus_functs import get_gradient, generate_vanilla_grad
+from plaus_functs import get_gradient, get_plaus_score
 
 logger = logging.getLogger(__name__)
 # import torch
@@ -463,8 +463,8 @@ def train(hyp, opt, device, tb_writer=None):
             # Forward
             with amp.autocast(enabled=cuda):
                 # out_num_attr = opt.out_num_attrs[0]  
-                # use_pgt = (opt.pgt_coeff != 0.0)
-                use_pgt = False
+                use_pgt = (opt.pgt_coeff != 0.0)
+                # use_pgt = False
                 
                 out = model(imgs.requires_grad_(True), pgt = use_pgt, out_nums = opt.out_num_attrs)  # forward
                 if use_pgt:
@@ -494,13 +494,13 @@ def train(hyp, opt, device, tb_writer=None):
                     plaus_loss_total_train += loss_items[3]
                     plaus_score_total_train += compute_pgt_loss.plaus_score #(1 - (loss_items[3] / opt.pgt_coeff))
                     num_batches += 1
+            
             # model.zero_grad()
             #########################################################
 
             # Backward
             scaler.scale(loss).backward()
             t3_pgt = time.time()
-            
             
             # Optimize
             if ni % accumulate == 0:
@@ -528,11 +528,15 @@ def train(hyp, opt, device, tb_writer=None):
                 elif plots and ni == 10 and wandb_logger.wandb:
                     wandb_logger.log({"Mosaics": [wandb_logger.wandb.Image(str(x), caption=x.name) for x in
                                                   save_dir.glob('train*.jpg') if x.exists()]})
-
+            
+            # if opt.pgt_coeff == 0.0:
+            #     attribution_map = get_gradient(imgs, grad_wrt = loss)
+            #     plaus_score = get_plaus_score(imgs, targets_out = targets, attr = attribution_map)
+            
             # end batch ------------------------------------------------------------------------------------------------
         # end epoch ----------------------------------------------------------------------------------------------------
-        if opt.pgt_coeff != 0.0:
-            plaus_score_total_train /= num_batches
+        # if opt.pgt_coeff != 0.0:
+        plaus_score_total_train /= num_batches
         
         # Scheduler
         lr = [x['lr'] for x in optimizer.param_groups]  # for tensorboard
@@ -545,7 +549,7 @@ def train(hyp, opt, device, tb_writer=None):
             final_epoch = epoch + 1 == epochs
             if not opt.notest or final_epoch:  # Calculate mAP
                 wandb_logger.current_epoch = epoch + 1
-                results, maps, times = test.test(data_dict,
+                results, maps, times, plaus_result = test.test(data_dict,
                                                  batch_size=batch_size * 2,
                                                  imgsz=imgsz_test,
                                                  model=ema.ema,
@@ -558,8 +562,12 @@ def train(hyp, opt, device, tb_writer=None):
                                                  compute_loss=compute_loss,
                                                  is_coco=is_coco,
                                                  v5_metric=opt.v5_metric,
-                                                 loss_metric=opt.loss_metric)
+                                                 loss_metric=opt.loss_metric,
+                                                 plaus_results = True)
 
+            plaus_score_total_train = plaus_result
+            plaus_loss_total_train = (1 - plaus_result) * opt.pgt_coeff
+            
             # Write
             with open(results_file, 'a') as f:
                 f.write(s + '%10.4g' * 7 % results + '\n')  # append metrics, val_loss
@@ -740,7 +748,7 @@ if __name__ == '__main__':
     # opt.batch_size = 16
     opt.batch_size = 32 
     opt.save_dir = str('runs/' + opt.name + '_lr' + str(opt.pgt_coeff)) 
-    opt.device = '5' 
+    opt.device = '7' 
     # opt.device = "0,1,2,3"  
     # opt.weights = 'weights/yolov7.pt'
     
@@ -756,7 +764,8 @@ if __name__ == '__main__':
     # opt.resume = "runs/pgt/train-pgt-yolov7/pgt5_214/weights/last.pt"
     # opt.weights = 'runs/pgt/train-pgt-yolov7/pgt5_214/weights/last.pt'
     
-    # nohup python train_pgt.py > ./output_logs/gpu5_trpgt_drone_baseline_lr0_0.log 2>&1 &
+    # nohup python train_pgt.py > ./output_logs/gpu3_trpgt_coco_baseline_lr0_0.log 2>&1 &
+    # nohup python train_pgt.py > ./output_logs/gpu7_trpgt_drone_baseline_lr0_0.log 2>&1 &
     # nohup python -m torch.distributed.launch --nproc_per_node 4 --master_port 9528 train_pgt.py --sync-bn > ./output_logs/gpu2360_coco_pgtlr0_25.log 2>&1 &
     # nohup python -m torch.distributed.launch --nproc_per_node 3 --master_port 9527 train_pgt.py --sync-bn > ./output_logs/gpu567_coco_pgt_lr0_05.log 2>&1 &
     # opt.quad = True # Helps for multiple gpu training 

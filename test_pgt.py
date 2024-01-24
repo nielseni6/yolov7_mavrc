@@ -16,7 +16,7 @@ from utils.plots import plot_images, output_to_target, plot_study_txt
 from utils.torch_utils import select_device, time_synchronized, TracedModel
 
 from xai.Perturbation import Perturbation
-from plaus_functs import get_gradient, get_gaussian
+from plaus_functs import get_gradient, get_gaussian, get_plaus_score
 import socket
 from plot_functs import imshow
 
@@ -447,7 +447,8 @@ if __name__ == '__main__':
     opt.username = username
     
     opt.half_precision = True
-    opt.device = '0'
+    opt.device = '2'
+    device_num = opt.device
     
     
     if opt.dataset == 'real_world_drone':
@@ -470,16 +471,16 @@ if __name__ == '__main__':
     # print(opt)
     
     ########## CHANGE THIS TO CHANGE DATASET ##########
-    opt.dataset = 'real_world_drone'
-    weights_dir = 'weights/eval_drone'
-    opt.batch_size = 16
+    # opt.dataset = 'real_world_drone'
+    # weights_dir = 'weights/eval_drone'
+    # opt.batch_size = 16
     ###################################################
-    # opt.dataset = 'coco'
-    # weights_dir = 'weights/eval_coco'
-    # opt.batch_size = 8
+    opt.dataset = 'coco'
+    weights_dir = 'weights/eval_coco'
+    opt.batch_size = 8
     ###################################################
     opt.models_folder = weights_dir
-    opt.name += weights_dir.split('/')[-1]
+    initname = opt.name
     # if 'pgt' in opt.weights:
     #     opt.name += 'pgt'
     weights_list = os.listdir(weights_dir)
@@ -490,7 +491,7 @@ if __name__ == '__main__':
     for weight_i in range(len(weights_list)):
         opt.weights = f'{weights_dir}/{weights_list[weight_i]}'
         
-        
+        opt.name = initname + weights_list[weight_i] # weights_dir.split('/')[-1]
         # wandb.config.update(opt)
         opt.allow_val_change=True
         # allow_val_change=True to config.update()
@@ -508,7 +509,7 @@ if __name__ == '__main__':
             loggers = {'wandb': None}  # loggers dict
             
             weights = opt.weights
-            device = select_device(opt.device, batch_size=opt.batch_size)
+            device = select_device(device_num, batch_size=opt.batch_size)
             # run_id = torch.load(weights, map_location=device).get('wandb_id') if weights.endswith('.pt') and os.path.isfile(weights) else None
             run_id = None
             wandb_logger = WandbLogger(opt, Path(save_dir).stem, run_id, data_dict)
@@ -561,23 +562,23 @@ if __name__ == '__main__':
         
         wandb_logger.finish_run()
         
-    elif opt.task == 'speed':  # speed benchmarks
-        for w in opt.weights:
-            test_pgt(opt.data, w, opt.batch_size, opt.img_size, 0.25, 0.45, opt=opt, save_json=False, plots=False, v5_metric=opt.v5_metric)
+    # elif opt.task == 'speed':  # speed benchmarks
+    #     for w in opt.weights:
+    #         test_pgt(opt.data, w, opt.batch_size, opt.img_size, 0.25, 0.45, opt=opt, save_json=False, plots=False, v5_metric=opt.v5_metric)
 
-    elif opt.task == 'study':  # run over a range of settings and save/plot
-        # python test_pgt.py --task study --data coco.yaml --iou 0.65 --weights yolov7.pt
-        x = list(range(256, 1536 + 128, 128))  # x axis (image sizes)
-        for w in opt.weights:
-            f = f'study_{Path(opt.data).stem}_{Path(w).stem}.txt'  # filename to save to
-            y = []  # y axis
-            for i in x:  # img-size
-                print(f'\nRunning {f} point {i}...')
-                r, _, t = test_pgt(opt.data, w, opt.batch_size, i, opt.conf_thres, opt.iou_thres, opt.save_json,
-                               plots=False, v5_metric=opt.v5_metric, opt=opt)
-                y.append(r + t)  # results and times
-            np.savetxt(f, y, fmt='%10.4g')  # save
-        os.system('zip -r study.zip study_*.txt')
-        plot_study_txt(x=x)  # plot
+    # elif opt.task == 'study':  # run over a range of settings and save/plot
+    #     # python test_pgt.py --task study --data coco.yaml --iou 0.65 --weights yolov7.pt
+    #     x = list(range(256, 1536 + 128, 128))  # x axis (image sizes)
+    #     for w in opt.weights:
+    #         f = f'study_{Path(opt.data).stem}_{Path(w).stem}.txt'  # filename to save to
+    #         y = []  # y axis
+    #         for i in x:  # img-size
+    #             print(f'\nRunning {f} point {i}...')
+    #             r, _, t = test_pgt(opt.data, w, opt.batch_size, i, opt.conf_thres, opt.iou_thres, opt.save_json,
+    #                            plots=False, v5_metric=opt.v5_metric, opt=opt)
+    #             y.append(r + t)  # results and times
+    #         np.savetxt(f, y, fmt='%10.4g')  # save
+    #     os.system('zip -r study.zip study_*.txt')
+    #     plot_study_txt(x=x)  # plot
 
     
