@@ -173,7 +173,7 @@ def test_pgt(data,
     if opt.atk == 'fgsm':
         robust_eval.__init_attr__(attr_method = torchattacks.FGSM(model, loss=compute_loss, metric=loss_metric, eps=8/255), torchattacks_used=True)
     if opt.atk == 'none':
-        robust_eval.__init_attr__(attr_method = get_gaussian, norm=True, keepmean=True, absolute=False, grayscale=False)
+        robust_eval.__init_attr__(attr_method = None, norm=True, keepmean=True, absolute=False, grayscale=False)
     ##########################################################################################
     for batch_i, (img, targets, paths, shapes) in enumerate(tqdm(dataloader, desc=s)):
         img = img.to(device, non_blocking=True)
@@ -415,24 +415,27 @@ if __name__ == '__main__':
     ############################################################################
     parser.add_argument('--dataset', default='real_world_drone', help='coco or real_world_drone')
     # parser.add_argument('--hyp', type=str, default='data/hyp.coco.yaml', help='')
-    parser.add_argument('--atk', type=str, default='gaussian', help='grad, pgd, gaussian')
+    # parser.add_argument('--atk', type=str, default='gaussian', help='grad, pgd, gaussian')
     parser.add_argument('--eval_type', type=str, default='robust', help='robust, evalattai, default')
     parser.add_argument('--desired_snr', type=float, default=25.0, help='desired snr')
+    parser.add_argument('--atk_list', nargs='+', type=str, default=['none', 'gaussian', 'fgsm', 'pgd',], help='atk list')
+    parser.add_argument('--models_folder', type=str, default='weights/eval_coco', help='models folder')
+    parser.add_argument('--entire_folder', action='store_true', help='entire folder')
     # parser.add_argument('--allow_val_change', type=bool, default=True, help='allow val change')
     # parser.add_argument('--debug', action='store_true', help='debug mode for visualizing figures')
     
     opt = parser.parse_args()
 
-    #check_requirements()
-    # opt.eval_type = 'evalattai'
+    opt.entire_folder = True
     
-    # opt.atk = 'gaussian'
-    # opt.atk = 'grad'
-    # opt.atk = 'none'
-    # atk_list = ['none',]# 'gaussian',]
-    atk_list = ['gaussian', 'none', 'fgsm', 'pgd',]
+    #check_requirements()
+    
+    opt.eval_type = 'default'
+    
+    opt.atk_list = ['none',]
     # atk_list = ['grad', 'gaussian', 'none',] # 'pgd', 'fgsm'
-    # opt.desired_snr = 1e+100
+    atk_list = opt.atk_list
+    
     opt.atk = ''
     for atkname in atk_list:
         opt.atk = f'{opt.atk}{atkname}'
@@ -446,21 +449,7 @@ if __name__ == '__main__':
     opt.half_precision = True
     opt.device = '0'
     
-    ########## CHANGE THIS TO CHANGE DATASET ##########
-    # opt.dataset = 'real_world_drone'
-    # weights_dir = 'weights/eval_drone'
-    # opt.batch_size = 16
-    ###################################################
-    opt.dataset = 'coco'
-    weights_dir = 'weights/eval_coco'
-    opt.batch_size = 8
-    ###################################################
     
-    weights_list = os.listdir(weights_dir)
-    opt.weights = f'{weights_dir}/{weights_list[0]}'
-    if 'pgt' in opt.weights:
-        opt.name += 'pgt'
-
     if opt.dataset == 'real_world_drone':
         if ('lambda02' == opt.host_name) or ('lambda03' == opt.host_name) or ('lambda05' == opt.host_name):    
             opt.source = '/data/Koutsoubn8/ijcnn_v7data/Real_world_test/images' 
@@ -478,74 +467,96 @@ if __name__ == '__main__':
     
     opt.save_json |= opt.data.endswith('coco.yaml')
     opt.data = check_file(opt.data)  # check file
+    # print(opt)
+    
+    ########## CHANGE THIS TO CHANGE DATASET ##########
+    opt.dataset = 'real_world_drone'
+    weights_dir = 'weights/eval_drone'
+    opt.batch_size = 16
+    ###################################################
+    # opt.dataset = 'coco'
+    # weights_dir = 'weights/eval_coco'
+    # opt.batch_size = 8
+    ###################################################
+    opt.models_folder = weights_dir
+    opt.name += weights_dir.split('/')[-1]
+    # if 'pgt' in opt.weights:
+    #     opt.name += 'pgt'
+    weights_list = os.listdir(weights_dir)
+    opt.weights = f'{weights_dir}/{weights_list[0]}'
+    ###################################################
     print(opt)
-    # wandb.config.update(opt)
     
-    opt.allow_val_change=True
-    # allow_val_change=True to config.update()
-    
-    if opt.task in ('train', 'val', 'test'):  # run normally
+    for weight_i in range(len(weights_list)):
+        opt.weights = f'{weights_dir}/{weights_list[weight_i]}'
         
-        opt.resume, opt.upload_dataset, opt.epochs = False, False, 1
-
-        with open(opt.data) as f:
-            data_dict = yaml.load(f, Loader=yaml.SafeLoader)  # data dict
         
-        save_dir = increment_path(Path(opt.project) / opt.name, exist_ok=opt.exist_ok | False)  # increment run
-        (Path(save_dir) / 'labels' if opt.save_txt else Path(save_dir)).mkdir(parents=True, exist_ok=True)  # make dir
+        # wandb.config.update(opt)
+        opt.allow_val_change=True
+        # allow_val_change=True to config.update()
         
-        loggers = {'wandb': None}  # loggers dict
-        
-        weights = opt.weights
-        device = select_device(opt.device, batch_size=opt.batch_size)
-        # run_id = torch.load(weights, map_location=device).get('wandb_id') if weights.endswith('.pt') and os.path.isfile(weights) else None
-        run_id = None
-        wandb_logger = WandbLogger(opt, Path(save_dir).stem, run_id, data_dict)
-        loggers['wandb'] = wandb_logger.wandb
-        data_dict = wandb_logger.data_dict
-
-        for atk in atk_list:
-            opt.atk = atk
-            results = test_pgt(opt.data,
-                opt.weights,
-                opt.batch_size,
-                opt.img_size,
-                opt.conf_thres,
-                opt.iou_thres,
-                opt.save_json,
-                opt.single_cls,
-                opt.augment,
-                opt.verbose,
-                save_txt=opt.save_txt | opt.save_hybrid,
-                save_hybrid=opt.save_hybrid,
-                save_conf=opt.save_conf,
-                half_precision=opt.half_precision,
-                trace=not opt.no_trace,
-                #  trace=opt.no_trace,
-                v5_metric=opt.v5_metric,
-                opt = opt,
-                wandb_logger=wandb_logger,
-                compute_loss=ComputeLoss,
-                device=device,
-                )
+        if opt.task in ('train', 'val', 'test'):  # run normally
             
+            opt.resume, opt.upload_dataset, opt.epochs = False, False, 1
+
+            with open(opt.data) as f:
+                data_dict = yaml.load(f, Loader=yaml.SafeLoader)  # data dict
             
-            # Log
-            tags = ['metrics/precision', 'metrics/recall', 'metrics/mAP_0.5', 'metrics/mAP_0.5:0.95',
-                    'val/box_loss', 'val/obj_loss', 'val/cls_loss',  # val loss
-                    'plaus_score',
-                    ]
-            # for ir in range(len(robust_eval_results)):
-            #     r_loss = torch.zeros(3, device=device)
-            #     ((r_mp, r_mr, r_map50, r_map, r_loss[0], r_loss[1], r_loss[2]), r_maps, r_t, r_plaus) = robust_eval_results[ir][0]
-            #     results = (r_mp, r_mr, r_map50, r_map, *(r_loss.cpu()).tolist()), r_maps, r_t, r_plaus
-            for i_step, res in enumerate(results):
-                (result, maps, t) = res[0]
-                # wandb_logger.current_epoch = i_step
-                for x, tag in zip(list(result), tags):
-                    if wandb_logger.wandb:
-                        wandb_logger.log({tag: x})  # W&B
-                wandb_logger.end_epoch()
+            save_dir = increment_path(Path(opt.project) / opt.name, exist_ok=opt.exist_ok | False)  # increment run
+            (Path(save_dir) / 'labels' if opt.save_txt else Path(save_dir)).mkdir(parents=True, exist_ok=True)  # make dir
+            
+            loggers = {'wandb': None}  # loggers dict
+            
+            weights = opt.weights
+            device = select_device(opt.device, batch_size=opt.batch_size)
+            # run_id = torch.load(weights, map_location=device).get('wandb_id') if weights.endswith('.pt') and os.path.isfile(weights) else None
+            run_id = None
+            wandb_logger = WandbLogger(opt, Path(save_dir).stem, run_id, data_dict)
+            loggers['wandb'] = wandb_logger.wandb
+            data_dict = wandb_logger.data_dict
+
+            for atk in atk_list:
+                opt.atk = atk
+                results = test_pgt(opt.data,
+                    opt.weights,
+                    opt.batch_size,
+                    opt.img_size,
+                    opt.conf_thres,
+                    opt.iou_thres,
+                    opt.save_json,
+                    opt.single_cls,
+                    opt.augment,
+                    opt.verbose,
+                    save_txt=opt.save_txt | opt.save_hybrid,
+                    save_hybrid=opt.save_hybrid,
+                    save_conf=opt.save_conf,
+                    half_precision=opt.half_precision,
+                    trace=not opt.no_trace,
+                    #  trace=opt.no_trace,
+                    v5_metric=opt.v5_metric,
+                    opt = opt,
+                    wandb_logger=wandb_logger,
+                    compute_loss=ComputeLoss,
+                    device=device,
+                    )
+                
+                
+                # Log
+                tags = ['metrics/precision', 'metrics/recall', 'metrics/mAP_0.5', 'metrics/mAP_0.5:0.95',
+                        'val/box_loss', 'val/obj_loss', 'val/cls_loss',  # val loss
+                        'plaus_score',
+                        ]
+                # for ir in range(len(robust_eval_results)):
+                #     r_loss = torch.zeros(3, device=device)
+                #     ((r_mp, r_mr, r_map50, r_map, r_loss[0], r_loss[1], r_loss[2]), r_maps, r_t, r_plaus) = robust_eval_results[ir][0]
+                #     results = (r_mp, r_mr, r_map50, r_map, *(r_loss.cpu()).tolist()), r_maps, r_t, r_plaus
+                for i_step, res in enumerate(results):
+                    (result, maps, t) = res[0]
+                    # wandb_logger.current_epoch = i_step
+                    for x, tag in zip(list(result), tags):
+                        if wandb_logger.wandb:
+                            wandb_logger.log({tag: x})  # W&B
+                    wandb_logger.end_epoch()
 
         
         wandb_logger.finish_run()
