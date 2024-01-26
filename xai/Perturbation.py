@@ -14,6 +14,7 @@ from torchvision.transforms.functional import to_pil_image, pil_to_tensor
 from plot_functs import imshow, Subplots
 # from plaus_functs import normalize_batch
 from plot_functs import normalize_tensor
+from utils.loss import ComputeLoss, ComputeLossOTA, ComputePGTLossOTA
 
 def nlist(n, inp=None):
     if inp is None:
@@ -163,7 +164,7 @@ class Perturbation:
         attr_list = [[] for i in range(self.nsteps)]
         num_imgs = len(img)
         for step_i in range(self.start, self.nsteps):
-            targets_ = targets.clone().detach()
+            targets_ = targets.clone().detach().requires_grad_(True)
             img_ = img.clone().detach().requires_grad_(True)# * 255.0# + ((self.epsilon * step_i) * attk.clone().detach())
             
             attk_ = attk.clone().detach()
@@ -199,8 +200,13 @@ class Perturbation:
             ########################### Plausibility and Attribution ###########################
             img_ = img_.requires_grad_(True)
             out, train_out = model(img_, augment=opt.augment)
+            if opt.loss_attr:
+                # batch_loss, bl_components = opt.compute_loss(train_out, targets, img_)
+                wrt = opt.compute_loss(train_out, targets, metric=opt.loss_metric)[0]  # box, obj, cls
+            else:
+                wrt = train_out[self.out_num_attr]
             attr_grad = get_gradient(img_, 
-                                     grad_wrt=train_out[self.out_num_attr], 
+                                     grad_wrt=wrt, 
                                      norm=True, keepmean=True, 
                                      absolute=True, grayscale=True)
             plaus_score = get_plaus_score(img_, 
@@ -300,7 +306,7 @@ class Perturbation:
                         self.wandb_images[step_i].append(opt.wandb_logger.wandb.Image(img_[si], boxes=boxes, caption=path.name))
                         self.wandb_attk[step_i].append(opt.wandb_logger.wandb.Image(attk_[si], caption=f'{path.name}_atk'))
                         self.wandb_attr[step_i].append(opt.wandb_logger.wandb.Image(attr_grad[si], caption=f'{path.name}_attr'))
-                        img_overlay = (overlay_attr(img_[si].clone().detach(), attr_grad.clone(), alpha = 0.75))
+                        img_overlay = (overlay_attr(img_[si].clone().detach(), attr_grad[si].clone(), alpha = 0.75))
                         self.wandb_attr_overlay[step_i].append(opt.wandb_logger.wandb.Image(img_overlay, caption=f'{path.name}_attr_overlay'))
                         # self.images[step_i].append(img_[si].clone().detach())
                         # self.attr[step_i].append(attr_grad[si].clone().detach())
@@ -433,15 +439,15 @@ class Perturbation:
                     val_batches = [wandb_logger.wandb.Image(str(f), caption=f.name) for f in sorted(save_dir.glob('test*.jpg'))]
                     wandb_logger.log({"Validation": val_batches})
             if wandb_images[step_i]:
-                wandb_logger.log({f"Bounding Box Debugger/Images for Perturbation Step {step_i} with SNR {self.snr_list[step_i-self.start]} {opt.atk}": wandb_images[step_i]})
+                wandb_logger.log({f"Bounding Box Debugger/Images for Perturbation Step {step_i} SNR {self.snr_list[step_i-self.start]} {opt.atk}": wandb_images[step_i]})
             # wandb_attk is not displaying in wandb
             if wandb_attk[step_i]:
-                wandb_logger.log({f"Adversarial Noise at Step {step_i} with SNR {self.snr_list[step_i-self.start]} {opt.atk}": wandb_attk[step_i]})
+                wandb_logger.log({f"Adversarial Noise/Step {step_i} SNR {self.snr_list[step_i-self.start]} {opt.atk}": wandb_attk[step_i]})
             # add attribution map to wandb
             if wandb_attr[step_i]:
-                wandb_logger.log({f"Attribution at Step {step_i}": wandb_attr[step_i]})
+                wandb_logger.log({f"Attribution/Step {step_i}": wandb_attr[step_i]})
             if self.wandb_attr_overlay[step_i]:
-                wandb_logger.log({f"Attribution Overlay at Step {step_i}": self.wandb_attr_overlay[step_i]})
+                wandb_logger.log({f"Attribution Overlay/Step {step_i}": self.wandb_attr_overlay[step_i]})
             # Return results
             model.float()  # for training
             if not training:
@@ -459,7 +465,7 @@ class Perturbation:
         
         # Log wandb image results
         for i_fig, figwb in enumerate(self.wandb_figs):
-            wandb_logger.log({f"Figure with attk Overlay {i_fig} with SNR {self.snr_list[-1]} {opt.atk}": figwb})
+            wandb_logger.log({f"Figures/Attk Overlay {i_fig} SNR {self.snr_list[-1]} {opt.atk}": figwb})
         # for i_fig, figwb in enumerate(wandb_images):
         #     wandb_logger.log({f"Bounding Box Debugger/Images for Perturbation Step {i_fig} with SNR {self.snr_list[i_fig]} {opt.atk}": figwb})
         # for i_fig, figwb in enumerate(wandb_attk):

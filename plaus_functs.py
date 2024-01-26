@@ -82,7 +82,7 @@ def get_gaussian(img, grad_wrt, norm=True, absolute=True, grayscale=True, keepme
     return gaussian_noise
     
 
-def get_plaus_score(imgs, targets_out, attr, debug=False):
+def get_plaus_score(imgs, targets_out, attr, debug=False, corners=False):
     """
     Calculates the plausibility score based on the given inputs.
 
@@ -102,6 +102,8 @@ def get_plaus_score(imgs, targets_out, attr, debug=False):
     # num_pixels = torch.tile(torch.tensor([1.0, 1.0, 1.0, 1.0], device=imgs.device), (xyxy_batch.shape[0], 1))
     xyxy_corners = (corners_coords_batch(xyxy_batch) * num_pixels).int()
     co = xyxy_corners
+    if corners:
+        co = targets_out[:, 2:6].int()
     coords_map = torch.zeros_like(attr, dtype=torch.bool)
     # rows = np.arange(co.shape[0])
     x1, x2 = co[:,1], co[:,3]

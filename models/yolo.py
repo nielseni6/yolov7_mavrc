@@ -899,11 +899,15 @@ def xywh2xyxy(x):
     return y
 
 from plaus_functs import get_gradient, generate_vanilla_grad, normalize_batch
-# from utils.general import apply_classifier
+from utils.general import non_max_suppression#, apply_classifier
 
 class ModelPGT(nn.Module):
-    def __init__(self, cfg='yolor-csp-c.yaml', ch=3, nc=None, anchors=None):  # model, input channels, number of classes
+    def __init__(self, cfg='yolor-csp-c.yaml', ch=3, nc=None, anchors=None, 
+                 conf_thres=0.50, iou_thres=0.65, classes=[], agnostic=False):  # model, input channels, number of classes
         super(ModelPGT, self).__init__()
+        
+        self.conf_thres, self.iou_thres, self.classes, self.agnostic = conf_thres, iou_thres, classes, agnostic
+        
         self.traced = False
         if isinstance(cfg, dict):
             self.yaml = cfg  # model dict
@@ -996,7 +1000,7 @@ class ModelPGT(nn.Module):
     
     def forward_once(self, x, profile=False, 
                      pgt=False, out_nums=[1], grayscale = True, 
-                     norm = True, absolute = True): # Inputs modified for PGT
+                     norm = True, absolute = True, ): # Inputs modified for PGT
         if not hasattr(self, 'k'):
             self.k = 0
 
@@ -1045,10 +1049,11 @@ class ModelPGT(nn.Module):
             return x
         else:
             attr_list = []
-            for out_num in out_nums:
-                attribution_map = get_gradient(img, grad_wrt = x[out_num])
-                attr_list.append(attribution_map)
-
+            pred = non_max_suppression(x, self.conf_thres, self.iou_thres, classes=self.classes, agnostic=self.agnostic)
+            # for out_num in out_nums:
+            attribution_map = get_gradient(img, grad_wrt = pred)#x[out_num])
+            attr_list.append(attribution_map)
+            
             if len(out_nums) == 1:
                 x.append(attribution_map)
                 return x

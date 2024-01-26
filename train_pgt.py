@@ -102,7 +102,9 @@ def train(hyp, opt, device, tb_writer=None):
         #     wandb_logger.wandb_run.starting_step = ckpt['epoch'] + 1
         #     wandb_logger.wandb_run.step = wandb_logger.wandb_run.starting_step
         #####################################################################################
-        model = ModelPGT(opt.cfg or ckpt['model'].yaml, ch=3, nc=nc, anchors=hyp.get('anchors')).to(device)
+        model = ModelPGT(opt.cfg or ckpt['model'].yaml, ch=3, nc=nc, anchors=hyp.get('anchors'), 
+                         conf_thres=opt.conf_thres, iou_thres=opt.iou_thres, classes=opt.classes, 
+                         agnostic=opt.agnostic_nms).to(device)
         # model = Model(opt.cfg or ckpt['model'].yaml, ch=3, nc=nc, anchors=hyp.get('anchors')).to(device)  # create
         exclude = ['anchor'] if (opt.cfg or hyp.get('anchors')) and not opt.resume else []  # exclude keys
         state_dict = ckpt['model'].float().state_dict()  # to FP32
@@ -463,8 +465,8 @@ def train(hyp, opt, device, tb_writer=None):
             # Forward
             with amp.autocast(enabled=cuda):
                 # out_num_attr = opt.out_num_attrs[0]  
-                use_pgt = (opt.pgt_coeff != 0.0)
-                # use_pgt = False
+                # use_pgt = (opt.pgt_coeff != 0.0)
+                use_pgt = False
                 
                 out = model(imgs.requires_grad_(True), pgt = use_pgt, out_nums = opt.out_num_attrs)  # forward
                 if use_pgt:
@@ -536,7 +538,7 @@ def train(hyp, opt, device, tb_writer=None):
             # end batch ------------------------------------------------------------------------------------------------
         # end epoch ----------------------------------------------------------------------------------------------------
         # if opt.pgt_coeff != 0.0:
-        plaus_score_total_train /= num_batches
+        plaus_score_total_train /= len(dataloader)
         
         # Scheduler
         lr = [x['lr'] for x in optimizer.param_groups]  # for tensorboard
@@ -739,16 +741,16 @@ if __name__ == '__main__':
     opt.out_num_attrs = [1,] 
     opt.n_max_attr_labels = 100 # only used if class_specific_attr == True
     # --nproc_per_node 4 | multiply pgt_coeff to match the results from 4 gpu training (the resulting plaus for 4 gpus is 4x higher than 1 gpu)
-    opt.pgt_coeff = 0.0
-    opt.pgt_lr_decay = 1.0 
-    opt.pgt_lr_decay_step = 300 
     opt.epochs = 300
+    opt.pgt_coeff = 0.05
+    opt.pgt_lr_decay = 0.5 
+    opt.pgt_lr_decay_step = int(opt.epochs / 6)
     opt.no_trace = True 
     opt.conf_thres = 0.50 
     # opt.batch_size = 16
     opt.batch_size = 32 
     opt.save_dir = str('runs/' + opt.name + '_lr' + str(opt.pgt_coeff)) 
-    opt.device = '7' 
+    opt.device = '2' 
     # opt.device = "0,1,2,3"  
     # opt.weights = 'weights/yolov7.pt'
     

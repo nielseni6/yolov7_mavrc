@@ -1757,7 +1757,7 @@ class ComputePGTLossOTA:
         
         self.n_nans = 0
 
-    def __call__(self, p, targets, imgs, attr, pgt_coeff = 1.0, metric='CIoU'):  # predictions, targets, model   
+    def __call__(self, p, targets, imgs, attr=None, pgt_coeff = 1.0, metric='CIoU'):  # predictions, targets, model   
         device = targets.device
         targets_ = targets.clone()
         lcls, lbox, lobj = torch.zeros(1, device=device), torch.zeros(1, device=device), torch.zeros(1, device=device)
@@ -1822,7 +1822,10 @@ class ComputePGTLossOTA:
         
         ####################### PGT CODE ADDED BELOW #######################
         if pgt_coeff != 0.0:
-            attribution_map = get_gradient(imgs, grad_wrt = lbox + lobj + lcls)
+            if attr == None:
+                attribution_map = get_gradient(imgs, grad_wrt = lbox + lobj + lcls)
+            else:
+                attribution_map = attr
             plaus_score = get_plaus_score(imgs, targets_out = targets_, attr = attribution_map)
             if torch.isnan(plaus_score).any():
                 self.n_nans += 1

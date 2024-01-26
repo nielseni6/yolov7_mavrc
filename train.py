@@ -576,21 +576,23 @@ if __name__ == '__main__':
     opt = parser.parse_args()
     
     ############### Real World Drone Dataset ###############
-    # opt.device = '2' 
-    # opt.data = 'data/coco_lambda01.yaml'
-    # opt.weights = 'weights/yolov7-tiny.pt'
+    opt.device = '2' 
+    opt.data = 'data/real_world.yaml' 
+    opt.dataset = 'real_world_drone'
+    opt.weights = 'weights/yolov7-tiny.pt'
+    opt.hyp = 'data/hyp.real_world.yaml' 
     ########################################################
     
     ##################### COCO Dataset #####################
-    opt.device = "2"
-    opt.data = 'data/coco_lambda01.yaml'
-    opt.dataset = 'coco'
-    opt.weights = ''
+    # opt.device = "2"
+    # opt.data = 'data/coco_lambda01.yaml'
+    # opt.dataset = 'coco'
+    # opt.weights = ''
+    # opt.cfg = 'cfg/training/yolov7.yaml'
     opt.project = 'runs/pgt/train-pgt-yolov7'
     
     opt.batch_size = 32
     opt.save_dir = str('runs/' + opt.name) 
-    opt.cfg = 'cfg/training/yolov7.yaml'
     opt.hyp = 'data/hyp.scratch.p5.yaml'
     ########################################################
     # nohup python -m torch.distributed.launch --nproc_per_node 3 --master_port 9527 train.py --sync-bn > ./output_logs/gpu567_coco_baseline.log 2>&1 &

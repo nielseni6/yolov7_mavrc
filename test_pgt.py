@@ -423,11 +423,11 @@ if __name__ == '__main__':
     parser.add_argument('--entire_folder', action='store_true', help='entire folder')
     # parser.add_argument('--allow_val_change', type=bool, default=True, help='allow val change')
     # parser.add_argument('--debug', action='store_true', help='debug mode for visualizing figures')
-    
+    parser.add_argument('--loss_attr', action='store_true', help='loss attr')
     opt = parser.parse_args()
 
     opt.entire_folder = True
-    
+    opt.loss_attr = True
     #check_requirements()
     
     opt.eval_type = 'default'
@@ -447,7 +447,7 @@ if __name__ == '__main__':
     opt.username = username
     
     opt.half_precision = True
-    opt.device = '2'
+    opt.device = '5'
     device_num = opt.device
     
     
@@ -472,11 +472,11 @@ if __name__ == '__main__':
     
     ########## CHANGE THIS TO CHANGE DATASET ##########
     # opt.dataset = 'real_world_drone'
-    # weights_dir = 'weights/eval_drone'
+    # weights_dir = 'weights/drone_eval'
     # opt.batch_size = 16
     ###################################################
     opt.dataset = 'coco'
-    weights_dir = 'weights/eval_coco'
+    weights_dir = 'weights/coco_eval'
     opt.batch_size = 8
     ###################################################
     opt.models_folder = weights_dir
