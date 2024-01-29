@@ -63,7 +63,8 @@ def exif_size(img):
 
 
 def create_dataloader(path, imgsz, batch_size, stride, opt, hyp=None, augment=False, cache=False, pad=0.0, rect=False,
-                      rank=-1, world_size=1, workers=8, image_weights=False, quad=False, prefix=''):
+                      rank=-1, world_size=1, workers=8, image_weights=False, quad=False, prefix='', k_fold = None, 
+                      k_fold_num = 0, k_fold_train = True):
     # Make sure only the first process in DDP process the dataset first, and the following others can use the cache
     with torch_distributed_zero_first(rank):
         dataset = LoadImagesAndLabels(path, imgsz, batch_size,
@@ -75,7 +76,10 @@ def create_dataloader(path, imgsz, batch_size, stride, opt, hyp=None, augment=Fa
                                       stride=int(stride),
                                       pad=pad,
                                       image_weights=image_weights,
-                                      prefix=prefix)
+                                      prefix=prefix, 
+                                      k_fold = k_fold, 
+                                      k_fold_num = k_fold_num, 
+                                      k_fold_train = k_fold_train)
 
     batch_size = min(batch_size, len(dataset))
     nw = min([os.cpu_count() // world_size, batch_size if batch_size > 1 else 0, workers])  # number of workers
@@ -349,10 +353,26 @@ def img2label_paths(img_paths):
     sa, sb = os.sep + 'images' + os.sep, os.sep + 'labels' + os.sep  # /images/, /labels/ substrings
     return ['txt'.join(x.replace(sa, sb, 1).rsplit(x.split('.')[-1], 1)) for x in img_paths]
 
+def k_fold_split(img_files, k_fold=10, k_fold_num=0, train = True):
+    img_lists = [[]] * k_fold
+    data_len = len(img_files)
+    chunk_size = data_len/k_fold
+    for i in range(k_fold):
+        img_lists[i] = img_files[int(i*chunk_size):int((i+1)*chunk_size)]
+    img_files_out = []
+    if train:
+        img_lists.pop(k_fold_num)
+        for i in range(len(img_lists)):
+            img_files_out.extend(img_lists[i])
+    else:
+        img_files_out = img_lists[k_fold_num]
+    return img_files_out
+        
 
 class LoadImagesAndLabels(Dataset):  # for training/testing
     def __init__(self, path, img_size=640, batch_size=16, augment=False, hyp=None, rect=False, image_weights=False,
-                 cache_images=False, single_cls=False, stride=32, pad=0.0, prefix=''):
+                 cache_images=False, single_cls=False, stride=32, pad=0.0, prefix='', k_fold=None, k_fold_num=0, 
+                 k_fold_train = True):
         self.img_size = img_size
         self.augment = augment
         self.hyp = hyp
@@ -365,6 +385,7 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
         #self.albumentations = Albumentations() if augment else None
 
         try:
+        # if True:
             f = []  # image files
             for p in path if isinstance(path, list) else [path]:
                 p = Path(p)  # os-agnostic
@@ -380,6 +401,9 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
                 else:
                     raise Exception(f'{prefix}{p} does not exist')
             self.img_files = sorted([x.replace('/', os.sep) for x in f if x.split('.')[-1].lower() in img_formats])
+            if k_fold:
+                img_files = k_fold_split(self.img_files, k_fold, k_fold_num, train = k_fold_train)
+                self.img_files = img_files
             # self.img_files = sorted([x for x in f if x.suffix[1:].lower() in img_formats])  # pathlib
             assert self.img_files, f'{prefix}No images found'
         except Exception as e:

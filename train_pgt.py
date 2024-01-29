@@ -268,7 +268,8 @@ def train(hyp, opt, device, tb_writer=None):
     dataloader, dataset = create_dataloader(train_path, imgsz, batch_size, gs, opt,
                                             hyp=hyp, augment=True, cache=opt.cache_images, rect=opt.rect, rank=rank,
                                             world_size=opt.world_size, workers=opt.workers,
-                                            image_weights=opt.image_weights, quad=opt.quad, prefix=colorstr('train: '))
+                                            image_weights=opt.image_weights, quad=opt.quad, prefix=colorstr('train: '),
+                                            k_fold = opt.k_fold, k_fold_num = opt.k_fold_num, k_fold_train = True)
     # dataset_w_labels = LoadImagesAndLabels(train_path, img_size=imgsz, batch_size=batch_size, stride=gs,
     #                                        augment=True, hyp=hyp, cache=opt.cache_images, rect=opt.rect, 
     #                                        image_weights=opt.image_weights, prefix=colorstr('train: '))
@@ -282,7 +283,8 @@ def train(hyp, opt, device, tb_writer=None):
         testloader = create_dataloader(test_path, imgsz_test, batch_size * 2, gs, opt,  # testloader
                                        hyp=hyp, cache=opt.cache_images and not opt.notest, rect=True, rank=-1,
                                        world_size=opt.world_size, workers=opt.workers,
-                                       pad=0.5, prefix=colorstr('val: '))[0]
+                                       pad=0.5, prefix=colorstr('val: '), k_fold = opt.k_fold, 
+                                       k_fold_num = opt.k_fold_num, k_fold_train = False)[0]
 
         if not opt.resume:
             labels = np.concatenate(dataset.labels, 0)
@@ -739,6 +741,9 @@ if __name__ == '__main__':
     print(opt)
     
     opt.plaus_results = False
+    
+    opt.k_fold = 10
+    opt.k_fold_num = 1
     # opt.sweep = True
     # opt.loss_attr = True 
     # opt.out_num_attrs = [0,1,2,] # unused if opt.loss_attr == True 
@@ -753,7 +758,7 @@ if __name__ == '__main__':
     opt.batch_size = 64
     # opt.batch_size = 96 
     opt.save_dir = str('runs/' + opt.name + '_lr' + str(opt.pgt_coeff)) 
-    opt.device = '1' 
+    opt.device = '5' 
     # opt.device = "0,1,2,3"  
     # opt.weights = 'weights/yolov7.pt'
     
@@ -769,7 +774,7 @@ if __name__ == '__main__':
     # opt.resume = "runs/pgt/train-pgt-yolov7/pgt5_214/weights/last.pt"
     # opt.weights = 'runs/pgt/train-pgt-yolov7/pgt5_214/weights/last.pt'
     
-    # nohup python train_pgt.py > ./output_logs/gpu1_trpgt_drone_lr0_7_decay0_9_step25.log 2>&1 &
+    # nohup python train_pgt.py > ./output_logs/gpu1_trpgt_drone_lr0_7_decay0_9_step25_fold1.log 2>&1 &
     # nohup python -m torch.distributed.launch --nproc_per_node 4 --master_port 9528 train_pgt.py --sync-bn > ./output_logs/gpu2360_coco_pgtlr0_25.log 2>&1 &
     # nohup python -m torch.distributed.launch --nproc_per_node 5 --master_port 9527 train_pgt.py --sync-bn > ./output_logs/gpu13456_coco_pgt_lr0_7_decay0_9_step25.log 2>&1 &
     # opt.quad = True # Helps for multiple gpu training 
@@ -803,6 +808,9 @@ if __name__ == '__main__':
             opt.source = '/data/nielseni6/ijcnn_v7data/Real_world_test/images' 
             opt.data = 'data/real_world_lambda01.yaml' 
             opt.hyp = 'data/hyp.real_world_lambda01.yaml' 
+        if opt.k_fold:
+            opt.hyp = 'data/hyp.real_world_kfold.yaml' 
+            opt.data = 'data/real_world_kfold.yaml' 
         opt.weights = ''
         opt.cfg = 'cfg/training/yolov7-tiny-drone.yaml'
     if opt.dataset == 'coco':
