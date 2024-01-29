@@ -111,8 +111,8 @@ def test(data,
         targets = targets.to(device)
         nb, _, height, width = img.shape  # batch size, channels, height, width
 
-        # with torch.no_grad():
-        if True:
+        with torch.no_grad():
+        # if True:
             if plaus_results:
                 img_ = img.clone().detach().requires_grad_(True)
             else:
@@ -124,8 +124,8 @@ def test(data,
 
             # Compute loss
             if compute_loss:
-                # batch_loss = compute_loss([x.float() for x in train_out], targets,metric=loss_metric)[1][:3]  # box, obj, cls
-                batch_loss, bl_components = compute_loss(train_out, targets, img_)#, metric=loss_metric)
+                batch_loss = compute_loss([x.float() for x in train_out], targets,metric=loss_metric)[1][:3]  # box, obj, cls
+                # batch_loss, bl_components = compute_loss(train_out, targets, img_)#, metric=loss_metric)
                 loss += batch_loss
                 if plaus_results:
                     attribution_map = get_gradient(img_, grad_wrt = batch_loss.requires_grad_(True))

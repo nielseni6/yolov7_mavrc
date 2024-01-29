@@ -551,7 +551,7 @@ def train(hyp, opt, device, tb_writer=None):
             final_epoch = epoch + 1 == epochs
             if not opt.notest or final_epoch:  # Calculate mAP
                 wandb_logger.current_epoch = epoch + 1
-                results, maps, times, plaus_result = test.test(data_dict,
+                test_results = test.test(data_dict,
                                                  batch_size=batch_size * 2,
                                                  imgsz=imgsz_test,
                                                  model=ema.ema,
@@ -565,10 +565,15 @@ def train(hyp, opt, device, tb_writer=None):
                                                  is_coco=is_coco,
                                                  v5_metric=opt.v5_metric,
                                                  loss_metric=opt.loss_metric,
-                                                 plaus_results = True)
-
+                                                 plaus_results = opt.plaus_results)
+            if opt.plaus_results:
+                results, maps, times, plaus_result = test_results
+            else:
+                results, maps, times = test_results
+                plaus_result = 0.0
             plaus_score_total_train = plaus_result
             plaus_loss_total_train = (1 - plaus_result) * opt.pgt_coeff
+
             
             # Write
             with open(results_file, 'a') as f:
@@ -717,7 +722,7 @@ if __name__ == '__main__':
     parser.add_argument('--agnostic-nms', action='store_true', help='class-agnostic NMS')
     parser.add_argument('--classes', nargs='+', type=int, help='filter by class: --class 0, or --class 0 2 3')
     ############################## PGT Variables ###############################
-    parser.add_argument('--pgt-lr', type=float, default=0.5, help='learning rate for plausibility gradient')
+    parser.add_argument('--pgt-coeff', type=float, default=0.5, help='learning rate for plausibility gradient')
     parser.add_argument('--pgt-lr-decay', type=float, default=0.75, help='learning rate decay for plausibility gradient')
     parser.add_argument('--pgt-lr-decay-step', type=int, default=100, help='learning rate decay step for plausibility gradient')
     parser.add_argument('--n-max-attr-labels', type=int, default=100, help='maximum number of attribution maps generated for each image')
@@ -733,21 +738,22 @@ if __name__ == '__main__':
     opt = parser.parse_args() 
     print(opt)
     
+    opt.plaus_results = False
     # opt.sweep = True
     # opt.loss_attr = True 
     # opt.out_num_attrs = [0,1,2,] # unused if opt.loss_attr == True 
     opt.out_num_attrs = [1,] 
-    opt.pgt_lr = 0.7 
-    opt.pgt_lr_decay = 0.75 # float(7.0/9.0) # 0.75 
-    opt.pgt_lr_decay_step = 20 
+    opt.pgt_coeff = 0.7 
+    opt.pgt_lr_decay = 0.9 # float(7.0/9.0) # 0.75 
+    opt.pgt_lr_decay_step = 25 
     opt.epochs = 300 
     opt.data = check_file(opt.data)  # check file 
     opt.no_trace = True 
     opt.conf_thres = 0.50 
-    opt.batch_size = 64 * 5
+    opt.batch_size = 64
     # opt.batch_size = 96 
     opt.save_dir = str('runs/' + opt.name + '_lr' + str(opt.pgt_coeff)) 
-    opt.device = '1,3,4,5,6' 
+    opt.device = '1' 
     # opt.device = "0,1,2,3"  
     # opt.weights = 'weights/yolov7.pt'
     
@@ -763,7 +769,7 @@ if __name__ == '__main__':
     # opt.resume = "runs/pgt/train-pgt-yolov7/pgt5_214/weights/last.pt"
     # opt.weights = 'runs/pgt/train-pgt-yolov7/pgt5_214/weights/last.pt'
     
-    # nohup python train_pgt.py > ./output_logs/gpu5_trpgt_drone_baseline_lr0_0.log 2>&1 &
+    # nohup python train_pgt.py > ./output_logs/gpu1_trpgt_drone_lr0_7_decay0_9_step25.log 2>&1 &
     # nohup python -m torch.distributed.launch --nproc_per_node 4 --master_port 9528 train_pgt.py --sync-bn > ./output_logs/gpu2360_coco_pgtlr0_25.log 2>&1 &
     # nohup python -m torch.distributed.launch --nproc_per_node 5 --master_port 9527 train_pgt.py --sync-bn > ./output_logs/gpu13456_coco_pgt_lr0_7_decay0_9_step25.log 2>&1 &
     # opt.quad = True # Helps for multiple gpu training 

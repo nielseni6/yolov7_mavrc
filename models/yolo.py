@@ -1049,10 +1049,10 @@ class ModelPGT(nn.Module):
             return x
         else:
             attr_list = []
-            pred = non_max_suppression(x, self.conf_thres, self.iou_thres, classes=self.classes, agnostic=self.agnostic)
-            # for out_num in out_nums:
-            attribution_map = get_gradient(img, grad_wrt = pred)#x[out_num])
-            attr_list.append(attribution_map)
+            # pred = non_max_suppression(x, self.conf_thres, self.iou_thres, classes=self.classes, agnostic=self.agnostic)
+            for out_num in out_nums:
+                attribution_map = get_gradient(img, grad_wrt = x[out_num])#pred)#x[out_num])
+                attr_list.append(attribution_map)
             
             if len(out_nums) == 1:
                 x.append(attribution_map)
