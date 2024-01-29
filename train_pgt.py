@@ -369,7 +369,7 @@ def train(hyp, opt, device, tb_writer=None):
             opt.pgt_coeff *= opt.pgt_lr_decay
             print(f'PGT learning rate decayed to {opt.pgt_coeff} at epoch {epoch}')
         #################################################################################
-            
+        
         plaus_loss_total_train, plaus_score_total_train = 0.0, 0.0
         num_batches = 0
         for i, (imgs, targets, paths, _) in pbar:  # batch -------------------------------------------------------------
@@ -465,8 +465,8 @@ def train(hyp, opt, device, tb_writer=None):
             # Forward
             with amp.autocast(enabled=cuda):
                 # out_num_attr = opt.out_num_attrs[0]  
-                # use_pgt = (opt.pgt_coeff != 0.0)
-                use_pgt = False
+                use_pgt = (opt.pgt_coeff != 0.0)
+                # use_pgt = False
                 
                 out = model(imgs.requires_grad_(True), pgt = use_pgt, out_nums = opt.out_num_attrs)  # forward
                 if use_pgt:
@@ -731,26 +731,23 @@ if __name__ == '__main__':
     ############################################################################
     # parser.add_argument('--seed', type=int, default=None, help='reproduce results')
     opt = parser.parse_args() 
-
-    # opt.seg_labels = True
-    # opt.class_specific_attr = True
-    # opt.sweep = True 
-    opt.seg_size_factor = 0.0 # max 1.0, min 0.0 (clean training), reduces weight/scale of segmentation maps that cover entire image
-    # opt.loss_attr = True # Not yet implemented for built-in pgt
+    print(opt)
+    
+    # opt.sweep = True
+    # opt.loss_attr = True 
     # opt.out_num_attrs = [0,1,2,] # unused if opt.loss_attr == True 
     opt.out_num_attrs = [1,] 
-    opt.n_max_attr_labels = 100 # only used if class_specific_attr == True
-    # --nproc_per_node 4 | multiply pgt_coeff to match the results from 4 gpu training (the resulting plaus for 4 gpus is 4x higher than 1 gpu)
-    opt.epochs = 300
-    opt.pgt_coeff = 0.05
-    opt.pgt_lr_decay = 0.5 
-    opt.pgt_lr_decay_step = int(opt.epochs / 6)
+    opt.pgt_lr = 0.7 
+    opt.pgt_lr_decay = 0.75 # float(7.0/9.0) # 0.75 
+    opt.pgt_lr_decay_step = 20 
+    opt.epochs = 300 
+    opt.data = check_file(opt.data)  # check file 
     opt.no_trace = True 
     opt.conf_thres = 0.50 
-    # opt.batch_size = 16
-    opt.batch_size = 32 
+    opt.batch_size = 64 * 5
+    # opt.batch_size = 96 
     opt.save_dir = str('runs/' + opt.name + '_lr' + str(opt.pgt_coeff)) 
-    opt.device = '2' 
+    opt.device = '1,3,4,5,6' 
     # opt.device = "0,1,2,3"  
     # opt.weights = 'weights/yolov7.pt'
     
@@ -766,10 +763,9 @@ if __name__ == '__main__':
     # opt.resume = "runs/pgt/train-pgt-yolov7/pgt5_214/weights/last.pt"
     # opt.weights = 'runs/pgt/train-pgt-yolov7/pgt5_214/weights/last.pt'
     
-    # nohup python train_pgt.py > ./output_logs/gpu3_trpgt_coco_baseline_lr0_0.log 2>&1 &
-    # nohup python train_pgt.py > ./output_logs/gpu7_trpgt_drone_baseline_lr0_0.log 2>&1 &
+    # nohup python train_pgt.py > ./output_logs/gpu5_trpgt_drone_baseline_lr0_0.log 2>&1 &
     # nohup python -m torch.distributed.launch --nproc_per_node 4 --master_port 9528 train_pgt.py --sync-bn > ./output_logs/gpu2360_coco_pgtlr0_25.log 2>&1 &
-    # nohup python -m torch.distributed.launch --nproc_per_node 3 --master_port 9527 train_pgt.py --sync-bn > ./output_logs/gpu567_coco_pgt_lr0_05.log 2>&1 &
+    # nohup python -m torch.distributed.launch --nproc_per_node 5 --master_port 9527 train_pgt.py --sync-bn > ./output_logs/gpu13456_coco_pgt_lr0_7_decay0_9_step25.log 2>&1 &
     # opt.quad = True # Helps for multiple gpu training 
     # opt.dataset = 'coco' # 'real_world_drone'
     opt.dataset = 'real_world_drone'
@@ -801,6 +797,8 @@ if __name__ == '__main__':
             opt.source = '/data/nielseni6/ijcnn_v7data/Real_world_test/images' 
             opt.data = 'data/real_world_lambda01.yaml' 
             opt.hyp = 'data/hyp.real_world_lambda01.yaml' 
+        opt.weights = ''
+        opt.cfg = 'cfg/training/yolov7-tiny-drone.yaml'
     if opt.dataset == 'coco':
         opt.source = "/data/nielseni6/coco/images"
         ######### scratch #########
