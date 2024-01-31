@@ -447,7 +447,7 @@ if __name__ == '__main__':
     opt.username = username
     
     opt.half_precision = True
-    opt.device = '5'
+    opt.device = '3'
     device_num = opt.device
     
     
@@ -471,13 +471,13 @@ if __name__ == '__main__':
     # print(opt)
     
     ########## CHANGE THIS TO CHANGE DATASET ##########
-    # opt.dataset = 'real_world_drone'
-    # weights_dir = 'weights/drone_eval'
-    # opt.batch_size = 16
+    opt.dataset = 'real_world_drone'
+    weights_dir = 'weights/drone_eval'
+    opt.batch_size = 16
     ###################################################
-    opt.dataset = 'coco'
-    weights_dir = 'weights/coco_eval'
-    opt.batch_size = 8
+    # opt.dataset = 'coco'
+    # weights_dir = 'weights/coco_eval'
+    # opt.batch_size = 8
     ###################################################
     opt.models_folder = weights_dir
     initname = opt.name
