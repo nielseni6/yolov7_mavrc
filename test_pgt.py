@@ -24,7 +24,8 @@ from utils.wandb_logging.wandb_utils import WandbLogger, check_wandb_resume
 import wandb
 from models.yolo import Model, ModelPGT
 from utils.loss import ComputeLoss, ComputeLossOTA, ComputePGTLossOTA
-import torchattacks
+# from torchattacks import PGD, FGSM
+from xai.Attacks import PGD, FGSM
 
 # parser = argparse.ArgumentParser(prog='test_pgt.py')
 # parser.add_argument('--debug', action='store_true', help='debug mode for visualizing figures')
@@ -161,7 +162,7 @@ def test_pgt(data,
     desired_snr = opt.desired_snr
     if opt.atk == 'none':
         desired_snr = 1e+100
-        
+    
     robust_eval = Perturbation(model, opt, nsteps = nsteps, desired_snr = desired_snr, start=start)
     
     if opt.atk == 'grad':
@@ -169,9 +170,9 @@ def test_pgt(data,
     if opt.atk == 'gaussian':
         robust_eval.__init_attr__(attr_method = get_gaussian, norm=True, keepmean=True, absolute=False, grayscale=False)
     if opt.atk == 'pgd':
-        robust_eval.__init_attr__(attr_method = torchattacks.PGD(model, loss=compute_loss, metric=loss_metric, eps=8/255, alpha=2/255, steps=4), torchattacks_used=True)
+        robust_eval.__init_attr__(attr_method = PGD(model, loss=compute_loss, metric=loss_metric, eps=8/255, alpha=2/255, steps=4), torchattacks_used=True)
     if opt.atk == 'fgsm':
-        robust_eval.__init_attr__(attr_method = torchattacks.FGSM(model, loss=compute_loss, metric=loss_metric, eps=8/255), torchattacks_used=True)
+        robust_eval.__init_attr__(attr_method = FGSM(model, loss=compute_loss, metric=loss_metric, eps=8/255), torchattacks_used=True)
     if opt.atk == 'none':
         robust_eval.__init_attr__(attr_method = None, norm=True, keepmean=True, absolute=False, grayscale=False)
     ##########################################################################################
@@ -430,9 +431,11 @@ if __name__ == '__main__':
     opt.loss_attr = True
     #check_requirements()
     
-    opt.eval_type = 'default'
+    # opt.eval_type = 'default'
     
-    opt.atk_list = ['none',]
+    
+    # opt.atk_list = ['none',]
+    opt.atk_list = ['none', 'gaussian', 'pgd', 'fgsm']
     # atk_list = ['grad', 'gaussian', 'none',] # 'pgd', 'fgsm'
     atk_list = opt.atk_list
     
@@ -447,7 +450,7 @@ if __name__ == '__main__':
     opt.username = username
     
     opt.half_precision = True
-    opt.device = '3'
+    opt.device = '5'
     device_num = opt.device
     
     

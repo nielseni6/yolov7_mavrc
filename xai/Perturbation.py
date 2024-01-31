@@ -170,7 +170,11 @@ class Perturbation:
             attk_ = attk.clone().detach()
             if not self.torchattacks_used:
                 if self.attr_method is not None:
-                    attk_ = change_noise_batch(img_, attk, desired_snr=self.snr) * (step_i / (self.nsteps - 1))
+                    attk_ = change_noise_batch(img_, attk, desired_snr=self.snr)
+                    try:
+                        attk_ *= (step_i / (self.nsteps - 1))
+                    except:
+                        continue
                 noise = attk_.clone().detach() - img.clone().detach()
             else:
                 noise = attk_
