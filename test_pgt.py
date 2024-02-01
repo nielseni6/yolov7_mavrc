@@ -159,9 +159,11 @@ def test_pgt(data,
     elif opt.eval_type == 'default':
         nsteps = 1
         # desired_snr = 1e+100
-    desired_snr = opt.desired_snr
+    
     if opt.atk == 'none':
         desired_snr = 1e+100
+    else:
+        desired_snr = opt.desired_snr
     
     robust_eval = Perturbation(model, opt, nsteps = nsteps, desired_snr = desired_snr, start=start)
     
@@ -170,9 +172,9 @@ def test_pgt(data,
     if opt.atk == 'gaussian':
         robust_eval.__init_attr__(attr_method = get_gaussian, norm=True, keepmean=True, absolute=False, grayscale=False)
     if opt.atk == 'pgd':
-        robust_eval.__init_attr__(attr_method = PGD(model, loss=compute_loss, metric=loss_metric, eps=8/255, alpha=2/255, steps=4), torchattacks_used=True)
+        robust_eval.__init_attr__(attr_method = PGD(model, loss=compute_loss, metric=loss_metric, eps=4/255, alpha=1/255, steps=4), torchattacks_used=True)
     if opt.atk == 'fgsm':
-        robust_eval.__init_attr__(attr_method = FGSM(model, loss=compute_loss, metric=loss_metric, eps=8/255), torchattacks_used=True)
+        robust_eval.__init_attr__(attr_method = FGSM(model, loss=compute_loss, metric=loss_metric, eps=4/255), torchattacks_used=True)
     if opt.atk == 'none':
         robust_eval.__init_attr__(attr_method = None, norm=True, keepmean=True, absolute=False, grayscale=False)
     ##########################################################################################

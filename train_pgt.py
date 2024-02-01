@@ -368,9 +368,9 @@ def train(hyp, opt, device, tb_writer=None):
         # b = int(random.uniform(0.25 * imgsz, 0.75 * imgsz + gs) // gs * gs)
         # dataset.mosaic_border = [b - imgsz, -b]  # height, width borders
 
-        num_losses = 4
-        if opt.pgt_built_in:
-            num_losses += 1
+        num_losses = 5
+        # if opt.pgt_built_in:
+        #     num_losses += 1
         mloss = torch.zeros(num_losses, device=device)  # mean losses
         if rank != -1:
             dataloader.sampler.set_epoch(epoch)
@@ -574,7 +574,10 @@ def train(hyp, opt, device, tb_writer=None):
                 optimizer.zero_grad()
                 if ema:
                     ema.update(model)
-
+            
+            if not opt.pgt_built_in:
+                lplaus = ((1-plaus_score) * opt.pgt_coeff).to(loss_items.device)
+                loss_items = torch.cat((loss_items[:-1], lplaus.unsqueeze(0), loss_items[-1].unsqueeze(0)))
             # Print
             if rank in [-1, 0]:
                 mloss = (mloss * i + loss_items) / (i + 1)  # update mean losses
