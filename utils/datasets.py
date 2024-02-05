@@ -408,7 +408,7 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
                     raise Exception(f'{prefix}{p} does not exist')
             self.img_files = sorted([x.replace('/', os.sep) for x in f if x.split('.')[-1].lower() in img_formats])
             if k_fold:
-                small_set = True
+                small_set = False
                 img_files = k_fold_split(self.img_files, k_fold, k_fold_num, train = k_fold_train, small_set = small_set)
                 self.img_files = img_files
             # self.img_files = sorted([x for x in f if x.suffix[1:].lower() in img_formats])  # pathlib
