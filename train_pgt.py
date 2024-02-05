@@ -496,6 +496,26 @@ def train(hyp, opt, device, tb_writer=None):
                 # use_pgt = False
                 model.eval()
                 det_out, out = model(imgs.requires_grad_(True), pgt = use_pgt, out_nums = opt.out_num_attrs)  # forward
+                ###################### Get predicted labels ######################
+                lb = [targets[targets[:, 0] == i, 1:] for i in range(nb)] if opt.save_hybrid else []  # for autolabelling
+                o = non_max_suppression(det_out, conf_thres=opt.conf_thres, iou_thres=opt.iou_thres, labels=lb, multi_label=True)
+                pred_labels = []
+                for si, pred in enumerate(o):
+                    labels = targets[targets[:, 0] == si, 1:]
+                    nl = len(labels)
+                    tcls = labels[:, 0].tolist() if nl else []  # target class
+                    new_col = torch.ones((pred.shape[0], 1), device='cuda:0') * si
+                    # Get the indices that sort the values in column 5 in ascending order
+                    sort_indices = torch.argsort(pred[:, 4], dim=0, descending=True)
+                    # Apply the sorting indices to the tensor
+                    sorted_pred = pred[sort_indices]
+                    # Remove predictions with less than 0.1 confidence
+                    n_conf = int(torch.sum(sorted_pred[:,4]>0.1)) + 1
+                    sorted_pred = sorted_pred[:n_conf]
+                    preds = torch.cat((new_col, sorted_pred[:, [5, 0, 1, 2, 3]]), dim=1)
+                    pred_labels.append(preds)
+                pred_labels = torch.cat(pred_labels, 0).to(device)
+                ##################################################################
                 model.train()
                 if use_pgt:
                     out_, attr = out[:3], out[3]
@@ -537,26 +557,7 @@ def train(hyp, opt, device, tb_writer=None):
                         t0_pgt = time.time()
                         if not (opt.pgt_coeff == 0):
                             # Add attribution maps
-                            ###################### Get predicted labels ######################
-                            lb = [targets[targets[:, 0] == i, 1:] for i in range(nb)] if opt.save_hybrid else []  # for autolabelling
-                            out = non_max_suppression(det_out, conf_thres=opt.conf_thres, iou_thres=opt.iou_thres, labels=lb, multi_label=True)
-                            pred_labels = []
-                            for si, pred in enumerate(out):
-                                labels = targets[targets[:, 0] == si, 1:]
-                                nl = len(labels)
-                                tcls = labels[:, 0].tolist() if nl else []  # target class
-                                new_col = torch.ones((pred.shape[0], 1), device='cuda:0') * si
-                                # Get the indices that sort the values in column 5 in ascending order
-                                sort_indices = torch.argsort(pred[:, 4], dim=0, descending=True)
-                                # Apply the sorting indices to the tensor
-                                sorted_pred = pred[sort_indices]
-                                # Remove predictions with less than 0.1 confidence
-                                n_conf = int(torch.sum(sorted_pred[:,4]>0.1)) + 1
-                                sorted_pred = sorted_pred[:n_conf]
-                                preds = torch.cat((new_col, sorted_pred[:, [5, 0, 1, 2, 3]]), dim=1)
-                                pred_labels.append(preds)
-                            pred_labels = torch.cat(pred_labels, 0).to(device)
-                            ##################################################################
+                            # attribution_map = get_gradient(imgs, grad_wrt = loss_items[2].requires_grad_(True))#x[out_num])
                             attribution_map = generate_vanilla_grad(model, imgs, loss_func=loss_attr, 
                                                                     targets=pred_labels, metric=opt.loss_metric, 
                                                                     out_num = out_num_attr, device=device) # mlc = max label class
@@ -835,7 +836,7 @@ if __name__ == '__main__':
     opt.plaus_results = False
     
     opt.k_fold = 10
-    opt.k_fold_num = 7
+    opt.k_fold_num = 1
     # opt.sweep = True
     opt.loss_attr = True 
     # opt.out_num_attrs = [0,1,2,] # unused if opt.loss_attr == True 
@@ -867,7 +868,7 @@ if __name__ == '__main__':
     # opt.resume = "runs/pgt/train-pgt-yolov7/pgt5_214/weights/last.pt"
     # opt.weights = 'runs/pgt/train-pgt-yolov7/pgt5_214/weights/last.pt'
     
-    # nohup python train_pgt.py > ./output_logs/gpu3_trpgt_drone_lr0_7_decay0_5_step50_fold6.log 2>&1 &
+    # nohup python train_pgt.py > ./output_logs/gpu1_trpgt_drone_loss_lr0_7_decay0_5_step50_fold0.log 2>&1 &
     # nohup python train_pgt.py > ./output_logs/gpu1_trpgt_drone_lr0_0_fold2.log 2>&1 &
     # nohup python -m torch.distributed.launch --nproc_per_node 4 --master_port 9528 train_pgt.py --sync-bn > ./output_logs/gpu2360_coco_pgtlr0_25.log 2>&1 &
     # nohup python -m torch.distributed.launch --nproc_per_node 5 --master_port 9527 train_pgt.py --sync-bn > ./output_logs/gpu13456_coco_pgt_lr0_7_decay0_9_step25.log 2>&1 &
