@@ -32,7 +32,7 @@ from utils.autoanchor import check_anchors
 from utils.datasets import create_dataloader
 from utils.general import labels_to_class_weights, increment_path, labels_to_image_weights, init_seeds, \
     fitness, strip_optimizer, get_latest_run, check_dataset, check_file, check_git_status, check_img_size, \
-    check_requirements, print_mutation, set_logging, one_cycle, colorstr
+    check_requirements, print_mutation, set_logging, one_cycle, colorstr, non_max_suppression
 from utils.google_utils import attempt_download
 from utils.loss import ComputeLoss, ComputeLossOTA, ComputePGTLossOTA
 from utils.plots import plot_images, plot_labels, plot_results, plot_evolution
@@ -347,6 +347,7 @@ def train(hyp, opt, device, tb_writer=None):
                 f'Logging results to {save_dir}\n'
                 f'Starting training for {epochs} epochs...')
     torch.save(model, wdir / 'init.pt')
+    plaus_num_nan = 0
     for epoch in range(start_epoch, epochs):  # epoch ------------------------------------------------------------------
         model.train()
         
@@ -493,23 +494,24 @@ def train(hyp, opt, device, tb_writer=None):
                 # out_num_attr = opt.out_num_attrs[0]  
                 use_pgt = (opt.pgt_coeff != 0.0) and (opt.pgt_built_in)
                 # use_pgt = False
-                
-                out = model(imgs.requires_grad_(True), pgt = use_pgt, out_nums = opt.out_num_attrs)  # forward
+                model.eval()
+                det_out, out = model(imgs.requires_grad_(True), pgt = use_pgt, out_nums = opt.out_num_attrs)  # forward
+                model.train()
                 if use_pgt:
-                    pred, attr = out[:3], out[3]
+                    out_, attr = out[:3], out[3]
                 else:
-                    pred = out
+                    out_ = out
                     attr = None
                 if 'loss_ota' not in hyp or hyp['loss_ota'] == 1:
                     print('Using loss_ota') if i == 0 else None
                     if opt.pgt_built_in:
-                        loss, loss_items = compute_pgt_loss(pred, targets.to(device), imgs, attr, pgt_coeff = opt.pgt_coeff, metric=opt.loss_metric)  # loss scaled by batch_size
+                        loss, loss_items = compute_pgt_loss(out_, targets.to(device), imgs, attr, pgt_coeff = opt.pgt_coeff, metric=opt.loss_metric)  # loss scaled by batch_size
                     else:
-                        loss, loss_items = compute_loss_ota(pred, targets.to(device), imgs, metric=opt.loss_metric)  # loss scaled by batch_size
+                        loss, loss_items = compute_loss_ota(out_, targets.to(device), imgs, metric=opt.loss_metric)  # loss scaled by batch_size
                 else:
                     print('Using loss') if i == 0 else None
                     # This is currently broken due to the addition of plaussibility loss
-                    loss, loss_items = compute_loss(pred, targets.to(device), metric=opt.loss_metric)  # loss scaled by batch_size
+                    loss, loss_items = compute_loss(out_, targets.to(device), metric=opt.loss_metric)  # loss scaled by batch_size
                 if rank != -1:
                     loss *= opt.world_size  # gradient averaged between devices in DDP mode
                 if opt.quad:
@@ -535,14 +537,39 @@ def train(hyp, opt, device, tb_writer=None):
                         t0_pgt = time.time()
                         if not (opt.pgt_coeff == 0):
                             # Add attribution maps
+                            ###################### Get predicted labels ######################
+                            lb = [targets[targets[:, 0] == i, 1:] for i in range(nb)] if opt.save_hybrid else []  # for autolabelling
+                            out = non_max_suppression(det_out, conf_thres=opt.conf_thres, iou_thres=opt.iou_thres, labels=lb, multi_label=True)
+                            pred_labels = []
+                            for si, pred in enumerate(out):
+                                labels = targets[targets[:, 0] == si, 1:]
+                                nl = len(labels)
+                                tcls = labels[:, 0].tolist() if nl else []  # target class
+                                new_col = torch.ones((pred.shape[0], 1), device='cuda:0') * si
+                                # Get the indices that sort the values in column 5 in ascending order
+                                sort_indices = torch.argsort(pred[:, 4], dim=0, descending=True)
+                                # Apply the sorting indices to the tensor
+                                sorted_pred = pred[sort_indices]
+                                # Remove predictions with less than 0.1 confidence
+                                n_conf = int(torch.sum(sorted_pred[:,4]>0.1)) + 1
+                                sorted_pred = sorted_pred[:n_conf]
+                                preds = torch.cat((new_col, sorted_pred[:, [5, 0, 1, 2, 3]]), dim=1)
+                                pred_labels.append(preds)
+                            pred_labels = torch.cat(pred_labels, 0).to(device)
+                            ##################################################################
                             attribution_map = generate_vanilla_grad(model, imgs, loss_func=loss_attr, 
-                                                                    targets=targets, metric=opt.loss_metric, 
+                                                                    targets=pred_labels, metric=opt.loss_metric, 
                                                                     out_num = out_num_attr, device=device) # mlc = max label class
                             t1_pgt = time.time()
                             # Calculate Plausibility IoU with attribution maps
-                            plaus_score, plaus_num_nan = eval_plausibility(imgs, labels.to(device), 
-                                                                        attribution_map, device=device, 
-                                                                        debug=True)
+                            plaus_score = get_plaus_score(imgs, targets_out = targets.to(device), attr = attribution_map)
+                            if torch.isnan(plaus_score).any():
+                                plaus_num_nan += 1
+                                plaus_score = torch.tensor(0.0, device=device)
+                                print(f"plaus_score is nan, number of nans: {plaus_num_nan}")
+                            # plaus_score, plaus_num_nan = eval_plausibility(imgs, targets.to(device), 
+                            #                                             attribution_map, device=device, 
+                            #                                             debug=True)
                             # ADD LR SCHEDULER
                             
                             plaus_loss = (opt.pgt_coeff * plaus_score)
@@ -799,6 +826,7 @@ if __name__ == '__main__':
     parser.add_argument('--class_specific_attr', action='store_true', help='If true, calculate attribution maps for each class individually')
     parser.add_argument('--seg-labels', action='store_true', help='If true, calculate plaus score with segmentation maps rather than bbox')
     parser.add_argument('--seg_size_factor', type=float, default=1.0, help='Factor to reduce weight of segmentation maps that cover entire image')
+    parser.add_argument('--save_hybrid', action='store_true', help='If true, save hybrid labels for autolabelling')
     ############################################################################
     # parser.add_argument('--seed', type=int, default=None, help='reproduce results')
     opt = parser.parse_args() 
@@ -809,7 +837,7 @@ if __name__ == '__main__':
     opt.k_fold = 10
     opt.k_fold_num = 7
     # opt.sweep = True
-    # opt.loss_attr = True 
+    opt.loss_attr = True 
     # opt.out_num_attrs = [0,1,2,] # unused if opt.loss_attr == True 
     opt.pgt_built_in = False
     opt.out_num_attrs = [1,] 
@@ -823,7 +851,7 @@ if __name__ == '__main__':
     opt.batch_size = 64
     # opt.batch_size = 96 
     opt.save_dir = str('runs/' + opt.name + '_lr' + str(opt.pgt_coeff)) 
-    opt.device = '3' 
+    opt.device = '2' 
     # opt.device = "0,1,2,3"  
     # opt.weights = 'weights/yolov7.pt'
     
