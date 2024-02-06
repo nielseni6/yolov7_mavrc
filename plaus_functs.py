@@ -224,6 +224,28 @@ def normalize_batch(x):
     
     return x_
 
+def get_detections(model, img):
+    """
+    Get detections from a model given an input image and targets.
+
+    Args:
+        model (nn.Module): The model to use for detection.
+        img (torch.Tensor): The input image tensor.
+
+    Returns:
+        torch.Tensor: The detected bounding boxes.
+    """
+    model_ = copy.deepcopy(model)
+    model_.eval() # Set model to evaluation mode
+    # Run inference
+    with torch.no_grad():
+        det_out, out = model_(img)
+    
+    # model_.train()
+    del img, model_, out
+    
+    return det_out
+
 ####################################################################################
 #### ALL FUNCTIONS BELOW ARE DEPRECIATED AND WILL BE REMOVED IN FUTURE VERSIONS ####
 ####################################################################################
