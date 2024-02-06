@@ -515,7 +515,8 @@ def train(hyp, opt, device, tb_writer=None):
                     nl = len(labels)
                     # tcls = labels[:, 0].tolist() if nl else []  # target class
                     predn = pred.clone()
-                    scale_coords(imgs[si].shape[1:], predn[:, :4], [width, height], [[1.3333333333333333, 1.3333333333333333], [16.0, 16.0]])  # native-space pred
+                    # width, height = 480, 480
+                    # scale_coords(imgs[si].shape[1:], predn[:, :4], [width, height], [[1.3333333333333333, 1.3333333333333333], [16.0, 16.0]])  # native-space pred
                     # Get the indices that sort the values in column 5 in ascending order
                     sort_indices = torch.argsort(pred[:, 4], dim=0, descending=True)
                     # Apply the sorting indices to the tensor
@@ -526,7 +527,8 @@ def train(hyp, opt, device, tb_writer=None):
                     new_col = torch.ones((sorted_pred.shape[0], 1), device='cuda:0') * si
                     preds = torch.cat((new_col, sorted_pred[:, [5, 0, 1, 2, 3]]), dim=1)
                     preds[:, 2:] = xyxy2xywh(preds[:, 2:])  # xywh
-                    preds[:, 2:] /= torch.Tensor([width, height, width, height]).to(device)  # from pixels
+                    gn = torch.tensor([width, height])[[1, 0, 1, 0]]  # normalization gain whwh
+                    preds[:, 2:] /= gn.to(device)  # from pixels
                     pred_labels.append(preds)
                 pred_labels = torch.cat(pred_labels, 0).to(device)
                 ################################################################## 
@@ -541,7 +543,7 @@ def train(hyp, opt, device, tb_writer=None):
                     if opt.pgt_built_in:
                         loss, loss_items = compute_pgt_loss(out_, targets.to(device), imgs, attr, 
                                                             pgt_coeff = opt.pgt_coeff, metric=opt.loss_metric,
-                                                            pred_labels = targets.to(device)#pred_labels,
+                                                            pred_labels = pred_labels,
                                                             )  # loss scaled by batch_size
                     else:
                         loss, loss_items = compute_loss_ota(out_, targets.to(device), imgs, metric=opt.loss_metric)  # loss scaled by batch_size
@@ -574,10 +576,10 @@ def train(hyp, opt, device, tb_writer=None):
                         t0_pgt = time.time()
                         if not (opt.pgt_coeff == 0):
                             # Add attribution maps
-                            attribution_map = get_gradient(imgs, grad_wrt = loss)#x[out_num])
-                            # attribution_map = generate_vanilla_grad(model, imgs, loss_func=loss_attr, 
-                            #                                         targets=pred_labels, metric=opt.loss_metric, 
-                            #                                         out_num = out_num_attr, device=device) # mlc = max label class
+                            # attribution_map = get_gradient(imgs, grad_wrt = loss)#x[out_num])
+                            attribution_map = generate_vanilla_grad(model, imgs, loss_func=loss_attr, 
+                                                                    targets=pred_labels, metric=opt.loss_metric, 
+                                                                    out_num = out_num_attr, device=device) # mlc = max label class
                             t1_pgt = time.time()
                             # Calculate Plausibility IoU with attribution maps
                             plaus_score = get_plaus_score(imgs, targets_out = targets.to(device), attr = attribution_map)
@@ -851,9 +853,10 @@ if __name__ == '__main__':
     print(opt)
     
     opt.plaus_results = False
+    opt.save_hybrid = True
     
     opt.k_fold = 10
-    opt.k_fold_num = 3
+    opt.k_fold_num = 0
     # opt.sweep = True
     opt.loss_attr = True 
     # opt.out_num_attrs = [0,1,2,] # unused if opt.loss_attr == True 
@@ -866,7 +869,7 @@ if __name__ == '__main__':
     opt.data = check_file(opt.data)  # check file 
     opt.no_trace = True 
     opt.conf_thres = 0.50 
-    opt.batch_size = 64
+    opt.batch_size = 64 
     # opt.batch_size = 96 
     opt.save_dir = str('runs/' + opt.name + '_lr' + str(opt.pgt_coeff)) 
     opt.device = '1' 
@@ -890,8 +893,8 @@ if __name__ == '__main__':
     # nohup python -m torch.distributed.launch --nproc_per_node 4 --master_port 9528 train_pgt.py --sync-bn > ./output_logs/gpu2360_coco_pgtlr0_25.log 2>&1 &
     # nohup python -m torch.distributed.launch --nproc_per_node 5 --master_port 9527 train_pgt.py --sync-bn > ./output_logs/gpu13456_coco_pgt_lr0_7_decay0_9_step25.log 2>&1 &
     # opt.quad = True # Helps for multiple gpu training 
-    # opt.dataset = 'coco' # 'real_world_drone'
-    opt.dataset = 'real_world_drone'
+    # opt.dataset = 'coco' # 'real_world_drone' 
+    opt.dataset = 'real_world_drone' 
     # opt.sync_bn = True
     
     opt.seed = random.randrange(sys.maxsize)
