@@ -27,12 +27,13 @@ from utils.datasets import LoadStreams, LoadImages, LoadImagesAndLabels
 
 import test  # import test.py to get mAP after each epoch
 from models.experimental import attempt_load
-from models.yolo import Model, ModelPGT
+from models.yolo import Model, ModelPGT, Detections
 from utils.autoanchor import check_anchors
 from utils.datasets import create_dataloader
 from utils.general import labels_to_class_weights, increment_path, labels_to_image_weights, init_seeds, \
     fitness, strip_optimizer, get_latest_run, check_dataset, check_file, check_git_status, check_img_size, \
-    check_requirements, print_mutation, set_logging, one_cycle, colorstr, non_max_suppression
+    check_requirements, print_mutation, set_logging, one_cycle, colorstr, non_max_suppression, scale_coords, \
+    xyxy2xywh, xywh2xyxy
 from utils.google_utils import attempt_download
 from utils.loss import ComputeLoss, ComputeLossOTA, ComputePGTLossOTA
 from utils.plots import plot_images, plot_labels, plot_results, plot_evolution
@@ -42,7 +43,7 @@ import sys
 from PIL import Image
 import torchvision
 
-from plaus_functs import get_gradient, get_plaus_score
+from plaus_functs import get_gradient, get_plaus_score, get_detections
 from plaus_functs_original import generate_vanilla_grad, eval_plausibility
 
 logger = logging.getLogger(__name__)
@@ -348,6 +349,10 @@ def train(hyp, opt, device, tb_writer=None):
                 f'Starting training for {epochs} epochs...')
     torch.save(model, wdir / 'init.pt')
     plaus_num_nan = 0
+    ch_ = []
+    for ie in range(len(model.model[-1].m)):
+        ch_.append(model.model[-1].m[ie].in_channels)
+    
     for epoch in range(start_epoch, epochs):  # epoch ------------------------------------------------------------------
         model.train()
         
@@ -391,7 +396,7 @@ def train(hyp, opt, device, tb_writer=None):
         
         plaus_loss_total_train, plaus_score_total_train = 0.0, 0.0
         num_batches = 0
-        for i, (imgs, targets, paths, _) in pbar:  # batch -------------------------------------------------------------
+        for i, (imgs, targets, paths, shapes) in pbar:  # batch -------------------------------------------------------------
             ni = i + nb * epoch  # number integrated batches (since train start)
             imgs = imgs.to(device, non_blocking=True).float() / 255.0  # uint8 to float32, 0-255 to 0.0-1.0
             targets = targets.to(device)
@@ -492,31 +497,40 @@ def train(hyp, opt, device, tb_writer=None):
             # Forward
             with amp.autocast(enabled=cuda):
                 # out_num_attr = opt.out_num_attrs[0]  
-                use_pgt = (opt.pgt_coeff != 0.0) and (opt.pgt_built_in)
+                use_pgt = (opt.pgt_coeff != 0.0) and (opt.pgt_built_in) and (not opt.loss_attr)
                 # use_pgt = False
-                model.eval()
-                det_out, out = model(imgs.requires_grad_(True), pgt = use_pgt, out_nums = opt.out_num_attrs)  # forward
-                ###################### Get predicted labels ######################
-                lb = [targets[targets[:, 0] == i, 1:] for i in range(nb)] if opt.save_hybrid else []  # for autolabelling
-                o = non_max_suppression(det_out, conf_thres=opt.conf_thres, iou_thres=opt.iou_thres, labels=lb, multi_label=True)
+                det_out = get_detections(model, imgs.clone().detach())
+                out = model(imgs.requires_grad_(True), pgt = use_pgt, out_nums = opt.out_num_attrs)  # forward
+                # model.eval()
+                # det_out, out = model(imgs.requires_grad_(True), pgt = use_pgt, out_nums = opt.out_num_attrs)  # forward
+                ###################### Get predicted labels ###################### 
+                nb, _, height, width = imgs.shape  # batch size, channels, height, width
+                targets_ = targets.clone()
+                targets_[:, 2:] = targets[:, 2:] * torch.Tensor([width, height, width, height]).to(device)  # to pixels
+                lb = [targets_[targets_[:, 0] == i, 1:] for i in range(nb)] if opt.save_hybrid else []  # for autolabelling
+                o = non_max_suppression(det_out, conf_thres=0.001, iou_thres=0.6, labels=lb, multi_label=True)
                 pred_labels = []
                 for si, pred in enumerate(o):
-                    labels = targets[targets[:, 0] == si, 1:]
+                    labels = targets_[targets_[:, 0] == si, 1:]
                     nl = len(labels)
-                    tcls = labels[:, 0].tolist() if nl else []  # target class
-                    new_col = torch.ones((pred.shape[0], 1), device='cuda:0') * si
+                    # tcls = labels[:, 0].tolist() if nl else []  # target class
+                    predn = pred.clone()
+                    scale_coords(imgs[si].shape[1:], predn[:, :4], [width, height], [[1.3333333333333333, 1.3333333333333333], [16.0, 16.0]])  # native-space pred
                     # Get the indices that sort the values in column 5 in ascending order
                     sort_indices = torch.argsort(pred[:, 4], dim=0, descending=True)
                     # Apply the sorting indices to the tensor
-                    sorted_pred = pred[sort_indices]
+                    sorted_pred = predn[sort_indices]
                     # Remove predictions with less than 0.1 confidence
                     n_conf = int(torch.sum(sorted_pred[:,4]>0.1)) + 1
                     sorted_pred = sorted_pred[:n_conf]
+                    new_col = torch.ones((sorted_pred.shape[0], 1), device='cuda:0') * si
                     preds = torch.cat((new_col, sorted_pred[:, [5, 0, 1, 2, 3]]), dim=1)
+                    preds[:, 2:] = xyxy2xywh(preds[:, 2:])  # xywh
+                    preds[:, 2:] /= torch.Tensor([width, height, width, height]).to(device)  # from pixels
                     pred_labels.append(preds)
                 pred_labels = torch.cat(pred_labels, 0).to(device)
-                ##################################################################
-                model.train()
+                ################################################################## 
+                # model.train()
                 if use_pgt:
                     out_, attr = out[:3], out[3]
                 else:
@@ -525,7 +539,10 @@ def train(hyp, opt, device, tb_writer=None):
                 if 'loss_ota' not in hyp or hyp['loss_ota'] == 1:
                     print('Using loss_ota') if i == 0 else None
                     if opt.pgt_built_in:
-                        loss, loss_items = compute_pgt_loss(out_, targets.to(device), imgs, attr, pgt_coeff = opt.pgt_coeff, metric=opt.loss_metric)  # loss scaled by batch_size
+                        loss, loss_items = compute_pgt_loss(out_, targets.to(device), imgs, attr, 
+                                                            pgt_coeff = opt.pgt_coeff, metric=opt.loss_metric,
+                                                            pred_labels = targets.to(device)#pred_labels,
+                                                            )  # loss scaled by batch_size
                     else:
                         loss, loss_items = compute_loss_ota(out_, targets.to(device), imgs, metric=opt.loss_metric)  # loss scaled by batch_size
                 else:
@@ -557,10 +574,10 @@ def train(hyp, opt, device, tb_writer=None):
                         t0_pgt = time.time()
                         if not (opt.pgt_coeff == 0):
                             # Add attribution maps
-                            # attribution_map = get_gradient(imgs, grad_wrt = loss_items[2].requires_grad_(True))#x[out_num])
-                            attribution_map = generate_vanilla_grad(model, imgs, loss_func=loss_attr, 
-                                                                    targets=pred_labels, metric=opt.loss_metric, 
-                                                                    out_num = out_num_attr, device=device) # mlc = max label class
+                            attribution_map = get_gradient(imgs, grad_wrt = loss)#x[out_num])
+                            # attribution_map = generate_vanilla_grad(model, imgs, loss_func=loss_attr, 
+                            #                                         targets=pred_labels, metric=opt.loss_metric, 
+                            #                                         out_num = out_num_attr, device=device) # mlc = max label class
                             t1_pgt = time.time()
                             # Calculate Plausibility IoU with attribution maps
                             plaus_score = get_plaus_score(imgs, targets_out = targets.to(device), attr = attribution_map)
@@ -604,7 +621,7 @@ def train(hyp, opt, device, tb_writer=None):
                     ema.update(model)
             
             if not opt.pgt_built_in:
-                lplaus = ((1-plaus_score) * opt.pgt_coeff).to(loss_items.device)
+                lplaus = (plaus_score).to(loss_items.device)
                 loss_items = torch.cat((loss_items[:-1], lplaus.unsqueeze(0), loss_items[-1].unsqueeze(0)))
             # Print
             if rank in [-1, 0]:
@@ -646,20 +663,20 @@ def train(hyp, opt, device, tb_writer=None):
             if not opt.notest or final_epoch:  # Calculate mAP
                 wandb_logger.current_epoch = epoch + 1
                 test_results = test.test(data_dict,
-                                                 batch_size=batch_size * 2,
-                                                 imgsz=imgsz_test,
-                                                 model=ema.ema,
-                                                 single_cls=opt.single_cls,
-                                                 dataloader=testloader,
-                                                 save_dir=save_dir,
-                                                 verbose=nc < 50 and final_epoch,
-                                                 plots=plots and final_epoch,
-                                                 wandb_logger=wandb_logger,
-                                                 compute_loss=compute_loss,
-                                                 is_coco=is_coco,
-                                                 v5_metric=opt.v5_metric,
-                                                 loss_metric=opt.loss_metric,
-                                                 plaus_results = opt.plaus_results)
+                                        batch_size=batch_size * 2,
+                                        imgsz=imgsz_test,
+                                        model=ema.ema,
+                                        single_cls=opt.single_cls,
+                                        dataloader=testloader,
+                                        save_dir=save_dir,
+                                        verbose=nc < 50 and final_epoch,
+                                        plots=plots and final_epoch,
+                                        wandb_logger=wandb_logger,
+                                        compute_loss=compute_loss,
+                                        is_coco=is_coco,
+                                        v5_metric=opt.v5_metric,
+                                        loss_metric=opt.loss_metric,
+                                        plaus_results = opt.plaus_results)
             if opt.plaus_results:
                 results, maps, times, plaus_result = test_results
             else:
@@ -836,11 +853,11 @@ if __name__ == '__main__':
     opt.plaus_results = False
     
     opt.k_fold = 10
-    opt.k_fold_num = 1
+    opt.k_fold_num = 3
     # opt.sweep = True
     opt.loss_attr = True 
     # opt.out_num_attrs = [0,1,2,] # unused if opt.loss_attr == True 
-    opt.pgt_built_in = False
+    opt.pgt_built_in = True
     opt.out_num_attrs = [1,] 
     opt.pgt_coeff = 0.7 # 25 
     opt.pgt_lr_decay = 0.5 # float(7.0/9.0) # 0.9 
@@ -852,7 +869,7 @@ if __name__ == '__main__':
     opt.batch_size = 64
     # opt.batch_size = 96 
     opt.save_dir = str('runs/' + opt.name + '_lr' + str(opt.pgt_coeff)) 
-    opt.device = '2' 
+    opt.device = '1' 
     # opt.device = "0,1,2,3"  
     # opt.weights = 'weights/yolov7.pt'
     

@@ -53,7 +53,9 @@ def generate_vanilla_grad(model, input_tensor, loss_func = None,
     
     gradients = torch.autograd.grad(grad_wrt, input_tensor, 
                                         grad_outputs=grad_wrt_outputs, 
-                                        retain_graph=True, create_graph=True)
+                                        retain_graph=True, 
+                                        # create_graph=True,
+                                        )
 
     # Convert gradients to numpy array
     gradients = gradients[0].detach().cpu().numpy()
