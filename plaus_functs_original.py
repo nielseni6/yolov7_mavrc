@@ -6,7 +6,7 @@ import math
 
 def generate_vanilla_grad(model, input_tensor, loss_func = None, 
                           targets=None, metric=None, out_num = 1, 
-                          norm=True, device='cpu'):    
+                          norm=True, device='cpu', train_out = None):    
     """
     Computes the vanilla gradient of the input tensor with respect to the output of the given model.
 
@@ -25,18 +25,19 @@ def generate_vanilla_grad(model, input_tensor, loss_func = None,
     """
     # Set model.train() at the beginning and revert back to original mode (model.eval() or model.train()) at the end
     train_mode = model.training
-    if not train_mode:
-        model.train()
+    if train_out is None:
+        if not train_mode:
+            model.train()
 
-    # Set requires_grad attribute of tensor. Important for computing gradients
-    input_tensor.requires_grad = True
-    
-    # # Zero gradients
-    # model.zero_grad()
+        # Set requires_grad attribute of tensor. Important for computing gradients
+        input_tensor.requires_grad = True
+        
+        # # Zero gradients
+        # model.zero_grad()
 
-    # Forward pass
-    train_out = model(input_tensor) # training outputs (no inference outputs in train mode)
-    
+        # Forward pass
+        train_out = model(input_tensor) # training outputs (no inference outputs in train mode)
+
     # train_out[1] = torch.Size([4, 3, 80, 80, 7]) HxWx(#anchorxC) cls (class probabilities)
     # train_out[0] = torch.Size([4, 3, 160, 160, 7]) HxWx(#anchorx4) reg (location and scaling)
     # train_out[2] = torch.Size([4, 3, 40, 40, 7]) HxWx(#anchorx1) obj (objectness score or confidence)

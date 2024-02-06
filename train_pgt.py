@@ -579,14 +579,12 @@ def train(hyp, opt, device, tb_writer=None):
                             # attribution_map = get_gradient(imgs, grad_wrt = loss)#x[out_num])
                             attribution_map = generate_vanilla_grad(model, imgs, loss_func=loss_attr, 
                                                                     targets=pred_labels, metric=opt.loss_metric, 
-                                                                    out_num = out_num_attr, device=device) # mlc = max label class
+                                                                    out_num = out_num_attr, device=device,
+                                                                    train_out = out_) # mlc = max label class
                             t1_pgt = time.time()
                             # Calculate Plausibility IoU with attribution maps
                             plaus_score = get_plaus_score(imgs, targets_out = targets.to(device), attr = attribution_map)
-                            if torch.isnan(plaus_score).any():
-                                plaus_num_nan += 1
-                                plaus_score = torch.tensor(0.0, device=device)
-                                print(f"plaus_score is nan, number of nans: {plaus_num_nan}")
+
                             # plaus_score, plaus_num_nan = eval_plausibility(imgs, targets.to(device), 
                             #                                             attribution_map, device=device, 
                             #                                             debug=True)
