@@ -127,7 +127,10 @@ def get_plaus_score(imgs, targets_out, attr, debug=False, corners=False):
     IoU_denom = torch.sum(attr)
     IoU_ = (IoU_num / IoU_denom)
     plaus_score = IoU_
-
+    if torch.isnan(plaus_score).any():
+        # plaus_num_nan += 1
+        plaus_score = torch.tensor(0.0, device=imgs.device)
+        # print(f"plaus_score is nan, number of nans: {plaus_num_nan}")
     return plaus_score
 
 
