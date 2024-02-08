@@ -499,39 +499,40 @@ def train(hyp, opt, device, tb_writer=None):
                 # out_num_attr = opt.out_num_attrs[0]  
                 use_pgt = (opt.pgt_coeff != 0.0) and (opt.pgt_built_in) and (not opt.loss_attr)
                 # use_pgt = False
-                det_out = get_detections(model, imgs.clone().detach())
+                # det_out = get_detections(model, imgs.clone().detach())
                 out = model(imgs.requires_grad_(True), pgt = use_pgt, out_nums = opt.out_num_attrs)  # forward
                 # model.eval()
                 # det_out, out = model(imgs.requires_grad_(True), pgt = use_pgt, out_nums = opt.out_num_attrs)  # forward
-                ###################### Get predicted labels ###################### 
-                nb, _, height, width = imgs.shape  # batch size, channels, height, width
-                targets_ = targets.clone()
-                targets_[:, 2:] = targets[:, 2:] * torch.Tensor([width, height, width, height]).to(device)  # to pixels
-                lb = [targets_[targets_[:, 0] == i, 1:] for i in range(nb)] if opt.save_hybrid else []  # for autolabelling
-                o = non_max_suppression(det_out, conf_thres=0.001, iou_thres=0.6, labels=lb, multi_label=True)
-                pred_labels = []
-                for si, pred in enumerate(o):
-                    labels = targets_[targets_[:, 0] == si, 1:]
-                    nl = len(labels)
-                    # tcls = labels[:, 0].tolist() if nl else []  # target class
-                    predn = pred.clone()
-                    # width, height = 480, 480
-                    # scale_coords(imgs[si].shape[1:], predn[:, :4], [width, height], [[1.3333333333333333, 1.3333333333333333], [16.0, 16.0]])  # native-space pred
-                    # Get the indices that sort the values in column 5 in ascending order
-                    sort_indices = torch.argsort(pred[:, 4], dim=0, descending=True)
-                    # Apply the sorting indices to the tensor
-                    sorted_pred = predn[sort_indices]
-                    # Remove predictions with less than 0.1 confidence
-                    n_conf = int(torch.sum(sorted_pred[:,4]>0.1)) + 1
-                    sorted_pred = sorted_pred[:n_conf]
-                    new_col = torch.ones((sorted_pred.shape[0], 1), device='cuda:0') * si
-                    preds = torch.cat((new_col, sorted_pred[:, [5, 0, 1, 2, 3]]), dim=1)
-                    preds[:, 2:] = xyxy2xywh(preds[:, 2:])  # xywh
-                    gn = torch.tensor([width, height])[[1, 0, 1, 0]]  # normalization gain whwh
-                    preds[:, 2:] /= gn.to(device)  # from pixels
-                    pred_labels.append(preds)
-                pred_labels = torch.cat(pred_labels, 0).to(device)
-                ################################################################## 
+                pred_labels=targets.to(device)
+                # ###################### Get predicted labels ###################### 
+                # nb, _, height, width = imgs.shape  # batch size, channels, height, width
+                # targets_ = targets.clone()
+                # targets_[:, 2:] = targets[:, 2:] * torch.Tensor([width, height, width, height]).to(device)  # to pixels
+                # lb = [targets_[targets_[:, 0] == i, 1:] for i in range(nb)] if opt.save_hybrid else []  # for autolabelling
+                # o = non_max_suppression(det_out, conf_thres=0.001, iou_thres=0.6, labels=lb, multi_label=True)
+                # pred_labels = []
+                # for si, pred in enumerate(o):
+                #     labels = targets_[targets_[:, 0] == si, 1:]
+                #     nl = len(labels)
+                #     # tcls = labels[:, 0].tolist() if nl else []  # target class
+                #     predn = pred.clone()
+                #     # width, height = 480, 480
+                #     # scale_coords(imgs[si].shape[1:], predn[:, :4], [width, height], [[1.3333333333333333, 1.3333333333333333], [16.0, 16.0]])  # native-space pred
+                #     # Get the indices that sort the values in column 5 in ascending order
+                #     sort_indices = torch.argsort(pred[:, 4], dim=0, descending=True)
+                #     # Apply the sorting indices to the tensor
+                #     sorted_pred = predn[sort_indices]
+                #     # Remove predictions with less than 0.1 confidence
+                #     n_conf = int(torch.sum(sorted_pred[:,4]>0.1)) + 1
+                #     sorted_pred = sorted_pred[:n_conf]
+                #     new_col = torch.ones((sorted_pred.shape[0], 1), device='cuda:0') * si
+                #     preds = torch.cat((new_col, sorted_pred[:, [5, 0, 1, 2, 3]]), dim=1)
+                #     preds[:, 2:] = xyxy2xywh(preds[:, 2:])  # xywh
+                #     gn = torch.tensor([width, height])[[1, 0, 1, 0]]  # normalization gain whwh
+                #     preds[:, 2:] /= gn.to(device)  # from pixels
+                #     pred_labels.append(preds)
+                # pred_labels = torch.cat(pred_labels, 0).to(device)
+                # ################################################################## 
                 # model.train()
                 if use_pgt:
                     out_, attr = out[:3], out[3]
@@ -851,7 +852,7 @@ if __name__ == '__main__':
     print(opt)
     
     opt.plaus_results = False
-    opt.save_hybrid = True
+    opt.save_hybrid = False
     
     opt.k_fold = 10
     opt.k_fold_num = 1
@@ -860,7 +861,7 @@ if __name__ == '__main__':
     # opt.out_num_attrs = [0,1,2,] # unused if opt.loss_attr == True 
     opt.pgt_built_in = True
     opt.out_num_attrs = [1,] 
-    opt.pgt_coeff = 0.7 # 25 
+    opt.pgt_coeff = 0.0 # 25 
     opt.pgt_lr_decay = 0.5 # float(7.0/9.0) # 0.9 
     opt.pgt_lr_decay_step = 50 
     opt.epochs = 300 
@@ -870,7 +871,7 @@ if __name__ == '__main__':
     opt.batch_size = 64 
     # opt.batch_size = 96 
     opt.save_dir = str('runs/' + opt.name + '_lr' + str(opt.pgt_coeff)) 
-    opt.device = '5' 
+    opt.device = '1' 
     # opt.device = "0,1,2,3"  
     # opt.weights = 'weights/yolov7.pt'
     
@@ -886,6 +887,7 @@ if __name__ == '__main__':
     # opt.resume = "runs/pgt/train-pgt-yolov7/pgt5_214/weights/last.pt"
     # opt.weights = 'runs/pgt/train-pgt-yolov7/pgt5_214/weights/last.pt'
     
+    # nohup python train_pgt.py > ./output_logs/gpu6_lr0_0_fold3.log 2>&1 &
     # nohup python train_pgt.py > ./output_logs/gpu5_trpgt_drone_loss_lr0_7_decay0_5_step50_fold1.log 2>&1 &
     # nohup python train_pgt.py > ./output_logs/gpu1_trpgt_drone_lr0_0_fold2.log 2>&1 &
     # nohup python -m torch.distributed.launch --nproc_per_node 4 --master_port 9528 train_pgt.py --sync-bn > ./output_logs/gpu2360_coco_pgtlr0_25.log 2>&1 &

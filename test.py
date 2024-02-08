@@ -111,8 +111,8 @@ def test(data,
         targets = targets.to(device)
         nb, _, height, width = img.shape  # batch size, channels, height, width
 
-        with torch.no_grad():
-        # if True:
+        # with torch.no_grad():
+        if True:
             if plaus_results:
                 img_ = img.clone().detach().requires_grad_(True)
             else:
@@ -124,16 +124,17 @@ def test(data,
 
             # Compute loss
             if compute_loss:
-                batch_loss = compute_loss([x.float() for x in train_out], targets,metric=loss_metric)[1][:3]  # box, obj, cls
+                loss_, batch_loss = compute_loss([x.float() for x in train_out], targets,metric=loss_metric)  # box, obj, cls
                 # batch_loss, bl_components = compute_loss(train_out, targets, img_)#, metric=loss_metric)
-                loss += batch_loss
+                loss += batch_loss[:3]
                 if plaus_results:
-                    attribution_map = get_gradient(img_, grad_wrt = batch_loss.requires_grad_(True))
+                    attribution_map = get_gradient(img_, grad_wrt = loss_.requires_grad_(True))
                     ps = get_plaus_score(img_, targets_out = targets, attr = attribution_map)
                     plaus_loss += (1-ps)
                     plaus_score += ps
             num_batches += 1
-
+            torch.no_grad()
+            
             # Run NMS
             targets[:, 2:] *= torch.Tensor([width, height, width, height]).to(device)  # to pixels
             lb = [targets[targets[:, 0] == i, 1:] for i in range(nb)] if save_hybrid else []  # for autolabelling
