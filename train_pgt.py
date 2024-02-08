@@ -744,7 +744,7 @@ if __name__ == '__main__':
     opt.plaus_results = False
     
     opt.k_fold = 10
-    opt.k_fold_num = 0
+    opt.k_fold_num = 2
     # opt.sweep = True
     # opt.loss_attr = True 
     # opt.out_num_attrs = [0,1,2,] # unused if opt.loss_attr == True 
