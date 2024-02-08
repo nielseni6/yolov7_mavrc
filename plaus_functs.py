@@ -224,6 +224,8 @@ def normalize_batch(x):
     
     return x_
 
+import copy
+
 def get_detections(model, img):
     """
     Get detections from a model given an input image and targets.
