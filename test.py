@@ -111,8 +111,8 @@ def test(data,
         targets = targets.to(device)
         nb, _, height, width = img.shape  # batch size, channels, height, width
 
-        # with torch.no_grad():
-        if True:
+        with torch.no_grad():
+        # if True:
             if plaus_results:
                 img_ = img.clone().detach().requires_grad_(True)
             else:
@@ -133,7 +133,7 @@ def test(data,
                     plaus_loss += (1-ps)
                     plaus_score += ps
             num_batches += 1
-            torch.no_grad()
+            # torch.no_grad()
             
             # Run NMS
             targets[:, 2:] *= torch.Tensor([width, height, width, height]).to(device)  # to pixels

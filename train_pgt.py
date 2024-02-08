@@ -796,7 +796,7 @@ if __name__ == '__main__':
     
     opt.plaus_results = False
     opt.save_hybrid = False
-    opt.small_set = True
+    opt.small_set = False
     
     opt.k_fold = 10
     opt.k_fold_num = 1
@@ -805,7 +805,7 @@ if __name__ == '__main__':
     # opt.out_num_attrs = [0,1,2,] # unused if opt.loss_attr == True 
     opt.pgt_built_in = True
     opt.out_num_attrs = [1,] 
-    opt.pgt_coeff = 0.1 # 25 
+    opt.pgt_coeff = 0.0 # 25 
     opt.pgt_lr_decay = 0.5 # float(7.0/9.0) # 0.9 
     opt.pgt_lr_decay_step = 50 
     opt.epochs = 300 
@@ -815,7 +815,7 @@ if __name__ == '__main__':
     opt.batch_size = 64 
     # opt.batch_size = 96 
     opt.save_dir = str('runs/' + opt.name + '_lr' + str(opt.pgt_coeff)) 
-    opt.device = '3' 
+    opt.device = '1' 
     # opt.device = "0,1,2,3"  
     # opt.weights = 'weights/yolov7.pt'
     
