@@ -6,7 +6,7 @@ import math
 
 def generate_vanilla_grad(model, input_tensor, loss_func = None, 
                           targets=None, metric=None, out_num = 1, 
-                          norm=False, device='cpu'):    
+                          norm=True, abs=True, grayscale=True, device='cpu'):    
     """
     Computes the vanilla gradient of the input tensor with respect to the output of the given model.
 
@@ -58,13 +58,13 @@ def generate_vanilla_grad(model, input_tensor, loss_func = None,
     # Convert gradients to numpy array
     gradients = gradients[0].detach().cpu().numpy()
 
-    if norm:
+    if abs:
         # Take absolute values of gradients
         gradients = np.absolute(gradients)
-
+    if grayscale:
         # Sum across color channels
-        attribution_map = np.sum(gradients, axis=0)
-
+        attribution_map = np.sum(gradients, axis=1, keepdims=True)
+    if norm:
         # Normalize attribution map
         attribution_map /= np.max(attribution_map)
     else:

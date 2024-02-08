@@ -404,70 +404,6 @@ def train(hyp, opt, device, tb_writer=None):
                     path_labels.append(path_)
                 labels = torch.stack(labels)
             
-            '''if not opt.clean_plaus_eval: # Works for both datasets
-                ################ Below is for augmented image labels ################
-                labels_list = [[targets[i] for i in range(len(targets)) if int(targets[i][0]) == j] for j in range(len(imgs))] # **
-                labels_list_seg = [[targets[i] for i in range(len(targets)) if int(targets[i][0]) == j] for j in range(len(imgs))] # **
-                for il in range(len(labels_list)):
-                    try:
-                        labels_list[il] = torch.stack(labels_list[il])
-                    except:
-                        labels_list[il] = torch.tensor([[]])
-                            
-            if opt.dataset == 'real_world_drone':
-                if opt.clean_plaus_eval:
-                    path_labels, labels_list = [], []
-                    for il, path in enumerate(paths):
-                        path_ = str('/' + path.replace('images', 'labels').replace('.jpg', '.txt').replace('../', ''))
-                        lab_txt = np.loadtxt(path_, dtype=np.float32, delimiter=' ')
-                        label = torch.tensor(np.insert(lab_txt, 0, il))
-                        labels_list.append(label.to(device))
-                        path_labels.append(path_)
-                    labels = torch.stack(labels_list).to(device)
-                    labels_list_seg = labels_list
-            if opt.dataset == 'coco':
-                path_labels = [path.replace('images', 'labels').replace('.jpg', '.txt').replace('../', '') for path in paths]
-                if opt.clean_plaus_eval:
-                    ############### Below is for unaugmented image labels ###############
-                    labels_list, labels_list_seg = [], []
-                    for il, path in enumerate(path_labels):
-                        try:
-                            lab_txt = np.loadtxt(str('/' + path), dtype=str, delimiter='\n')
-                        except:
-                            lab_txt = np.array([])
-                        lab_, lab_seg = [], []
-                        try:
-                            n_objs = len(lab_txt)
-                        except:
-                            lab_txt = np.expand_dims(lab_txt, axis=0)
-                            n_objs = 1 # len(lab_txt)
-                        # n_objs = len(labels_list[il]) # **
-                        for i_boxes in range(n_objs):
-                            label_list = lab_txt[i_boxes].split(' ')
-                            label_floats = np.array(label_list, dtype=np.float32)
-                            # Segmentation labels #
-                            label_seg = torch.tensor(np.insert(label_floats, 0, il))
-                            lab_seg.append(label_seg.to(device))
-                            #######################
-                            segx, segy = label_floats[1::2], label_floats[2::2]
-                            xx, yy = (np.max(segx)+np.min(segx))/2, (np.max(segy)+np.min(segy))/2
-                            xh, yw = (np.max(segx)-np.min(segx)), (np.max(segy)-np.min(segy))
-                            label_bbox = np.array([xx, yy, xh, yw])
-                            label_ = torch.tensor(np.insert(np.insert(label_bbox, 0, label_floats[0]), 0, il))
-                            lab_.append(label_)
-                        try:
-                            label = torch.stack(lab_)
-                        except:
-                            label = torch.tensor([[]])
-                        labels_list.append(label.to(device))
-                        labels_list_seg.append(lab_seg)
-                    #####################################################################
-            try:
-                labels = torch.cat(labels_list, dim=0) # labels as single tensor
-            except:
-                filtered_list = [tensor if tensor.numel() > 0 else torch.zeros_like(tensor) for tensor in labels_list]
-                labels = torch.cat(filtered_list, dim=0) # labels as single tensor
-            '''
             
             # Warmup
             if ni <= nw:
@@ -540,9 +476,10 @@ def train(hyp, opt, device, tb_writer=None):
                                                                     out_num = out_num_attr, device=device) # mlc = max label class
                             t1_pgt = time.time()
                             # Calculate Plausibility IoU with attribution maps
-                            plaus_score, plaus_num_nan = eval_plausibility(imgs, labels.to(device), 
-                                                                        attribution_map, device=device, 
-                                                                        debug=True)
+                            plaus_score = get_plaus_score(imgs, targets_out = targets.to(device), attr = attribution_map)
+                            # plaus_score, plaus_num_nan = eval_plausibility(imgs, labels.to(device), 
+                            #                                             attribution_map, device=device, 
+                            #                                             debug=True)
                             # ADD LR SCHEDULER
                             
                             plaus_loss = (opt.pgt_coeff * plaus_score)
@@ -557,7 +494,7 @@ def train(hyp, opt, device, tb_writer=None):
                             # plaus_num_nan += int(math.isnan(pscore))
                             # print(f'Plausibility eval and loss took {t1_pgt - t0_pgt} seconds')
                         else:
-                            plaus_loss, plaus_score = torch.tensor([0.0]), torch.tensor([0.0])
+                            plaus_loss, plaus_score = torch.tensor(0.0), torch.tensor(0.0)
                         
                         t2_pgt = time.time()
                 model.zero_grad()
@@ -807,13 +744,13 @@ if __name__ == '__main__':
     opt.plaus_results = False
     
     opt.k_fold = 10
-    opt.k_fold_num = 2
+    opt.k_fold_num = 0
     # opt.sweep = True
     # opt.loss_attr = True 
     # opt.out_num_attrs = [0,1,2,] # unused if opt.loss_attr == True 
     opt.pgt_built_in = False
     opt.out_num_attrs = [1,] 
-    opt.pgt_coeff = 0.7 # 25 
+    opt.pgt_coeff = 0.1 # 25 
     opt.pgt_lr_decay = 0.5 # float(7.0/9.0) # 0.9 
     opt.pgt_lr_decay_step = 50 
     opt.epochs = 300 
@@ -823,7 +760,7 @@ if __name__ == '__main__':
     opt.batch_size = 64
     # opt.batch_size = 96 
     opt.save_dir = str('runs/' + opt.name + '_lr' + str(opt.pgt_coeff)) 
-    opt.device = '7' 
+    opt.device = '6' 
     # opt.device = "0,1,2,3"  
     # opt.weights = 'weights/yolov7.pt'
     
@@ -840,7 +777,7 @@ if __name__ == '__main__':
     # opt.weights = 'runs/pgt/train-pgt-yolov7/pgt5_214/weights/last.pt'
     
     # nohup python train_pgt.py > ./output_logs/gpu7_trpgt_drone_lr0_7_decay0_5_step50_fold2.log 2>&1 &
-    # nohup python train_pgt.py > ./output_logs/gpu1_trpgt_drone_lr0_0_fold2.log 2>&1 &
+    # nohup python train_pgt.py > ./output_logs/gpu2_trpgt_drone_lr0_0_foldNA.log 2>&1 &
     # nohup python -m torch.distributed.launch --nproc_per_node 4 --master_port 9528 train_pgt.py --sync-bn > ./output_logs/gpu2360_coco_pgtlr0_25.log 2>&1 &
     # nohup python -m torch.distributed.launch --nproc_per_node 5 --master_port 9527 train_pgt.py --sync-bn > ./output_logs/gpu13456_coco_pgt_lr0_7_decay0_9_step25.log 2>&1 &
     # opt.quad = True # Helps for multiple gpu training 
@@ -875,6 +812,7 @@ if __name__ == '__main__':
             opt.data = 'data/real_world_lambda01.yaml' 
             opt.hyp = 'data/hyp.real_world_lambda01.yaml' 
         if opt.k_fold:
+            opt.source = '/data/nielseni6/drone_data/Real_world_drone_data/images'
             opt.hyp = 'data/hyp.real_world_kfold.yaml' 
             opt.data = 'data/real_world_kfold.yaml' 
         opt.weights = ''

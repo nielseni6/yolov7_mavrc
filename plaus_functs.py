@@ -106,8 +106,8 @@ def get_plaus_score(imgs, targets_out, attr, debug=False, corners=False):
         co = targets_out[:, 2:6].int()
     coords_map = torch.zeros_like(attr, dtype=torch.bool)
     # rows = np.arange(co.shape[0])
-    x1, x2 = co[:,1], co[:,3]
-    y1, y2 = co[:,0], co[:,2]
+    x1, x2 = co[:,0], co[:,2]
+    y1, y2 = co[:,1], co[:,3]
     
     for ic in range(co.shape[0]): # potential for speedup here with torch indexing instead of for loop
         coords_map[target_inds[ic], :,x1[ic]:x2[ic],y1[ic]:y2[ic]] = True

@@ -360,19 +360,22 @@ def k_fold_split(img_files, k_fold=10, k_fold_num=0, train = True):
     for i in range(k_fold):
         img_lists[i] = img_files[int(i*chunk_size):int((i+1)*chunk_size)]
     img_files_out = []
+    testfold = img_lists.pop(k_fold_num)
     if train:
-        img_lists.pop(k_fold_num)
+        # img_lists.pop(k_fold_num)
         for i in range(len(img_lists)):
             img_files_out.extend(img_lists[i])
     else:
-        img_files_out = img_lists[k_fold_num]
+        img_files_out.extend(testfold)
+        # img_files_out.extend(img_lists[k_fold_num])
+        # img_files_out = img_lists[k_fold_num]
     return img_files_out
         
 
 class LoadImagesAndLabels(Dataset):  # for training/testing
     def __init__(self, path, img_size=640, batch_size=16, augment=False, hyp=None, rect=False, image_weights=False,
                  cache_images=False, single_cls=False, stride=32, pad=0.0, prefix='', k_fold=None, k_fold_num=0, 
-                 k_fold_train = True):
+                 k_fold_train = True, small_set=False):
         self.img_size = img_size
         self.augment = augment
         self.hyp = hyp
@@ -412,6 +415,16 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
         # Check cache
         self.label_files = img2label_paths(self.img_files)  # labels
         cache_path = (p if p.is_file() else Path(self.label_files[0]).parent).with_suffix('.cache')  # cached labels
+        if k_fold:
+            cpath = str(cache_path).replace('.cache','') + '_kfold' + str(k_fold_num)
+            if k_fold_train:
+                cpath += '_train'
+                if small_set:
+                    cpath += '_small'
+            else:
+                cpath += '_test'
+            
+            cache_path = Path(cpath + '.cache')
         if cache_path.is_file():
             cache, exists = torch.load(cache_path), True  # load
             #if cache['hash'] != get_hash(self.label_files + self.img_files) or 'version' not in cache:  # changed
