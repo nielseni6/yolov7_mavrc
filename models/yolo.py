@@ -740,8 +740,9 @@ class Model(nn.Module):
         model_info(self, verbose, img_size)
 
 
-def parse_model(d, ch):  # model_dict, input_channels(3)
-    logger.info('\n%3s%18s%3s%10s  %-40s%-30s' % ('', 'from', 'n', 'params', 'module', 'arguments'))
+def parse_model(d, ch, supress_sysout = False):  # model_dict, input_channels(3)
+    if not supress_sysout:
+        logger.info('\n%3s%18s%3s%10s  %-40s%-30s' % ('', 'from', 'n', 'params', 'module', 'arguments'))
     anchors, nc, gd, gw = d['anchors'], d['nc'], d['depth_multiple'], d['width_multiple']
     na = (len(anchors[0]) // 2) if isinstance(anchors, list) else anchors  # number of anchors
     no = na * (nc + 5)  # number of outputs = anchors * (classes + 5)
@@ -811,7 +812,8 @@ def parse_model(d, ch):  # model_dict, input_channels(3)
         t = str(m)[8:-2].replace('__main__.', '')  # module type
         np = sum([x.numel() for x in m_.parameters()])  # number params
         m_.i, m_.f, m_.type, m_.np = i, f, t, np  # attach index, 'from' index, type, number params
-        logger.info('%3s%18s%3s%10.0f  %-40s%-30s' % (i, f, n, np, t, args))  # print
+        if not supress_sysout:
+            logger.info('%3s%18s%3s%10.0f  %-40s%-30s' % (i, f, n, np, t, args))  # print
         save.extend(x % i for x in ([f] if isinstance(f, int) else f) if x != -1)  # append to savelist
         layers.append(m_)
         if i == 0:
@@ -903,10 +905,11 @@ from utils.general import non_max_suppression#, apply_classifier
 
 class ModelPGT(nn.Module):
     def __init__(self, cfg='yolor-csp-c.yaml', ch=3, nc=None, anchors=None, 
-                 conf_thres=0.50, iou_thres=0.65, classes=[], agnostic=False):  # model, input channels, number of classes
+                 conf_thres=0.50, iou_thres=0.65, classes=[], agnostic=False, supress_sysout = False):  # model, input channels, number of classes
         super(ModelPGT, self).__init__()
         
         self.conf_thres, self.iou_thres, self.classes, self.agnostic = conf_thres, iou_thres, classes, agnostic
+        self.supress_sysout = supress_sysout
         
         self.traced = False
         if isinstance(cfg, dict):
@@ -920,12 +923,14 @@ class ModelPGT(nn.Module):
         # Define model
         ch = self.yaml['ch'] = self.yaml.get('ch', ch)  # input channels
         if nc and nc != self.yaml['nc']:
-            logger.info(f"Overriding model.yaml nc={self.yaml['nc']} with nc={nc}")
+            if not self.supress_sysout:
+                logger.info(f"Overriding model.yaml nc={self.yaml['nc']} with nc={nc}")
             self.yaml['nc'] = nc  # override yaml value
         if anchors:
-            logger.info(f'Overriding model.yaml anchors with anchors={anchors}')
+            if not self.supress_sysout:
+                logger.info(f'Overriding model.yaml anchors with anchors={anchors}')
             self.yaml['anchors'] = round(anchors)  # override yaml value
-        self.model, self.save = parse_model(deepcopy(self.yaml), ch=[ch])  # model, savelist
+        self.model, self.save = parse_model(deepcopy(self.yaml), ch=[ch], supress_sysout=self.supress_sysout)  # model, savelist
         self.names = [str(i) for i in range(self.yaml['nc'])]  # default names
         # print([x.shape for x in self.forward(torch.zeros(1, ch, 64, 64))])
 
@@ -942,6 +947,7 @@ class ModelPGT(nn.Module):
         if isinstance(m, IDetect):
             s = 256  # 2x min stride
             m.stride = torch.tensor([s / x.shape[-2] for x in self.forward(torch.zeros(1, ch, s, s))])  # forward
+            # m.export = True
             check_anchor_order(m)
             m.anchors /= m.stride.view(-1, 1, 1)
             self.stride = m.stride
@@ -975,8 +981,9 @@ class ModelPGT(nn.Module):
 
         # Init weights, biases
         initialize_weights(self)
-        self.info()
-        logger.info('')
+        if not self.supress_sysout:
+            self.info()
+            logger.info('')
     
     def forward(self, x, augment=False, profile=False, pgt=False, out_nums=[1]): # Inputs modified for PGT
         if augment:
@@ -1163,5 +1170,6 @@ class ModelPGT(nn.Module):
         return m
 
     def info(self, verbose=False, img_size=640):  # print model information
+        # if not self.supress_sysout:
         model_info(self, verbose, img_size)
 

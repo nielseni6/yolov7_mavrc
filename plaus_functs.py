@@ -226,7 +226,7 @@ def normalize_batch(x):
 
 import copy
 
-def get_detections(model, img):
+def get_detections(model_clone, img):
     """
     Get detections from a model given an input image and targets.
 
@@ -237,16 +237,23 @@ def get_detections(model, img):
     Returns:
         torch.Tensor: The detected bounding boxes.
     """
-    model_ = copy.deepcopy(model)
-    model_.eval() # Set model to evaluation mode
+    # mp = list(model.parameters())
+    # mcp = list(model_clone.parameters())
+    # n = len(mp)
+    # for i in range(0, n):
+    #     mcp[i].data[:] = mp[i].data[:]
+    
+    # model_clone.load_state_dict(copy.deepcopy(model.state_dict()))
+    # model_ = model
+    model_clone.eval() # Set model to evaluation mode
     # Run inference
     with torch.no_grad():
-        det_out, out = model_(img)
+        det_out, out = model_clone(img)
     
     # model_.train()
-    del img, model_, out
+    del img#, model_clone, out
     
-    return det_out
+    return det_out, out
 
 ####################################################################################
 #### ALL FUNCTIONS BELOW ARE DEPRECIATED AND WILL BE REMOVED IN FUTURE VERSIONS ####

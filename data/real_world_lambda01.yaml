@@ -3,7 +3,6 @@ train: ../../../../data/nielseni6/ijcnn_v7data/Real_world_training/images  # tra
 val: ../../../../data/nielseni6/ijcnn_v7data/Real_world_test/images  # val images (relative to 'path') 128 images
 test: ../../../../data/nielseni6/ijcnn_v7data/Real_world_test/images
 
-
 # Classes
 nc: 2  # Num Clases
 names: ['AIRPLANE', 'DRONE'] # Class Namesz
