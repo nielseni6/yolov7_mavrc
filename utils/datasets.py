@@ -79,7 +79,8 @@ def create_dataloader(path, imgsz, batch_size, stride, opt, hyp=None, augment=Fa
                                       prefix=prefix, 
                                       k_fold = k_fold, 
                                       k_fold_num = k_fold_num, 
-                                      k_fold_train = k_fold_train)
+                                      k_fold_train = k_fold_train,
+                                      small_set = opt.small_set)
 
     batch_size = min(batch_size, len(dataset))
     nw = min([os.cpu_count() // world_size, batch_size if batch_size > 1 else 0, workers])  # number of workers
@@ -378,7 +379,7 @@ def k_fold_split(img_files, k_fold=10, k_fold_num=0, train = True, small_set = F
 class LoadImagesAndLabels(Dataset):  # for training/testing
     def __init__(self, path, img_size=640, batch_size=16, augment=False, hyp=None, rect=False, image_weights=False,
                  cache_images=False, single_cls=False, stride=32, pad=0.0, prefix='', k_fold=None, k_fold_num=0, 
-                 k_fold_train = True):
+                 k_fold_train = True, small_set = False):
         self.img_size = img_size
         self.augment = augment
         self.hyp = hyp
@@ -408,7 +409,7 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
                     raise Exception(f'{prefix}{p} does not exist')
             self.img_files = sorted([x.replace('/', os.sep) for x in f if x.split('.')[-1].lower() in img_formats])
             if k_fold:
-                small_set = False
+                
                 img_files = k_fold_split(self.img_files, k_fold, k_fold_num, train = k_fold_train, small_set = small_set)
                 self.img_files = img_files
             # self.img_files = sorted([x for x in f if x.suffix[1:].lower() in img_formats])  # pathlib

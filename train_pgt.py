@@ -45,6 +45,7 @@ import torchvision
 
 from plaus_functs import get_gradient, get_plaus_score, get_detections
 from plaus_functs_original import generate_vanilla_grad, eval_plausibility
+import contextlib
 
 logger = logging.getLogger(__name__)
 # import torch
@@ -126,7 +127,9 @@ def train(hyp, opt, device, tb_writer=None):
         logger.info('Transferred %g/%g items from %s' % (len(state_dict), len(model.state_dict()), weights))  # report
     else:
         model = ModelPGT(opt.cfg, ch=3, nc=nc, anchors=hyp.get('anchors')).to(device)  # create
+        # model_clone  = ModelPGT(opt.cfg, ch=3, nc=nc, anchors=hyp.get('anchors'), supress_sysout = True).to(device)  # create
         # model = Model(opt.cfg, ch=3, nc=nc, anchors=hyp.get('anchors')).to(device)  # create
+    
     with torch_distributed_zero_first(rank):
         check_dataset(data_dict)  # check
     train_path = data_dict['train']
@@ -313,6 +316,7 @@ def train(hyp, opt, device, tb_writer=None):
             if not opt.noautoanchor:
                 check_anchors(dataset, model=model, thr=hyp['anchor_t'], imgsz=imgsz)
             model.half().float()  # pre-reduce anchor precision
+            # model_clone.half().float()
 
     # DDP mode
     if cuda and rank != -1:
@@ -331,6 +335,12 @@ def train(hyp, opt, device, tb_writer=None):
     model.gr = 1.0  # iou loss ratio (obj_loss = 1.0 or iou)
     model.class_weights = labels_to_class_weights(dataset.labels, nc).to(device) * nc  # attach class weights
     model.names = names
+    
+    # model_clone.nc = nc  # attach number of classes to model
+    # model_clone.hyp = hyp  # attach hyperparameters to model
+    # model_clone.gr = 1.0  # iou loss ratio (obj_loss = 1.0 or iou)
+    # model_clone.class_weights = labels_to_class_weights(dataset.labels, nc).to(device) * nc  # attach class weights
+    # model_clone.names = names
 
     # Start training
     t0 = time.time()
@@ -349,12 +359,15 @@ def train(hyp, opt, device, tb_writer=None):
                 f'Starting training for {epochs} epochs...')
     torch.save(model, wdir / 'init.pt')
     plaus_num_nan = 0
-    ch_ = []
-    for ie in range(len(model.model[-1].m)):
-        ch_.append(model.model[-1].m[ie].in_channels)
+    # ch_ = []
+    # for ie in range(len(model.model[-1].m)):
+    #     ch_.append(model.model[-1].m[ie].in_channels)
+    
+    
     
     for epoch in range(start_epoch, epochs):  # epoch ------------------------------------------------------------------
         model.train()
+        # model_clone.eval()
         
         # Update image weights (optional)
         if opt.image_weights:
@@ -400,81 +413,7 @@ def train(hyp, opt, device, tb_writer=None):
             ni = i + nb * epoch  # number integrated batches (since train start)
             imgs = imgs.to(device, non_blocking=True).float() / 255.0  # uint8 to float32, 0-255 to 0.0-1.0
             targets = targets.to(device)
-            
-            if opt.dataset == 'real_world_drone':
-                path_labels, labels = [], []
-                for il, path in enumerate(paths):
-                    path_ = path.replace('images', 'labels').replace('.jpg', '.txt').replace('../../..', '')
-                    label = torch.tensor(np.insert(np.loadtxt(path_, dtype=np.float32), 0, il))
-                    labels.append(label)
-                    path_labels.append(path_)
-                labels = torch.stack(labels)
-            
-            '''if not opt.clean_plaus_eval: # Works for both datasets
-                ################ Below is for augmented image labels ################
-                labels_list = [[targets[i] for i in range(len(targets)) if int(targets[i][0]) == j] for j in range(len(imgs))] # **
-                labels_list_seg = [[targets[i] for i in range(len(targets)) if int(targets[i][0]) == j] for j in range(len(imgs))] # **
-                for il in range(len(labels_list)):
-                    try:
-                        labels_list[il] = torch.stack(labels_list[il])
-                    except:
-                        labels_list[il] = torch.tensor([[]])
-                            
-            if opt.dataset == 'real_world_drone':
-                if opt.clean_plaus_eval:
-                    path_labels, labels_list = [], []
-                    for il, path in enumerate(paths):
-                        path_ = str('/' + path.replace('images', 'labels').replace('.jpg', '.txt').replace('../', ''))
-                        lab_txt = np.loadtxt(path_, dtype=np.float32, delimiter=' ')
-                        label = torch.tensor(np.insert(lab_txt, 0, il))
-                        labels_list.append(label.to(device))
-                        path_labels.append(path_)
-                    labels = torch.stack(labels_list).to(device)
-                    labels_list_seg = labels_list
-            if opt.dataset == 'coco':
-                path_labels = [path.replace('images', 'labels').replace('.jpg', '.txt').replace('../', '') for path in paths]
-                if opt.clean_plaus_eval:
-                    ############### Below is for unaugmented image labels ###############
-                    labels_list, labels_list_seg = [], []
-                    for il, path in enumerate(path_labels):
-                        try:
-                            lab_txt = np.loadtxt(str('/' + path), dtype=str, delimiter='\n')
-                        except:
-                            lab_txt = np.array([])
-                        lab_, lab_seg = [], []
-                        try:
-                            n_objs = len(lab_txt)
-                        except:
-                            lab_txt = np.expand_dims(lab_txt, axis=0)
-                            n_objs = 1 # len(lab_txt)
-                        # n_objs = len(labels_list[il]) # **
-                        for i_boxes in range(n_objs):
-                            label_list = lab_txt[i_boxes].split(' ')
-                            label_floats = np.array(label_list, dtype=np.float32)
-                            # Segmentation labels #
-                            label_seg = torch.tensor(np.insert(label_floats, 0, il))
-                            lab_seg.append(label_seg.to(device))
-                            #######################
-                            segx, segy = label_floats[1::2], label_floats[2::2]
-                            xx, yy = (np.max(segx)+np.min(segx))/2, (np.max(segy)+np.min(segy))/2
-                            xh, yw = (np.max(segx)-np.min(segx)), (np.max(segy)-np.min(segy))
-                            label_bbox = np.array([xx, yy, xh, yw])
-                            label_ = torch.tensor(np.insert(np.insert(label_bbox, 0, label_floats[0]), 0, il))
-                            lab_.append(label_)
-                        try:
-                            label = torch.stack(lab_)
-                        except:
-                            label = torch.tensor([[]])
-                        labels_list.append(label.to(device))
-                        labels_list_seg.append(lab_seg)
-                    #####################################################################
-            try:
-                labels = torch.cat(labels_list, dim=0) # labels as single tensor
-            except:
-                filtered_list = [tensor if tensor.numel() > 0 else torch.zeros_like(tensor) for tensor in labels_list]
-                labels = torch.cat(filtered_list, dim=0) # labels as single tensor
-            '''
-            
+
             # Warmup
             if ni <= nw:
                 xi = [0, nw]  # x interp
@@ -499,15 +438,18 @@ def train(hyp, opt, device, tb_writer=None):
                 # out_num_attr = opt.out_num_attrs[0]  
                 use_pgt = (opt.pgt_coeff != 0.0) and (opt.pgt_built_in) and (not opt.loss_attr)
                 # use_pgt = False
-                # det_out = get_detections(model, imgs.clone().detach())
+                
+                # ema.update_attr(model, include=['yaml', 'nc', 'hyp', 'gr', 'names', 'stride', 'class_weights'])
+                # det_out, out_ = get_detections(ema.ema, imgs.clone().detach())
                 out = model(imgs.requires_grad_(True), pgt = use_pgt, out_nums = opt.out_num_attrs)  # forward
+                
                 # model.eval()
-                # det_out, out = model(imgs.requires_grad_(True), pgt = use_pgt, out_nums = opt.out_num_attrs)  # forward
+                # det_out_eval, out_eval = model(imgs.requires_grad_(True), pgt = use_pgt, out_nums = opt.out_num_attrs)  # forward
                 pred_labels=targets.to(device)
                 # ###################### Get predicted labels ###################### 
                 # nb, _, height, width = imgs.shape  # batch size, channels, height, width
                 # targets_ = targets.clone()
-                # targets_[:, 2:] = targets[:, 2:] * torch.Tensor([width, height, width, height]).to(device)  # to pixels
+                # targets_[:, 2:] = targets_[:, 2:] * torch.Tensor([width, height, width, height]).to(device)  # to pixels
                 # lb = [targets_[targets_[:, 0] == i, 1:] for i in range(nb)] if opt.save_hybrid else []  # for autolabelling
                 # o = non_max_suppression(det_out, conf_thres=0.001, iou_thres=0.6, labels=lb, multi_label=True)
                 # pred_labels = []
@@ -846,6 +788,7 @@ if __name__ == '__main__':
     parser.add_argument('--seg-labels', action='store_true', help='If true, calculate plaus score with segmentation maps rather than bbox')
     parser.add_argument('--seg_size_factor', type=float, default=1.0, help='Factor to reduce weight of segmentation maps that cover entire image')
     parser.add_argument('--save_hybrid', action='store_true', help='If true, save hybrid labels for autolabelling')
+    parser.add_argument('--small_set', action='store_true', help='If true, use small dataset for training')
     ############################################################################
     # parser.add_argument('--seed', type=int, default=None, help='reproduce results')
     opt = parser.parse_args() 
@@ -853,15 +796,16 @@ if __name__ == '__main__':
     
     opt.plaus_results = False
     opt.save_hybrid = False
+    opt.small_set = True
     
     opt.k_fold = 10
     opt.k_fold_num = 1
     # opt.sweep = True
-    opt.loss_attr = True 
+    opt.loss_attr = False 
     # opt.out_num_attrs = [0,1,2,] # unused if opt.loss_attr == True 
     opt.pgt_built_in = True
     opt.out_num_attrs = [1,] 
-    opt.pgt_coeff = 0.0 # 25 
+    opt.pgt_coeff = 0.1 # 25 
     opt.pgt_lr_decay = 0.5 # float(7.0/9.0) # 0.9 
     opt.pgt_lr_decay_step = 50 
     opt.epochs = 300 
@@ -871,7 +815,7 @@ if __name__ == '__main__':
     opt.batch_size = 64 
     # opt.batch_size = 96 
     opt.save_dir = str('runs/' + opt.name + '_lr' + str(opt.pgt_coeff)) 
-    opt.device = '1' 
+    opt.device = '3' 
     # opt.device = "0,1,2,3"  
     # opt.weights = 'weights/yolov7.pt'
     
