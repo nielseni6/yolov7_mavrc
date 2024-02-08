@@ -79,7 +79,8 @@ def create_dataloader(path, imgsz, batch_size, stride, opt, hyp=None, augment=Fa
                                       prefix=prefix, 
                                       k_fold = k_fold, 
                                       k_fold_num = k_fold_num, 
-                                      k_fold_train = k_fold_train)
+                                      k_fold_train = k_fold_train,
+                                      small_set = opt.small_set)
 
     batch_size = min(batch_size, len(dataset))
     nw = min([os.cpu_count() // world_size, batch_size if batch_size > 1 else 0, workers])  # number of workers
@@ -92,6 +93,8 @@ def create_dataloader(path, imgsz, batch_size, stride, opt, hyp=None, augment=Fa
                         sampler=sampler,
                         pin_memory=True,
                         collate_fn=LoadImagesAndLabels.collate_fn4 if quad else LoadImagesAndLabels.collate_fn)
+    # if k_fold:
+    #     k_fold_split(img_files, k_fold=10, k_fold_num=0, train = True)
     return dataloader, dataset
 
 
@@ -353,7 +356,7 @@ def img2label_paths(img_paths):
     sa, sb = os.sep + 'images' + os.sep, os.sep + 'labels' + os.sep  # /images/, /labels/ substrings
     return ['txt'.join(x.replace(sa, sb, 1).rsplit(x.split('.')[-1], 1)) for x in img_paths]
 
-def k_fold_split(img_files, k_fold=10, k_fold_num=0, train = True):
+def k_fold_split(img_files, k_fold=10, k_fold_num=0, train = True, small_set = False):
     img_lists = [[]] * k_fold
     data_len = len(img_files)
     chunk_size = data_len/k_fold
@@ -361,18 +364,22 @@ def k_fold_split(img_files, k_fold=10, k_fold_num=0, train = True):
         img_lists[i] = img_files[int(i*chunk_size):int((i+1)*chunk_size)]
     img_files_out = []
     if train:
-        img_lists.pop(k_fold_num)
-        for i in range(len(img_lists)):
-            img_files_out.extend(img_lists[i])
+        if not small_set:
+            img_lists.pop(k_fold_num)
+            for i in range(len(img_lists)):
+                img_files_out.extend(img_lists[i])
+        else:
+            img_files_out.extend(img_lists[k_fold_num-1])
     else:
-        img_files_out = img_lists[k_fold_num]
+        img_files_out.extend(img_lists[k_fold_num])
+        # img_files_out = img_lists[k_fold_num]
     return img_files_out
         
 
 class LoadImagesAndLabels(Dataset):  # for training/testing
     def __init__(self, path, img_size=640, batch_size=16, augment=False, hyp=None, rect=False, image_weights=False,
                  cache_images=False, single_cls=False, stride=32, pad=0.0, prefix='', k_fold=None, k_fold_num=0, 
-                 k_fold_train = True):
+                 k_fold_train = True, small_set = False):
         self.img_size = img_size
         self.augment = augment
         self.hyp = hyp
@@ -402,7 +409,8 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
                     raise Exception(f'{prefix}{p} does not exist')
             self.img_files = sorted([x.replace('/', os.sep) for x in f if x.split('.')[-1].lower() in img_formats])
             if k_fold:
-                img_files = k_fold_split(self.img_files, k_fold, k_fold_num, train = k_fold_train)
+                
+                img_files = k_fold_split(self.img_files, k_fold, k_fold_num, train = k_fold_train, small_set = small_set)
                 self.img_files = img_files
             # self.img_files = sorted([x for x in f if x.suffix[1:].lower() in img_formats])  # pathlib
             assert self.img_files, f'{prefix}No images found'
@@ -412,6 +420,14 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
         # Check cache
         self.label_files = img2label_paths(self.img_files)  # labels
         cache_path = (p if p.is_file() else Path(self.label_files[0]).parent).with_suffix('.cache')  # cached labels
+        if k_fold:
+            cpath = str(cache_path).replace('.cache','') + '_kfold' + str(k_fold_num)
+            if k_fold_train:
+                cpath += '_train'
+                if small_set:
+                    cpath += '_small'
+            
+            cache_path = Path(cpath + '.cache')
         if cache_path.is_file():
             cache, exists = torch.load(cache_path), True  # load
             #if cache['hash'] != get_hash(self.label_files + self.img_files) or 'version' not in cache:  # changed

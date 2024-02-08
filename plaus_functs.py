@@ -127,7 +127,10 @@ def get_plaus_score(imgs, targets_out, attr, debug=False, corners=False):
     IoU_denom = torch.sum(attr)
     IoU_ = (IoU_num / IoU_denom)
     plaus_score = IoU_
-
+    
+    if torch.isnan(plaus_score).any():
+        plaus_score = torch.tensor(0.0, device=imgs.device)
+        
     return plaus_score
 
 
@@ -220,6 +223,35 @@ def normalize_batch(x):
     x_ = (x - mins) / (maxs - mins)
     
     return x_
+
+def get_detections(model_clone, img):
+    """
+    Get detections from a model given an input image and targets.
+
+    Args:
+        model (nn.Module): The model to use for detection.
+        img (torch.Tensor): The input image tensor.
+
+    Returns:
+        torch.Tensor: The detected bounding boxes.
+    """
+    # mp = list(model.parameters())
+    # mcp = list(model_clone.parameters())
+    # n = len(mp)
+    # for i in range(0, n):
+    #     mcp[i].data[:] = mp[i].data[:]
+    
+    # model_clone.load_state_dict(copy.deepcopy(model.state_dict()))
+    # model_ = model
+    model_clone.eval() # Set model to evaluation mode
+    # Run inference
+    with torch.no_grad():
+        det_out, out = model_clone(img)
+    
+    # model_.train()
+    del img#, model_clone, out
+    
+    return det_out, out
 
 ####################################################################################
 #### ALL FUNCTIONS BELOW ARE DEPRECIATED AND WILL BE REMOVED IN FUTURE VERSIONS ####
