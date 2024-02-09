@@ -41,7 +41,8 @@ def test(data,
          is_coco=False,
          v5_metric=False,
          loss_metric="CIoU",
-         plaus_results=False,):
+         plaus_results=False,
+         debug=False,):
     # Initialize/load model and set device
     training = model is not None
     if training:  # called by train.py
@@ -112,7 +113,7 @@ def test(data,
         nb, _, height, width = img.shape  # batch size, channels, height, width
         
         # Only use during debugging
-        if batch_i ==0:
+        if (batch_i == 0) and debug:
             show_targetbbox(img, targets)
         
         with torch.no_grad():

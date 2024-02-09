@@ -772,7 +772,7 @@ if __name__ == '__main__':
     opt.save_hybrid = True
     
     opt.k_fold = 10
-    opt.k_fold_num = 1
+    opt.k_fold_num = 3
     # opt.sweep = True
     opt.loss_attr = True 
     # opt.out_num_attrs = [0,1,2,] # unused if opt.loss_attr == True 
@@ -803,8 +803,8 @@ if __name__ == '__main__':
     # opt.resume = "runs/pgt/train-pgt-yolov7/pgt5_214/weights/last.pt"
     # opt.weights = 'runs/pgt/train-pgt-yolov7/pgt5_214/weights/last.pt'
     
-    # nohup python train_pgt.py > ./output_logs/gpu7_trpgt_drone_lr0_1_decay0_5_step50_fold2.log 2>&1 &
-    # nohup python train_pgt.py > ./output_logs/gpu5_trpgt_drone_lr0_0_fold1.log 2>&1 &
+    # nohup python train_pgt.py > ./output_logs/gpu3_trpgt_drone_lr0_05_decay0_5_step50_fold4.log 2>&1 &
+    # nohup python train_pgt.py > ./output_logs/gpu5_trpgt_drone_lr0_0_fold3.log 2>&1 &
     # nohup python -m torch.distributed.launch --nproc_per_node 4 --master_port 9528 train_pgt.py --sync-bn > ./output_logs/gpu2360_coco_pgtlr0_25.log 2>&1 &
     # nohup python -m torch.distributed.launch --nproc_per_node 5 --master_port 9527 train_pgt.py --sync-bn > ./output_logs/gpu13456_coco_pgt_lr0_7_decay0_9_step25.log 2>&1 &
     # opt.quad = True # Helps for multiple gpu training 

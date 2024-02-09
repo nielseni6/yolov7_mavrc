@@ -391,12 +391,29 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
         self.path = path        
         #self.albumentations = Albumentations() if augment else None
 
+        # if k_fold:
+        #     num_imgs = len(glob.glob(str(Path(path) / '**' / '*.*'), recursive=True))
+        #     split_range = [int(num_imgs/k_fold)*k_fold_num,int(num_imgs/k_fold)*(k_fold_num+1)]
+        #     fold_split = []
+        #     for i in range(num_imgs):
+        #         if k_fold_train:
+        #             if i < split_range[0] or i > split_range[1]:
+        #                 fold_split.append(True)
+        #             else:
+        #                 fold_split.append(False)
+        #         else:
+        #             if i >= split_range[0] and i <= split_range[1]:
+        #                 fold_split.append(True)
+        #             else:
+        #                 fold_split.append(False)
+        # else:
+        #     fold_split = [True] * num_imgs
+                
         try:
         # if True:
             f = []  # image files
             k = 0
             for p in path if isinstance(path, list) else [path]:
-                
                 p = Path(p)  # os-agnostic
                 if p.is_dir():  # dir
                     f += glob.glob(str(p / '**' / '*.*'), recursive=True)
@@ -430,6 +447,8 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
                 cpath += '_train'
                 if small_set:
                     cpath += '_small'
+            else:
+                cpath += '_test'
             
             cache_path = Path(cpath + '.cache')
         if cache_path.is_file():
