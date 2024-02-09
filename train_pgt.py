@@ -520,7 +520,7 @@ def train(hyp, opt, device, tb_writer=None):
                             # plaus_num_nan += int(math.isnan(pscore))
                             # print(f'Plausibility eval and loss took {t1_pgt - t0_pgt} seconds')
                         else:
-                            plaus_loss, plaus_score = torch.tensor([0.0]), torch.tensor([0.0])
+                            plaus_loss, plaus_score = torch.tensor(0.0), torch.tensor(0.0)
                         
                         t2_pgt = time.time()
                 model.zero_grad()
@@ -772,24 +772,23 @@ if __name__ == '__main__':
     opt.save_hybrid = True
     
     opt.k_fold = 10
-    opt.k_fold_num = 0
+    opt.k_fold_num = 1
     # opt.sweep = True
     opt.loss_attr = True 
     # opt.out_num_attrs = [0,1,2,] # unused if opt.loss_attr == True 
     opt.pgt_built_in = False
     opt.out_num_attrs = [1,] 
-    opt.pgt_coeff = 0.05 # 25 
+    opt.pgt_coeff = 0.0 # 25 
     opt.pgt_lr_decay = 0.5 # float(7.0/9.0) # 0.9 
     opt.pgt_lr_decay_step = 50 
     opt.epochs = 300 
-    opt.data = check_file(opt.data)  # check file 
     opt.no_trace = True 
     opt.conf_thres = 0.50 
     opt.batch_size = 64
     # opt.batch_size = 96 
     opt.save_dir = str('runs/' + opt.name + '_lr' + str(opt.pgt_coeff)) 
-    opt.device = '1' 
-    # opt.device = "0,1,2,3"  
+    opt.device = '5' 
+    # opt.device = "0,1,2,3" 
     # opt.weights = 'weights/yolov7.pt'
     
     # lambda03 Console Commands
@@ -804,8 +803,8 @@ if __name__ == '__main__':
     # opt.resume = "runs/pgt/train-pgt-yolov7/pgt5_214/weights/last.pt"
     # opt.weights = 'runs/pgt/train-pgt-yolov7/pgt5_214/weights/last.pt'
     
-    # nohup python train_pgt.py > ./output_logs/gpu7_trpgt_drone_lr0_7_decay0_5_step50_fold2.log 2>&1 &
-    # nohup python train_pgt.py > ./output_logs/gpu1_trpgt_drone_lr0_0_fold2.log 2>&1 &
+    # nohup python train_pgt.py > ./output_logs/gpu7_trpgt_drone_lr0_1_decay0_5_step50_fold2.log 2>&1 &
+    # nohup python train_pgt.py > ./output_logs/gpu5_trpgt_drone_lr0_0_fold1.log 2>&1 &
     # nohup python -m torch.distributed.launch --nproc_per_node 4 --master_port 9528 train_pgt.py --sync-bn > ./output_logs/gpu2360_coco_pgtlr0_25.log 2>&1 &
     # nohup python -m torch.distributed.launch --nproc_per_node 5 --master_port 9527 train_pgt.py --sync-bn > ./output_logs/gpu13456_coco_pgt_lr0_7_decay0_9_step25.log 2>&1 &
     # opt.quad = True # Helps for multiple gpu training 
@@ -840,6 +839,7 @@ if __name__ == '__main__':
             opt.data = 'data/real_world_lambda01.yaml' 
             opt.hyp = 'data/hyp.real_world_lambda01.yaml' 
         if opt.k_fold:
+            opt.source = '/data/nielseni6/ijcnn_v7data/Real_world_drone_data/images' 
             opt.hyp = 'data/hyp.real_world_kfold.yaml' 
             opt.data = 'data/real_world_kfold.yaml' 
         opt.weights = ''

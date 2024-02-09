@@ -133,6 +133,36 @@ def get_plaus_score(imgs, targets_out, attr, debug=False, corners=False):
         
     return plaus_score
 
+def show_targetbbox(imgs, targets_out, corners=False):
+    
+    target_inds = targets_out[:, 0].int()
+    xyxy_batch = targets_out[:, 2:6]# * pre_gen_gains[out_num]
+    num_pixels = torch.tile(torch.tensor([imgs.shape[2], imgs.shape[3], imgs.shape[2], imgs.shape[3]], device=imgs.device), (xyxy_batch.shape[0], 1))
+    # num_pixels = torch.tile(torch.tensor([1.0, 1.0, 1.0, 1.0], device=imgs.device), (xyxy_batch.shape[0], 1))
+    xyxy_corners = (corners_coords_batch(xyxy_batch) * num_pixels).int()
+    co = xyxy_corners
+    if corners:
+        co = targets_out[:, 2:6].int()
+    coords_map = torch.zeros_like(imgs, dtype=torch.bool)
+    # rows = np.arange(co.shape[0])
+    x1, x2 = co[:,1], co[:,3]
+    y1, y2 = co[:,0], co[:,2]
+    
+    for ic in range(co.shape[0]): # potential for speedup here with torch indexing instead of for loop
+        coords_map[target_inds[ic], :,x1[ic]:x2[ic],y1[ic]:y2[ic]] = True
+    
+    for i in range(len(coords_map)):
+        if coords_map.shape[1] == 1:
+            coords_map3ch = torch.cat([coords_map[i][:1], coords_map[i][:1], coords_map[i][:1]], dim=0)
+        else:
+            coords_map3ch = coords_map[i]
+        test_bbox = torch.zeros_like(imgs[i])
+        test_bbox[coords_map3ch] = imgs[i][coords_map3ch]
+        imshow(test_bbox.float().clone().detach().cpu().data.numpy(), save_path=f'figs/test_bbox{i}')
+        imshow(imgs[i].float().clone().detach().cpu().numpy(), save_path=f'figs/im0{i}')
+    
+    return
+
 
 def point_in_polygon(poly, grid):
     # t0 = time.time()

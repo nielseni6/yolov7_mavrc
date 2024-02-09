@@ -394,7 +394,9 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
         try:
         # if True:
             f = []  # image files
+            k = 0
             for p in path if isinstance(path, list) else [path]:
+                
                 p = Path(p)  # os-agnostic
                 if p.is_dir():  # dir
                     f += glob.glob(str(p / '**' / '*.*'), recursive=True)
@@ -407,11 +409,13 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
                         # f += [p.parent / x.lstrip(os.sep) for x in t]  # local to global path (pathlib)
                 else:
                     raise Exception(f'{prefix}{p} does not exist')
-            self.img_files = sorted([x.replace('/', os.sep) for x in f if x.split('.')[-1].lower() in img_formats])
+                k += 1
             if k_fold:
-                
-                img_files = k_fold_split(self.img_files, k_fold, k_fold_num, train = k_fold_train, small_set = small_set)
-                self.img_files = img_files
+                f = k_fold_split(f, k_fold, k_fold_num, train = k_fold_train, small_set = small_set)
+            self.img_files = sorted([x.replace('/', os.sep) for x in f if x.split('.')[-1].lower() in img_formats])
+            # if k_fold:
+            #     img_files = k_fold_split(self.img_files, k_fold, k_fold_num, train = k_fold_train, small_set = small_set)
+            #     self.img_files = img_files
             # self.img_files = sorted([x for x in f if x.suffix[1:].lower() in img_formats])  # pathlib
             assert self.img_files, f'{prefix}No images found'
         except Exception as e:

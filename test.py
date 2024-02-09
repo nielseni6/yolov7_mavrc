@@ -15,7 +15,7 @@ from utils.metrics import ap_per_class, ConfusionMatrix
 from utils.plots import plot_images, output_to_target, plot_study_txt
 from utils.torch_utils import select_device, time_synchronized, TracedModel
 
-from plaus_functs import get_gradient, get_plaus_score
+from plaus_functs import get_gradient, get_plaus_score, show_targetbbox
 
 def test(data,
          weights=None,
@@ -110,7 +110,11 @@ def test(data,
         img /= 255.0  # 0 - 255 to 0.0 - 1.0
         targets = targets.to(device)
         nb, _, height, width = img.shape  # batch size, channels, height, width
-
+        
+        # Only use during debugging
+        if batch_i ==0:
+            show_targetbbox(img, targets)
+        
         with torch.no_grad():
         # if True:
             if plaus_results:
