@@ -427,8 +427,8 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
                 else:
                     raise Exception(f'{prefix}{p} does not exist')
                 k += 1
-            if k_fold:
-                f = k_fold_split(f, k_fold, k_fold_num, train = k_fold_train, small_set = small_set)
+            # if k_fold:
+            #     f = k_fold_split(f, k_fold, k_fold_num, train = k_fold_train, small_set = small_set)
             self.img_files = sorted([x.replace('/', os.sep) for x in f if x.split('.')[-1].lower() in img_formats])
             # if k_fold:
             #     img_files = k_fold_split(self.img_files, k_fold, k_fold_num, train = k_fold_train, small_set = small_set)
@@ -441,16 +441,16 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
         # Check cache
         self.label_files = img2label_paths(self.img_files)  # labels
         cache_path = (p if p.is_file() else Path(self.label_files[0]).parent).with_suffix('.cache')  # cached labels
-        if k_fold:
-            cpath = str(cache_path).replace('.cache','') + '_kfold' + str(k_fold_num)
-            if k_fold_train:
-                cpath += '_train'
-                if small_set:
-                    cpath += '_small'
-            else:
-                cpath += '_test'
+        # if k_fold:
+        #     cpath = str(cache_path).replace('.cache','') + '_kfold' + str(k_fold_num)
+        #     if k_fold_train:
+        #         cpath += '_train'
+        #         if small_set:
+        #             cpath += '_small'
+        #     else:
+        #         cpath += '_test'
             
-            cache_path = Path(cpath + '.cache')
+        #     cache_path = Path(cpath + '.cache')
         if cache_path.is_file():
             cache, exists = torch.load(cache_path), True  # load
             #if cache['hash'] != get_hash(self.label_files + self.img_files) or 'version' not in cache:  # changed

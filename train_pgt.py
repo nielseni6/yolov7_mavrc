@@ -772,7 +772,7 @@ if __name__ == '__main__':
     opt.save_hybrid = True
     
     opt.k_fold = 10
-    opt.k_fold_num = 3
+    opt.k_fold_num = 0
     # opt.sweep = True
     opt.loss_attr = True 
     # opt.out_num_attrs = [0,1,2,] # unused if opt.loss_attr == True 
@@ -839,9 +839,9 @@ if __name__ == '__main__':
             opt.data = 'data/real_world_lambda01.yaml' 
             opt.hyp = 'data/hyp.real_world_lambda01.yaml' 
         if opt.k_fold:
-            opt.source = '/data/nielseni6/ijcnn_v7data/Real_world_drone_data/images' 
-            opt.hyp = 'data/hyp.real_world_kfold.yaml' 
-            opt.data = 'data/real_world_kfold.yaml' 
+            opt.source = f'/data/nielseni6/drone_data/k_fold{int(opt.k_fold_num==0)}/images' 
+            opt.hyp = f'data/hyp.real_world_kfold{opt.k_fold_num}.yaml' 
+            opt.data = f'data/real_world_kfold{opt.k_fold_num}.yaml' 
         opt.weights = ''
         opt.cfg = 'cfg/training/yolov7-tiny-drone.yaml'
     if opt.dataset == 'coco':
