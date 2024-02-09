@@ -395,14 +395,14 @@ def train(hyp, opt, device, tb_writer=None):
             imgs = imgs.to(device, non_blocking=True).float() / 255.0  # uint8 to float32, 0-255 to 0.0-1.0
             targets = targets.to(device)
             
-            if opt.dataset == 'real_world_drone':
-                path_labels, labels = [], []
-                for il, path in enumerate(paths):
-                    path_ = path.replace('images', 'labels').replace('.jpg', '.txt').replace('../../..', '')
-                    label = torch.tensor(np.insert(np.loadtxt(path_, dtype=np.float32), 0, il))
-                    labels.append(label)
-                    path_labels.append(path_)
-                labels = torch.stack(labels)
+            # if opt.dataset == 'real_world_drone':
+            #     path_labels, labels = [], []
+            #     for il, path in enumerate(paths):
+            #         path_ = path.replace('images', 'labels').replace('.jpg', '.txt').replace('../../..', '')
+            #         label = torch.tensor(np.insert(np.loadtxt(path_, dtype=np.float32), 0, il))
+            #         labels.append(label)
+            #         path_labels.append(path_)
+            #     labels = torch.stack(labels)
             
             
             # Warmup
@@ -744,13 +744,13 @@ if __name__ == '__main__':
     opt.plaus_results = False
     
     opt.k_fold = 10
-    opt.k_fold_num = 2
+    opt.k_fold_num = 1
     # opt.sweep = True
     # opt.loss_attr = True 
     # opt.out_num_attrs = [0,1,2,] # unused if opt.loss_attr == True 
     opt.pgt_built_in = False
     opt.out_num_attrs = [1,] 
-    opt.pgt_coeff = 0.1 # 25 
+    opt.pgt_coeff = 0.0 # 25 
     opt.pgt_lr_decay = 0.5 # float(7.0/9.0) # 0.9 
     opt.pgt_lr_decay_step = 50 
     opt.epochs = 300 
@@ -760,7 +760,7 @@ if __name__ == '__main__':
     opt.batch_size = 64
     # opt.batch_size = 96 
     opt.save_dir = str('runs/' + opt.name + '_lr' + str(opt.pgt_coeff)) 
-    opt.device = '6' 
+    opt.device = '2' 
     # opt.device = "0,1,2,3"  
     # opt.weights = 'weights/yolov7.pt'
     
@@ -777,7 +777,7 @@ if __name__ == '__main__':
     # opt.weights = 'runs/pgt/train-pgt-yolov7/pgt5_214/weights/last.pt'
     
     # nohup python train_pgt.py > ./output_logs/gpu7_trpgt_drone_lr0_7_decay0_5_step50_fold2.log 2>&1 &
-    # nohup python train_pgt.py > ./output_logs/gpu2_trpgt_drone_lr0_0_foldNA.log 2>&1 &
+    # nohup python train_pgt.py > ./output_logs/gpu2_trpgt_drone_lr0_0_fold1.log 2>&1 &
     # nohup python -m torch.distributed.launch --nproc_per_node 4 --master_port 9528 train_pgt.py --sync-bn > ./output_logs/gpu2360_coco_pgtlr0_25.log 2>&1 &
     # nohup python -m torch.distributed.launch --nproc_per_node 5 --master_port 9527 train_pgt.py --sync-bn > ./output_logs/gpu13456_coco_pgt_lr0_7_decay0_9_step25.log 2>&1 &
     # opt.quad = True # Helps for multiple gpu training 

@@ -384,7 +384,10 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
         self.mosaic = self.augment and not self.rect  # load 4 images at a time into a mosaic (only during training)
         self.mosaic_border = [-img_size // 2, -img_size // 2]
         self.stride = stride
-        self.path = path        
+        self.path = path 
+        self.k_fold_train = k_fold_train
+        self.k_fold = k_fold
+        self.k_fold_num = k_fold_num
         #self.albumentations = Albumentations() if augment else None
 
         try:
@@ -404,8 +407,8 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
                 else:
                     raise Exception(f'{prefix}{p} does not exist')
             self.img_files = sorted([x.replace('/', os.sep) for x in f if x.split('.')[-1].lower() in img_formats])
-            if k_fold:
-                img_files = k_fold_split(self.img_files, k_fold, k_fold_num, train = k_fold_train)
+            if self.k_fold:
+                img_files = k_fold_split(self.img_files, self.k_fold, k_fold_num, train = self.k_fold_train)
                 self.img_files = img_files
             # self.img_files = sorted([x for x in f if x.suffix[1:].lower() in img_formats])  # pathlib
             assert self.img_files, f'{prefix}No images found'
@@ -415,9 +418,9 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
         # Check cache
         self.label_files = img2label_paths(self.img_files)  # labels
         cache_path = (p if p.is_file() else Path(self.label_files[0]).parent).with_suffix('.cache')  # cached labels
-        if k_fold:
+        if self.k_fold:
             cpath = str(cache_path).replace('.cache','') + '_kfold' + str(k_fold_num)
-            if k_fold_train:
+            if self.k_fold_train:
                 cpath += '_train'
                 if small_set:
                     cpath += '_small'
