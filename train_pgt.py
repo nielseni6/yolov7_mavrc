@@ -746,14 +746,14 @@ if __name__ == '__main__':
     opt.plaus_results = False
     
     opt.k_fold = 10
-    opt.k_fold_num = 1
-    opt.k_fold_sepfolders = False
+    opt.k_fold_num = 0
+    opt.k_fold_sepfolders = True
     # opt.sweep = True
     # opt.loss_attr = True 
     # opt.out_num_attrs = [0,1,2,] # unused if opt.loss_attr == True 
     opt.pgt_built_in = False
     opt.out_num_attrs = [1,] 
-    opt.pgt_coeff = 0.0 # 25 
+    opt.pgt_coeff = 0.1 # 25 
     opt.pgt_lr_decay = 0.5 # float(7.0/9.0) # 0.9 
     opt.pgt_lr_decay_step = 50 
     opt.epochs = 300 
@@ -819,7 +819,7 @@ if __name__ == '__main__':
             opt.hyp = 'data/hyp.real_world_kfold.yaml' 
             opt.data = 'data/real_world_kfold.yaml' 
         if opt.k_fold and opt.k_fold_sepfolders:
-            opt.source = f'/data/nielseni6/drone_data/k_fold{int(opt.k_fold_num==0)}/images' 
+            opt.source = [f'/data/nielseni6/drone_data/k_fold{int(i + (int(i>=opt.k_fold_num)))}/images' for i in range(9)] 
             opt.hyp = f'data/hyp.real_world_kfold{opt.k_fold_num}.yaml' 
             opt.data = f'data/real_world_kfold{opt.k_fold_num}.yaml' 
         opt.weights = ''

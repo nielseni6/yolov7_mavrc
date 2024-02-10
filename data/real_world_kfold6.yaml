@@ -1,4 +1,12 @@
-path: ../../../../data/nielseni6/drone_data # dataset root dir
+path: [../../../../data/nielseni6/drone_data/k_fold0,
+../../../../data/nielseni6/drone_data/k_fold1,
+../../../../data/nielseni6/drone_data/k_fold2,
+../../../../data/nielseni6/drone_data/k_fold3,
+../../../../data/nielseni6/drone_data/k_fold4,
+../../../../data/nielseni6/drone_data/k_fold5,
+../../../../data/nielseni6/drone_data/k_fold7,
+../../../../data/nielseni6/drone_data/k_fold8,
+../../../../data/nielseni6/drone_data/k_fold9] # dataset root dir
 train: [../../../../data/nielseni6/drone_data/k_fold0/images,
 ../../../../data/nielseni6/drone_data/k_fold1/images,
 ../../../../data/nielseni6/drone_data/k_fold2/images,
