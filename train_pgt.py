@@ -281,7 +281,8 @@ def train(hyp, opt, device, tb_writer=None):
                                             hyp=hyp, augment=True, cache=opt.cache_images, rect=opt.rect, rank=rank,
                                             world_size=opt.world_size, workers=opt.workers,
                                             image_weights=opt.image_weights, quad=opt.quad, prefix=colorstr('train: '),
-                                            k_fold = opt.k_fold, k_fold_num = opt.k_fold_num, k_fold_train = True)
+                                            k_fold = opt.k_fold, k_fold_num = opt.k_fold_num, k_fold_train = True,
+                                            k_fold_new_cache = opt.k_fold_new_cache)
     # dataset_w_labels = LoadImagesAndLabels(train_path, img_size=imgsz, batch_size=batch_size, stride=gs,
     #                                        augment=True, hyp=hyp, cache=opt.cache_images, rect=opt.rect, 
     #                                        image_weights=opt.image_weights, prefix=colorstr('train: '))
@@ -557,7 +558,7 @@ def train(hyp, opt, device, tb_writer=None):
                             # plaus_num_nan += int(math.isnan(pscore))
                             # print(f'Plausibility eval and loss took {t1_pgt - t0_pgt} seconds')
                         else:
-                            plaus_loss, plaus_score = torch.tensor([0.0]), torch.tensor([0.0])
+                            plaus_loss, plaus_score = torch.tensor(0.0), torch.tensor(0.0)
                         
                         t2_pgt = time.time()
                 model.zero_grad()
@@ -807,13 +808,14 @@ if __name__ == '__main__':
     opt.plaus_results = False
     
     opt.k_fold = 10
-    opt.k_fold_num = 2
+    opt.k_fold_num = 9
+    opt.k_fold_new_cache = True
     # opt.sweep = True
     # opt.loss_attr = True 
     # opt.out_num_attrs = [0,1,2,] # unused if opt.loss_attr == True 
     opt.pgt_built_in = False
     opt.out_num_attrs = [1,] 
-    opt.pgt_coeff = 0.7 # 25 
+    opt.pgt_coeff = 0.0 # 25 
     opt.pgt_lr_decay = 0.5 # float(7.0/9.0) # 0.9 
     opt.pgt_lr_decay_step = 50 
     opt.epochs = 300 
@@ -823,7 +825,7 @@ if __name__ == '__main__':
     opt.batch_size = 64
     # opt.batch_size = 96 
     opt.save_dir = str('runs/' + opt.name + '_lr' + str(opt.pgt_coeff)) 
-    opt.device = '7' 
+    opt.device = '5' 
     # opt.device = "0,1,2,3"  
     # opt.weights = 'weights/yolov7.pt'
     

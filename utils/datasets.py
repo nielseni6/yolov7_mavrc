@@ -64,7 +64,7 @@ def exif_size(img):
 
 def create_dataloader(path, imgsz, batch_size, stride, opt, hyp=None, augment=False, cache=False, pad=0.0, rect=False,
                       rank=-1, world_size=1, workers=8, image_weights=False, quad=False, prefix='', k_fold = None, 
-                      k_fold_num = 0, k_fold_train = True):
+                      k_fold_num = 0, k_fold_train = True, k_fold_new_cache = True):
     # Make sure only the first process in DDP process the dataset first, and the following others can use the cache
     with torch_distributed_zero_first(rank):
         dataset = LoadImagesAndLabels(path, imgsz, batch_size,
@@ -79,7 +79,8 @@ def create_dataloader(path, imgsz, batch_size, stride, opt, hyp=None, augment=Fa
                                       prefix=prefix, 
                                       k_fold = k_fold, 
                                       k_fold_num = k_fold_num, 
-                                      k_fold_train = k_fold_train)
+                                      k_fold_train = k_fold_train,
+                                      k_fold_new_cache = k_fold_new_cache)
 
     batch_size = min(batch_size, len(dataset))
     nw = min([os.cpu_count() // world_size, batch_size if batch_size > 1 else 0, workers])  # number of workers
@@ -372,7 +373,7 @@ def k_fold_split(img_files, k_fold=10, k_fold_num=0, train = True):
 class LoadImagesAndLabels(Dataset):  # for training/testing
     def __init__(self, path, img_size=640, batch_size=16, augment=False, hyp=None, rect=False, image_weights=False,
                  cache_images=False, single_cls=False, stride=32, pad=0.0, prefix='', k_fold=None, k_fold_num=0, 
-                 k_fold_train = True):
+                 k_fold_train = True, k_fold_new_cache = True):
         self.img_size = img_size
         self.augment = augment
         self.hyp = hyp
@@ -381,7 +382,9 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
         self.mosaic = self.augment and not self.rect  # load 4 images at a time into a mosaic (only during training)
         self.mosaic_border = [-img_size // 2, -img_size // 2]
         self.stride = stride
-        self.path = path        
+        self.path = path  
+        self.k_fold = k_fold
+        self.k_fold_train = k_fold_train
         #self.albumentations = Albumentations() if augment else None
 
         try:
@@ -412,6 +415,16 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
         # Check cache
         self.label_files = img2label_paths(self.img_files)  # labels
         cache_path = (p if p.is_file() else Path(self.label_files[0]).parent).with_suffix('.cache')  # cached labels
+        #############################################################################################
+        if self.k_fold and k_fold_new_cache:
+            cpath = str(cache_path).replace('.cache','') + '_kfold' + str(k_fold_num)
+            if self.k_fold_train:
+                cpath += '_train'
+                # if small_set:
+                #     cpath += '_small'
+            else:
+                cpath += '_test'
+        #############################################################################################
         if cache_path.is_file():
             cache, exists = torch.load(cache_path), True  # load
             #if cache['hash'] != get_hash(self.label_files + self.img_files) or 'version' not in cache:  # changed
