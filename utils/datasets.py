@@ -376,7 +376,7 @@ def k_fold_split(img_files, k_fold=10, k_fold_num=0, train = True):
 class LoadImagesAndLabels(Dataset):  # for training/testing
     def __init__(self, path, img_size=640, batch_size=16, augment=False, hyp=None, rect=False, image_weights=False,
                  cache_images=False, single_cls=False, stride=32, pad=0.0, prefix='', k_fold=None, k_fold_num=0, 
-                 k_fold_train = True, small_set=False, k_fold_sepfolders = True):
+                 k_fold_train = True, k_fold_sepfolders = True): 
         self.img_size = img_size
         self.augment = augment
         self.hyp = hyp
@@ -407,9 +407,8 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
                         # f += [p.parent / x.lstrip(os.sep) for x in t]  # local to global path (pathlib)
                 else:
                     raise Exception(f'{prefix}{p} does not exist')
-                k += 1
             if k_fold and not k_fold_sepfolders:
-                f = k_fold_split(f, k_fold, k_fold_num, train = k_fold_train, small_set = small_set)
+                f = k_fold_split(f, k_fold, k_fold_num, train = k_fold_train)
             self.img_files = sorted([x.replace('/', os.sep) for x in f if x.split('.')[-1].lower() in img_formats])
             # if self.k_fold:
             #     img_files = k_fold_split(self.img_files, self.k_fold, k_fold_num, train = self.k_fold_train)
@@ -417,7 +416,7 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
             # self.img_files = sorted([x for x in f if x.suffix[1:].lower() in img_formats])  # pathlib
             assert self.img_files, f'{prefix}No images found'
         except Exception as e:
-            raise Exception(f'{prefix}Error loading data from {path}: {e}\nSee {help_url}')
+             raise Exception(f'{prefix}Error loading data from {path}: {e}\nSee {help_url}')
 
         # Check cache
         self.label_files = img2label_paths(self.img_files)  # labels
@@ -426,12 +425,10 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
             cpath = str(cache_path).replace('.cache','') + '_kfold' + str(k_fold_num)
             if self.k_fold_train:
                 cpath += '_train'
-                if small_set:
-                    cpath += '_small'
             else:
                 cpath += '_test'
             
-            cache_path = Path(cpath + '.cache')
+        #     cache_path = Path(cpath + '.cache')
         if cache_path.is_file():
             cache, exists = torch.load(cache_path), True  # load
             #if cache['hash'] != get_hash(self.label_files + self.img_files) or 'version' not in cache:  # changed
