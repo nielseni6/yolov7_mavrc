@@ -281,7 +281,8 @@ def train(hyp, opt, device, tb_writer=None):
                                             hyp=hyp, augment=True, cache=opt.cache_images, rect=opt.rect, rank=rank,
                                             world_size=opt.world_size, workers=opt.workers,
                                             image_weights=opt.image_weights, quad=opt.quad, prefix=colorstr('train: '),
-                                            k_fold = opt.k_fold, k_fold_num = opt.k_fold_num, k_fold_train = True)
+                                            k_fold = opt.k_fold, k_fold_num = opt.k_fold_num, k_fold_train = True, 
+                                            k_fold_sepfolders = opt.k_fold_sepfolders)
     # dataset_w_labels = LoadImagesAndLabels(train_path, img_size=imgsz, batch_size=batch_size, stride=gs,
     #                                        augment=True, hyp=hyp, cache=opt.cache_images, rect=opt.rect, 
     #                                        image_weights=opt.image_weights, prefix=colorstr('train: '))
@@ -296,7 +297,8 @@ def train(hyp, opt, device, tb_writer=None):
                                        hyp=hyp, cache=opt.cache_images and not opt.notest, rect=True, rank=-1,
                                        world_size=opt.world_size, workers=opt.workers,
                                        pad=0.5, prefix=colorstr('val: '), k_fold = opt.k_fold, 
-                                       k_fold_num = opt.k_fold_num, k_fold_train = False)[0]
+                                       k_fold_num = opt.k_fold_num, k_fold_train = False, 
+                                       k_fold_sepfolders = opt.k_fold_sepfolders)[0]
 
         if not opt.resume:
             labels = np.concatenate(dataset.labels, 0)
@@ -745,6 +747,7 @@ if __name__ == '__main__':
     
     opt.k_fold = 10
     opt.k_fold_num = 1
+    opt.k_fold_sepfolders = False
     # opt.sweep = True
     # opt.loss_attr = True 
     # opt.out_num_attrs = [0,1,2,] # unused if opt.loss_attr == True 
@@ -760,7 +763,7 @@ if __name__ == '__main__':
     opt.batch_size = 64
     # opt.batch_size = 96 
     opt.save_dir = str('runs/' + opt.name + '_lr' + str(opt.pgt_coeff)) 
-    opt.device = '2' 
+    opt.device = '4' 
     # opt.device = "0,1,2,3"  
     # opt.weights = 'weights/yolov7.pt'
     
@@ -815,6 +818,10 @@ if __name__ == '__main__':
             opt.source = '/data/nielseni6/drone_data/Real_world_drone_data/images'
             opt.hyp = 'data/hyp.real_world_kfold.yaml' 
             opt.data = 'data/real_world_kfold.yaml' 
+        if opt.k_fold and opt.k_fold_sepfolders:
+            opt.source = f'/data/nielseni6/drone_data/k_fold{int(opt.k_fold_num==0)}/images' 
+            opt.hyp = f'data/hyp.real_world_kfold{opt.k_fold_num}.yaml' 
+            opt.data = f'data/real_world_kfold{opt.k_fold_num}.yaml' 
         opt.weights = ''
         opt.cfg = 'cfg/training/yolov7-tiny-drone.yaml'
     if opt.dataset == 'coco':
