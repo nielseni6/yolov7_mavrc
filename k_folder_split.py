@@ -20,14 +20,14 @@ allFileNamesLb = os.listdir(srcLb)
 
 FileNamesAllIm = np.split(np.array(allFileNamesIm),
                     [int(len(allFileNamesIm)*0.1*i) for i in range(1,10)])
-FileNamesAllLb = np.split(np.array(allFileNamesLb),
-                    [int(len(allFileNamesLb)*0.1*i) for i in range(1,10)])
+# FileNamesAllLb = np.split(np.array(allFileNamesLb),
+#                     [int(len(allFileNamesLb)*0.1*i) for i in range(1,10)])
 
 for i, FileNamesIm in enumerate(FileNamesAllIm):
     print(f'Total images in k_fold{i}: ', len(FileNamesIm))
     FileNamesIm = [srcIm+'/'+ name for name in FileNamesIm.tolist()]
-    FileNamesLb = FileNamesAllLb[i]
-    FileNamesLb = [srcLb+'/'+ name for name in FileNamesLb.tolist()]
+    FileNamesLb = allFileNamesLb # FileNamesAllLb[i]
+    FileNamesLb = [srcLb+'/'+ name for name in FileNamesLb]
     for name in FileNamesIm:
         shutil.copy(name, root_dir + f'k_fold{i}/images')
     for name in FileNamesLb:
