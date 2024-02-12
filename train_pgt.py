@@ -434,9 +434,10 @@ def train(hyp, opt, device, tb_writer=None):
                 
                 out = model(imgs.requires_grad_(True), pgt = use_pgt, out_nums = opt.out_num_attrs)  # forward
                 
-                ema.update_attr(model, include=['yaml', 'nc', 'hyp', 'gr', 'names', 'stride', 'class_weights'])
-                det_out, out_ = get_detections(ema.ema, imgs.clone().detach())
-                pred_labels = get_labels(det_out, imgs, targets.clone(), opt)
+                if opt.pgt_coeff != 0.0:
+                    ema.update_attr(model, include=['yaml', 'nc', 'hyp', 'gr', 'names', 'stride', 'class_weights'])
+                    det_out, out_ = get_detections(ema.ema, imgs.clone().detach())
+                    pred_labels = get_labels(det_out, imgs, targets.clone(), opt)
 
                 if use_pgt:
                     pred, attr = out[:3], out[3]
@@ -743,6 +744,7 @@ if __name__ == '__main__':
     parser.add_argument('--class_specific_attr', action='store_true', help='If true, calculate attribution maps for each class individually')
     parser.add_argument('--seg-labels', action='store_true', help='If true, calculate plaus score with segmentation maps rather than bbox')
     parser.add_argument('--seg_size_factor', type=float, default=1.0, help='Factor to reduce weight of segmentation maps that cover entire image')
+    parser.add_argument('--save_hybrid', action='store_true', help='If true, save hybrid attribution maps')
     ############################################################################
     # parser.add_argument('--seed', type=int, default=None, help='reproduce results')
     opt = parser.parse_args() 
@@ -751,15 +753,16 @@ if __name__ == '__main__':
     opt.plaus_results = False
     
     opt.k_fold = 10
-    opt.k_fold_num = 1
+    opt.k_fold_num = 2
     opt.k_fold_sepfolders = True
-    opt.save_hybrid = True
+    # opt.save_hybrid = True
+    
     # opt.sweep = True
     # opt.loss_attr = True 
     # opt.out_num_attrs = [0,1,2,] # unused if opt.loss_attr == True 
     opt.pgt_built_in = False
     opt.out_num_attrs = [1,] 
-    opt.pgt_coeff = 0.05 # 25 
+    opt.pgt_coeff = 0.5 # 25 
     opt.pgt_lr_decay = 0.5 # float(7.0/9.0) # 0.9 
     opt.pgt_lr_decay_step = 50 
     opt.epochs = 300 
@@ -769,7 +772,7 @@ if __name__ == '__main__':
     opt.batch_size = 64
     # opt.batch_size = 96 
     opt.save_dir = str('runs/' + opt.name + '_lr' + str(opt.pgt_coeff)) 
-    opt.device = '1' 
+    opt.device = '2' 
     # opt.device = "0,1,2,3"  
     # opt.weights = 'weights/yolov7.pt'
     
@@ -783,7 +786,7 @@ if __name__ == '__main__':
     # opt.resume = "runs/pgt/train-pgt-yolov7/pgt5_214/weights/last.pt"
     # opt.weights = 'runs/pgt/train-pgt-yolov7/pgt5_214/weights/last.pt'
     
-    # nohup python train_pgt.py > ./output_logs/gpu6.log 2>&1 &
+    # nohup python train_pgt.py > ./output_logs/gpu5.log 2>&1 &
     # nohup python train_pgt.py > ./output_logs/gpu7_trpgt_drone_lr0_7_decay0_5_step50_fold2.log 2>&1 &
     # nohup python train_pgt.py > ./output_logs/gpu2_trpgt_drone_lr0_0_fold1.log 2>&1 &
     # nohup python -m torch.distributed.launch --nproc_per_node 4 --master_port 9528 train_pgt.py --sync-bn > ./output_logs/gpu2360_coco_pgtlr0_25.log 2>&1 &
