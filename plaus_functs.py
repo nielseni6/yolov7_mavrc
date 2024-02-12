@@ -7,6 +7,7 @@ import math
 import time
 import matplotlib.path as mplPath
 from matplotlib.path import Path
+from utils.general import non_max_suppression, xyxy2xywh, scale_coords
 
 def get_gradient(img, grad_wrt, norm=False, absolute=True, grayscale=True, keepmean=False):
     """
@@ -220,6 +221,68 @@ def normalize_batch(x):
     x_ = (x - mins) / (maxs - mins)
     
     return x_
+
+def get_detections(model_clone, img):
+    """
+    Get detections from a model given an input image and targets.
+
+    Args:
+        model (nn.Module): The model to use for detection.
+        img (torch.Tensor): The input image tensor.
+
+    Returns:
+        torch.Tensor: The detected bounding boxes.
+    """
+    # mp = list(model.parameters())
+    # mcp = list(model_clone.parameters())
+    # n = len(mp)
+    # for i in range(0, n):
+    #     mcp[i].data[:] = mp[i].data[:]
+    
+    # model_clone.load_state_dict(copy.deepcopy(model.state_dict()))
+    # model_ = model
+    model_clone.eval() # Set model to evaluation mode
+    # Run inference
+    with torch.no_grad():
+        det_out, out = model_clone(img)
+    
+    # model_.train()
+    del img#, model_clone, out
+    
+    return det_out, out
+
+def get_labels(det_out, imgs, targets, opt):
+    ###################### Get predicted labels ###################### 
+    nb, _, height, width = imgs.shape  # batch size, channels, height, width
+    targets_ = targets.clone()
+    targets_[:, 2:] = targets_[:, 2:] * torch.Tensor([width, height, width, height]).to(imgs.device)  # to pixels
+    lb = [targets_[targets_[:, 0] == i, 1:] for i in range(nb)] if opt.save_hybrid else []  # for autolabelling
+    o = non_max_suppression(det_out, conf_thres=0.001, iou_thres=0.6, labels=lb, multi_label=True)
+    pred_labels = []
+    for si, pred in enumerate(o):
+        labels = targets_[targets_[:, 0] == si, 1:]
+        nl = len(labels)
+        # tcls = labels[:, 0].tolist() if nl else []  # target class
+        predn = pred.clone()
+        # width, height = 480, 480
+        # scale_coords(imgs[si].shape[1:], predn[:, :4], [width, height], [[1.3333333333333333, 1.3333333333333333], [16.0, 16.0]])  # native-space pred
+        # Get the indices that sort the values in column 5 in ascending order
+        sort_indices = torch.argsort(pred[:, 4], dim=0, descending=True)
+        # Apply the sorting indices to the tensor
+        sorted_pred = predn[sort_indices]
+        # Remove predictions with less than 0.1 confidence
+        n_conf = int(torch.sum(sorted_pred[:,4]>0.1)) + 1
+        sorted_pred = sorted_pred[:n_conf]
+        new_col = torch.ones((sorted_pred.shape[0], 1), device=imgs.device) * si
+        preds = torch.cat((new_col, sorted_pred[:, [5, 0, 1, 2, 3]]), dim=1)
+        preds[:, 2:] = xyxy2xywh(preds[:, 2:])  # xywh
+        gn = torch.tensor([width, height])[[1, 0, 1, 0]]  # normalization gain whwh
+        preds[:, 2:] /= gn.to(imgs.device)  # from pixels
+        pred_labels.append(preds)
+    pred_labels = torch.cat(pred_labels, 0).to(imgs.device)
+    
+    return pred_labels
+    ##################################################################
 
 ####################################################################################
 #### ALL FUNCTIONS BELOW ARE DEPRECIATED AND WILL BE REMOVED IN FUTURE VERSIONS ####

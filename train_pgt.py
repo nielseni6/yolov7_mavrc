@@ -32,7 +32,7 @@ from utils.autoanchor import check_anchors
 from utils.datasets import create_dataloader
 from utils.general import labels_to_class_weights, increment_path, labels_to_image_weights, init_seeds, \
     fitness, strip_optimizer, get_latest_run, check_dataset, check_file, check_git_status, check_img_size, \
-    check_requirements, print_mutation, set_logging, one_cycle, colorstr
+    check_requirements, print_mutation, set_logging, one_cycle, colorstr, non_max_suppression, xyxy2xywh
 from utils.google_utils import attempt_download
 from utils.loss import ComputeLoss, ComputeLossOTA, ComputePGTLossOTA
 from utils.plots import plot_images, plot_labels, plot_results, plot_evolution
@@ -42,7 +42,7 @@ import sys
 from PIL import Image
 import torchvision
 
-from plaus_functs import get_gradient, get_plaus_score
+from plaus_functs import get_gradient, get_plaus_score, get_detections, get_labels
 from plaus_functs_original import generate_vanilla_grad, eval_plausibility
 
 logger = logging.getLogger(__name__)
@@ -433,6 +433,11 @@ def train(hyp, opt, device, tb_writer=None):
                 # use_pgt = False
                 
                 out = model(imgs.requires_grad_(True), pgt = use_pgt, out_nums = opt.out_num_attrs)  # forward
+                
+                ema.update_attr(model, include=['yaml', 'nc', 'hyp', 'gr', 'names', 'stride', 'class_weights'])
+                det_out, out_ = get_detections(ema.ema, imgs.clone().detach())
+                pred_labels = get_labels(det_out, imgs, targets.clone(), opt)
+
                 if use_pgt:
                     pred, attr = out[:3], out[3]
                 else:
@@ -474,7 +479,7 @@ def train(hyp, opt, device, tb_writer=None):
                         if not (opt.pgt_coeff == 0):
                             # Add attribution maps
                             attribution_map = generate_vanilla_grad(model, imgs, loss_func=loss_attr, 
-                                                                    targets=targets, metric=opt.loss_metric, 
+                                                                    targets=pred_labels, metric=opt.loss_metric, 
                                                                     out_num = out_num_attr, device=device) # mlc = max label class
                             t1_pgt = time.time()
                             # Calculate Plausibility IoU with attribution maps
@@ -484,10 +489,10 @@ def train(hyp, opt, device, tb_writer=None):
                             #                                             debug=True)
                             # ADD LR SCHEDULER
                             
-                            plaus_loss = (opt.pgt_coeff * plaus_score)
+                            plaus_loss = (1-plaus_score) * opt.pgt_coeff
                             # plaus_loss_np = plaus_loss.cpu().clone().detach().numpy()
                             
-                            loss = loss - plaus_loss
+                            loss = loss + (plaus_loss)
                             
                             ploss = (float(plaus_loss) / float(len(opt.out_num_attrs)))
                             pscore = (float(plaus_score) / float(len(opt.out_num_attrs)))
@@ -515,7 +520,7 @@ def train(hyp, opt, device, tb_writer=None):
                     ema.update(model)
             
             if not opt.pgt_built_in:
-                lplaus = ((1-plaus_score) * opt.pgt_coeff).to(loss_items.device)
+                lplaus = ((1-plaus_score)).to(loss_items.device)
                 loss_items = torch.cat((loss_items[:-1], lplaus.unsqueeze(0), loss_items[-1].unsqueeze(0)))
             # Print
             if rank in [-1, 0]:
@@ -746,14 +751,15 @@ if __name__ == '__main__':
     opt.plaus_results = False
     
     opt.k_fold = 10
-    opt.k_fold_num = 0
+    opt.k_fold_num = 1
     opt.k_fold_sepfolders = True
+    opt.save_hybrid = True
     # opt.sweep = True
     # opt.loss_attr = True 
     # opt.out_num_attrs = [0,1,2,] # unused if opt.loss_attr == True 
     opt.pgt_built_in = False
     opt.out_num_attrs = [1,] 
-    opt.pgt_coeff = 0.1 # 25 
+    opt.pgt_coeff = 0.05 # 25 
     opt.pgt_lr_decay = 0.5 # float(7.0/9.0) # 0.9 
     opt.pgt_lr_decay_step = 50 
     opt.epochs = 300 
@@ -763,15 +769,13 @@ if __name__ == '__main__':
     opt.batch_size = 64
     # opt.batch_size = 96 
     opt.save_dir = str('runs/' + opt.name + '_lr' + str(opt.pgt_coeff)) 
-    opt.device = '4' 
+    opt.device = '1' 
     # opt.device = "0,1,2,3"  
     # opt.weights = 'weights/yolov7.pt'
     
     # lambda03 Console Commands
     # source /home/nielseni6/envs/yolo/bin/activate
     # cd /home/nielseni6/PythonScripts/yolov7_mavrc
-    # watch -n 0.5 --color 'gpustat -p --color | head ; ps -up `nvidia-smi -q -x | grep pid | sed -e "s/<pid>//g" -e "s/<\/pid>//g" -e "s/^[[:space:]]*//"`'
-    # watch -n 0.5 ps -up `nvidia-smi -q -x | grep pid | sed -e 's/<pid>//g' -e 's/<\/pid>//g' -e 's/^[[:space:]]*//'`
     
     # Resume run
     # nohup python train_pgt.py --resume runs/pgt/train-pgt-yolov7/pgt5_214/weights/last.pt > ./output_logs/gpu5_trpgt_coco_out1_lr0_25.log 2>&1 &
@@ -779,7 +783,7 @@ if __name__ == '__main__':
     # opt.resume = "runs/pgt/train-pgt-yolov7/pgt5_214/weights/last.pt"
     # opt.weights = 'runs/pgt/train-pgt-yolov7/pgt5_214/weights/last.pt'
     
-    # nohup python train_pgt.py > ./output_logs/gpu4.log 2>&1 &
+    # nohup python train_pgt.py > ./output_logs/gpu6.log 2>&1 &
     # nohup python train_pgt.py > ./output_logs/gpu7_trpgt_drone_lr0_7_decay0_5_step50_fold2.log 2>&1 &
     # nohup python train_pgt.py > ./output_logs/gpu2_trpgt_drone_lr0_0_fold1.log 2>&1 &
     # nohup python -m torch.distributed.launch --nproc_per_node 4 --master_port 9528 train_pgt.py --sync-bn > ./output_logs/gpu2360_coco_pgtlr0_25.log 2>&1 &
