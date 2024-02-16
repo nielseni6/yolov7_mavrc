@@ -559,6 +559,7 @@ def train(hyp, opt, device, tb_writer=None):
         # if opt.pgt_coeff != 0.0:
         plaus_score_total_train /= len(dataloader)
         dist_reg_total_train /= len(dataloader)
+        plaus_loss_total_train /= len(dataloader)
         
         # Scheduler
         lr = [x['lr'] for x in optimizer.param_groups]  # for tensorboard
