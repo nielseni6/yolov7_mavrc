@@ -391,6 +391,7 @@ def train(hyp, opt, device, tb_writer=None):
         #################################################################################
         
         plaus_loss_total_train, plaus_score_total_train = 0.0, 0.0
+        dist_reg_total_train = 0.0
         num_batches = 0
         for i, (imgs, targets, paths, _) in pbar:  # batch -------------------------------------------------------------
             ni = i + nb * epoch  # number integrated batches (since train start)
@@ -493,7 +494,7 @@ def train(hyp, opt, device, tb_writer=None):
                             distance_map = get_distance_grids(attribution_map, targets.to(device), imgs, opt.focus_coeff)
                             dist_attr = distance_map * attribution_map
                             dist_reg = torch.mean(dist_attr) # torch.sum(dist_attr) / torch.sum(torch.ones_like(dist_attr))
-                            plaus_reg = plaus_score - dist_reg
+                            plaus_reg = plaus_score - (dist_reg * opt.dist_coeff)
                             # plaus_loss = dist_reg * opt.pgt_coeff # (1 - plaus_score) + dist_reg
                             # opt.iou_coeff = 0.1
                             plaus_loss = (1 - plaus_reg) * opt.pgt_coeff
@@ -505,6 +506,7 @@ def train(hyp, opt, device, tb_writer=None):
                             pscore = (float(plaus_score) / float(len(opt.out_num_attrs)))
                             plaus_loss_total_train += ploss if not math.isnan(ploss) else 0.0
                             plaus_score_total_train += pscore if not math.isnan(pscore) else 0.0
+                            dist_reg_total_train += dist_reg
                             # plaus_num_nan += int(math.isnan(pscore))
                             # print(f'Plausibility eval and loss took {t1_pgt - t0_pgt} seconds')
                         else:
@@ -556,6 +558,7 @@ def train(hyp, opt, device, tb_writer=None):
         # end epoch ----------------------------------------------------------------------------------------------------
         # if opt.pgt_coeff != 0.0:
         plaus_score_total_train /= len(dataloader)
+        dist_reg_total_train /= len(dataloader)
         
         # Scheduler
         lr = [x['lr'] for x in optimizer.param_groups]  # for tensorboard
@@ -603,8 +606,8 @@ def train(hyp, opt, device, tb_writer=None):
                     'metrics/precision', 'metrics/recall', 'metrics/mAP_0.5', 'metrics/mAP_0.5:0.95',
                     'val/box_loss', 'val/obj_loss', 'val/cls_loss',  # val loss
                     'x/lr0', 'x/lr1', 'x/lr2',  # params
-                    ] + ['plaus_loss_train', 'plaus_score_train','pgt_coeff']
-            for x, tag in zip(list(mloss[:-1]) + list((results)) + lr + [plaus_loss_total_train, plaus_score_total_train, opt.pgt_coeff,], tags):
+                    ] + ['plaus_loss_train', 'plaus_score_train', 'dist_reg_train', 'pgt_coeff']
+            for x, tag in zip(list(mloss[:-1]) + list((results)) + lr + [plaus_loss_total_train, plaus_score_total_train, dist_reg_total_train, opt.pgt_coeff,], tags):
                 if tb_writer:
                     tb_writer.add_scalar(tag, x, epoch)  # tensorboard
                 if wandb_logger.wandb:
@@ -759,7 +762,7 @@ if __name__ == '__main__':
     opt.plaus_results = False 
     
     opt.k_fold = 10 
-    opt.k_fold_num = 5 
+    opt.k_fold_num = 2 
     opt.k_fold_sepfolders = True 
     # opt.save_hybrid = True 
     
@@ -769,6 +772,7 @@ if __name__ == '__main__':
     opt.pgt_built_in = False 
     opt.out_num_attrs = [1,] 
     opt.focus_coeff = 1.0
+    opt.dist_coeff = 2.0
     opt.pgt_coeff = 10.0 # 25 
     opt.pgt_lr_decay = 1.0#5 # 5.0 float(7.0/9.0) # 0.9 
     opt.pgt_lr_decay_step = 1000 # 200 
@@ -779,7 +783,7 @@ if __name__ == '__main__':
     opt.batch_size = 64 
     # opt.batch_size = 96 
     opt.save_dir = str('runs/' + opt.name + '_lr' + str(opt.pgt_coeff)) 
-    opt.device = '5' 
+    opt.device = '1' 
     # opt.device = "0,1,2,3"  
     # opt.weights = 'weights/yolov7.pt'
     
@@ -793,7 +797,7 @@ if __name__ == '__main__':
     # opt.resume = "runs/pgt/train-pgt-yolov7/pgt5_214/weights/last.pt"
     # opt.weights = 'runs/pgt/train-pgt-yolov7/pgt5_214/weights/last.pt'
     
-    # nohup python train_pgt.py > ./output_logs/gpu5.log 2>&1 &
+    # nohup python train_pgt.py > ./output_logs/gpu0.log 2>&1 &
     # nohup python train_pgt.py > ./output_logs/gpu7_trpgt_drone_lr0_7_decay0_5_step50_fold2.log 2>&1 &
     # nohup python train_pgt.py > ./output_logs/gpu2_trpgt_drone_lr0_0_fold1.log 2>&1 &
     # nohup python -m torch.distributed.launch --nproc_per_node 4 --master_port 9528 train_pgt.py --sync-bn > ./output_logs/gpu2360_coco_pgtlr0_25.log 2>&1 &
