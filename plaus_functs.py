@@ -1,8 +1,7 @@
 import torch
 import numpy as np
 from plot_functs import * 
-from plot_functs import imshow
-from plot_functs import normalize_tensor
+from plot_functs import normalize_tensor, overlay_mask, imshow
 import math   
 import time
 import matplotlib.path as mplPath
@@ -253,19 +252,16 @@ def get_detections(model_clone, img):
 
 def get_labels(det_out, imgs, targets, opt):
     ###################### Get predicted labels ###################### 
-    nb, _, height, width = imgs.shape  # batch size, channels, height, width
-    targets_ = targets.clone()
+    nb, _, height, width = imgs.shape  # batch size, channels, height, width 
+    targets_ = targets.clone() 
     targets_[:, 2:] = targets_[:, 2:] * torch.Tensor([width, height, width, height]).to(imgs.device)  # to pixels
     lb = [targets_[targets_[:, 0] == i, 1:] for i in range(nb)] if opt.save_hybrid else []  # for autolabelling
     o = non_max_suppression(det_out, conf_thres=0.001, iou_thres=0.6, labels=lb, multi_label=True)
-    pred_labels = []
+    pred_labels = [] 
     for si, pred in enumerate(o):
         labels = targets_[targets_[:, 0] == si, 1:]
-        nl = len(labels)
-        # tcls = labels[:, 0].tolist() if nl else []  # target class
+        nl = len(labels) 
         predn = pred.clone()
-        # width, height = 480, 480
-        # scale_coords(imgs[si].shape[1:], predn[:, :4], [width, height], [[1.3333333333333333, 1.3333333333333333], [16.0, 16.0]])  # native-space pred
         # Get the indices that sort the values in column 5 in ascending order
         sort_indices = torch.argsort(pred[:, 4], dim=0, descending=True)
         # Apply the sorting indices to the tensor
@@ -283,6 +279,102 @@ def get_labels(det_out, imgs, targets, opt):
     
     return pred_labels
     ##################################################################
+
+from torchvision.utils import make_grid
+
+def get_center_coords(attr):
+    img_tensor = img_tensor / img_tensor.max()
+
+    # Define a brightness threshold
+    threshold = 0.95
+
+    # Create a binary mask of the bright pixels
+    mask = img_tensor > threshold
+
+    # Get the coordinates of the bright pixels
+    y_coords, x_coords = torch.where(mask)
+
+    # Calculate the centroid of the bright pixels
+    centroid_x = x_coords.float().mean().item()
+    centroid_y = y_coords.float().mean().item()
+
+    print(f'The central bright point is at ({centroid_x}, {centroid_y})')
+    
+    return
+
+
+def get_distance_grids(attr, targets, imgs, focus_coeff=0.5, debug=False):
+    """
+    Compute the distance grids from each pixel to the target coordinates.
+
+    Args:
+        attr (torch.Tensor): Attribution maps.
+        targets (torch.Tensor): Target coordinates.
+        focus_coeff (float, optional): Focus coefficient, smaller means more focused. Defaults to 0.5.
+        debug (bool, optional): Whether to visualize debug information. Defaults to False.
+
+    Returns:
+        torch.Tensor: Distance grids.
+    """
+    
+    # Assign the height and width of the input tensor to variables
+    height, width = attr.shape[-1], attr.shape[-2]
+    
+    attr = torch.abs(attr) # Take absolute values of gradients
+    attr = normalize_batch(attr) # Normalize attribution maps per image in batch
+
+    # Create a grid of indices
+    xx, yy = torch.stack(torch.meshgrid(torch.arange(height), torch.arange(width))).to(attr.device)
+    idx_grid = torch.stack((xx, yy), dim=-1).float()
+    
+    # Expand the grid to match the batch size
+    idx_batch_grid = idx_grid.expand(attr.shape[0], -1, -1, -1)
+    
+    # Initialize a list to store the distance grids
+    dist_grids_ = [[]] * attr.shape[0]
+
+    # Loop over batches
+    for j in range(attr.shape[0]):
+        # Get the rows where the first column is the current unique value
+        rows = targets[targets[:, 0] == j]
+        
+        if len(rows) != 0: 
+            # Create a tensor for the target coordinates
+            xy = torch.tensor(rows[:,2:4]) # y, x
+            # Flip the x and y coordinates and scale them to the image size
+            xy[:, 0], xy[:, 1] = xy[:, 1] * width, xy[:, 0] * height # y, x to x, y
+            xy_center = xy.unsqueeze(1).unsqueeze(1) 
+            
+            # Compute the Euclidean distance from each pixel to the target coordinates
+            dists = torch.norm(idx_batch_grid[j].expand(len(xy_center), -1, -1, -1) - xy_center, dim=-1)
+
+            # Pick the closest distance to any target for each pixel 
+            dist_grid = torch.min(dists, dim=0)[0].unsqueeze(0) 
+        else:
+            # Set grid to zero if no targets are present
+            dist_grid = torch.zeros_like(attr[j])
+            
+        dist_grids_[j] = dist_grid
+    # Convert the list of distance grids to a tensor for faster computation
+    dist_grids = normalize_batch(torch.stack(dist_grids_)) ** focus_coeff
+    if torch.isnan(dist_grids).any():
+        dist_grids = torch.nan_to_num(dist_grids, nan=0.0)
+
+    if debug:
+        for i in range(len(dist_grids)):
+            if ((i % 8) == 0):
+                grid_show = torch.cat([dist_grids[i][:1], dist_grids[i][:1], dist_grids[i][:1]], dim=0)
+                imshow(grid_show, save_path='figs/dist_grids')
+                imshow(imgs[i], save_path='figs/im0')
+                img_overlay = (overlay_mask(imgs[i], dist_grids[i][0], alpha = 0.75))
+                imshow(img_overlay, save_path='figs/dist_grid_overlay')
+                weighted_attr = (dist_grids[i] * attr[i])
+                imshow(weighted_attr, save_path='figs/weighted_attr')
+                imshow(attr[i], save_path='figs/attr')
+    
+    return dist_grids
+    
+#     return
 
 ####################################################################################
 #### ALL FUNCTIONS BELOW ARE DEPRECIATED AND WILL BE REMOVED IN FUTURE VERSIONS ####

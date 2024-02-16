@@ -42,7 +42,7 @@ import sys
 from PIL import Image
 import torchvision
 
-from plaus_functs import get_gradient, get_plaus_score, get_detections, get_labels
+from plaus_functs import get_gradient, get_plaus_score, get_detections, get_labels, get_distance_grids
 from plaus_functs_original import generate_vanilla_grad, eval_plausibility
 
 logger = logging.getLogger(__name__)
@@ -490,7 +490,13 @@ def train(hyp, opt, device, tb_writer=None):
                             #                                             debug=True)
                             # ADD LR SCHEDULER
                             
-                            plaus_loss = (1-plaus_score) * opt.pgt_coeff
+                            distance_map = get_distance_grids(attribution_map, targets.to(device), imgs, opt.focus_coeff)
+                            dist_attr = distance_map * attribution_map
+                            dist_reg = torch.mean(dist_attr) # torch.sum(dist_attr) / torch.sum(torch.ones_like(dist_attr))
+                            plaus_reg = plaus_score - dist_reg
+                            # plaus_loss = dist_reg * opt.pgt_coeff # (1 - plaus_score) + dist_reg
+                            # opt.iou_coeff = 0.1
+                            plaus_loss = (1 - plaus_reg) * opt.pgt_coeff
                             # plaus_loss_np = plaus_loss.cpu().clone().detach().numpy()
                             
                             loss = loss + (plaus_loss)
@@ -521,7 +527,7 @@ def train(hyp, opt, device, tb_writer=None):
                     ema.update(model)
             
             if not opt.pgt_built_in:
-                lplaus = ((1-plaus_score)).to(loss_items.device)
+                lplaus = (plaus_loss).to(loss_items.device)
                 loss_items = torch.cat((loss_items[:-1], lplaus.unsqueeze(0), loss_items[-1].unsqueeze(0)))
             # Print
             if rank in [-1, 0]:
@@ -748,38 +754,39 @@ if __name__ == '__main__':
     ############################################################################
     # parser.add_argument('--seed', type=int, default=None, help='reproduce results')
     opt = parser.parse_args() 
-    print(opt)
+    print(opt) 
     
-    opt.plaus_results = False
+    opt.plaus_results = False 
     
-    opt.k_fold = 10
-    opt.k_fold_num = 2
-    opt.k_fold_sepfolders = True
-    # opt.save_hybrid = True
+    opt.k_fold = 10 
+    opt.k_fold_num = 5 
+    opt.k_fold_sepfolders = True 
+    # opt.save_hybrid = True 
     
-    # opt.sweep = True
+    # opt.sweep = True 
     # opt.loss_attr = True 
     # opt.out_num_attrs = [0,1,2,] # unused if opt.loss_attr == True 
-    opt.pgt_built_in = False
+    opt.pgt_built_in = False 
     opt.out_num_attrs = [1,] 
-    opt.pgt_coeff = 0.5 # 25 
-    opt.pgt_lr_decay = 0.5 # float(7.0/9.0) # 0.9 
-    opt.pgt_lr_decay_step = 50 
+    opt.focus_coeff = 1.0
+    opt.pgt_coeff = 10.0 # 25 
+    opt.pgt_lr_decay = 1.0#5 # 5.0 float(7.0/9.0) # 0.9 
+    opt.pgt_lr_decay_step = 1000 # 200 
     opt.epochs = 300 
     opt.data = check_file(opt.data)  # check file 
     opt.no_trace = True 
     opt.conf_thres = 0.50 
-    opt.batch_size = 64
+    opt.batch_size = 64 
     # opt.batch_size = 96 
     opt.save_dir = str('runs/' + opt.name + '_lr' + str(opt.pgt_coeff)) 
-    opt.device = '2' 
+    opt.device = '5' 
     # opt.device = "0,1,2,3"  
     # opt.weights = 'weights/yolov7.pt'
     
     # lambda03 Console Commands
     # source /home/nielseni6/envs/yolo/bin/activate
     # cd /home/nielseni6/PythonScripts/yolov7_mavrc
-    
+
     # Resume run
     # nohup python train_pgt.py --resume runs/pgt/train-pgt-yolov7/pgt5_214/weights/last.pt > ./output_logs/gpu5_trpgt_coco_out1_lr0_25.log 2>&1 &
     # nohup python -m torch.distributed.launch --nproc_per_node 4 --master_port 9527 train_pgt.py --sync-bn --resume runs/pgt/train-pgt-yolov7/pgt5_214/weights/last.pt > ./output_logs/gpu1245_coco_pgtlr0_25.log 2>&1 &
@@ -792,26 +799,33 @@ if __name__ == '__main__':
     # nohup python -m torch.distributed.launch --nproc_per_node 4 --master_port 9528 train_pgt.py --sync-bn > ./output_logs/gpu2360_coco_pgtlr0_25.log 2>&1 &
     # nohup python -m torch.distributed.launch --nproc_per_node 5 --master_port 9527 train_pgt.py --sync-bn > ./output_logs/gpu13456_coco_pgt_lr0_7_decay0_9_step25.log 2>&1 &
     # opt.quad = True # Helps for multiple gpu training 
+    
+    # c = 0.0001
+    # for i in range(300):
+    #     c *= 1.05
+    #     if i % 50 == 0:
+    #         print(c)
+    
     # opt.dataset = 'coco' # 'real_world_drone'
     opt.dataset = 'real_world_drone'
     # opt.sync_bn = True
     
     opt.seed = random.randrange(sys.maxsize)
-    # if opt.seed is None:
-    #     opt.seed = random.randrange(sys.maxsize)
-    rng = random.Random(opt.seed)
-    torch.manual_seed(opt.seed)
-    print(f'Seed: {opt.seed}')
+    # if opt.seed is None: 
+    #     opt.seed = random.randrange(sys.maxsize) 
+    rng = random.Random(opt.seed) 
+    torch.manual_seed(opt.seed) 
+    print(f'Seed: {opt.seed}') 
     
-    opt.entity = os.popen('whoami').read().strip()
-    opt.host_name = socket.gethostname()
-    username = os.getenv('USER')
-    os.environ["WANDB_ENTITY"] = username
-    opt.username = username
+    opt.entity = os.popen('whoami').read().strip() 
+    opt.host_name = socket.gethostname() 
+    username = os.getenv('USER') 
+    os.environ["WANDB_ENTITY"] = username 
+    opt.username = username 
     
-    # set environment variables for parallel training
-    os.environ["OMP_NUM_THREADS"] = "1"
-    # opt.local_rank = -1 # os.environ["LOCAL_RANK"]
+    # set environment variables for parallel training 
+    os.environ["OMP_NUM_THREADS"] = "1" 
+    # opt.local_rank = -1 # os.environ["LOCAL_RANK"] 
     
     if opt.dataset == 'real_world_drone':
         if ('lambda02' == opt.host_name) or ('lambda03' == opt.host_name) or ('lambda05' == opt.host_name):    

@@ -141,3 +141,14 @@ def calculate_snr(img, attr, dB=True):
         snr = signal_power / noise_power
 
     return snr
+
+def overlay_mask(img, mask, colormap: str = "jet", alpha: float = 0.7):
+    
+    cmap = plt.get_cmap(colormap)
+    npmask = np.array(mask.clone().detach().cpu().squeeze(0))
+    # cmpmask = ((255 * cmap(npmask)[:, :, :3]).astype(np.uint8)).transpose((2, 0, 1))
+    cmpmask = (cmap(npmask)[:, :, :3]).transpose((2, 0, 1))
+    overlayed_imgnp = ((alpha * (np.asarray(img.clone().detach().cpu())) + (1 - alpha) * cmpmask))
+    overlayed_tensor = torch.tensor(overlayed_imgnp, device=img.device)
+    
+    return overlayed_tensor

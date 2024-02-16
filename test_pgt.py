@@ -452,7 +452,7 @@ if __name__ == '__main__':
     opt.username = username
     
     opt.half_precision = True
-    opt.device = '5'
+    opt.device = '7'
     device_num = opt.device
     
     
