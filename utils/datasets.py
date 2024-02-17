@@ -421,14 +421,16 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
         # Check cache
         self.label_files = img2label_paths(self.img_files)  # labels
         cache_path = (p if p.is_file() else Path(self.label_files[0]).parent).with_suffix('.cache')  # cached labels
-        if self.k_fold and not k_fold_sepfolders:
-            cpath = str(cache_path).replace('.cache','') + '_kfold' + str(k_fold_num)
+        
+        # Rename path based on k_fold training or testing
+        if self.k_fold:# and not k_fold_sepfolders:
             if self.k_fold_train:
-                cpath += '_train'
+                train_str = '_train'
             else:
-                cpath += '_test'
+                train_str = '_test'
+            cpath = str(cache_path).replace('.cache', f'_kfold{k_fold_num}{train_str}')
+            cache_path = Path(cpath + '.cache')
             
-        #     cache_path = Path(cpath + '.cache')
         if cache_path.is_file():
             cache, exists = torch.load(cache_path), True  # load
             #if cache['hash'] != get_hash(self.label_files + self.img_files) or 'version' not in cache:  # changed

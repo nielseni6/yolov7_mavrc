@@ -483,14 +483,10 @@ def train(hyp, opt, device, tb_writer=None):
                             attribution_map = generate_vanilla_grad(model, imgs, loss_func=loss_attr, 
                                                                     targets=pred_labels, metric=opt.loss_metric, 
                                                                     out_num = out_num_attr, device=device) # mlc = max label class
-                            t1_pgt = time.time()
                             # Calculate Plausibility IoU with attribution maps
                             plaus_score = get_plaus_score(imgs, targets_out = targets.to(device), attr = attribution_map)
-                            # plaus_score, plaus_num_nan = eval_plausibility(imgs, labels.to(device), 
-                            #                                             attribution_map, device=device, 
-                            #                                             debug=True)
-                            # ADD LR SCHEDULER
                             
+                            # Calculate distance regularization
                             distance_map = get_distance_grids(attribution_map, targets.to(device), imgs, opt.focus_coeff)
                             dist_attr = distance_map * attribution_map
                             dist_reg = torch.mean(dist_attr) # torch.sum(dist_attr) / torch.sum(torch.ones_like(dist_attr))
