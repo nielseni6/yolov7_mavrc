@@ -424,9 +424,6 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
         
         # Rename path based on k_fold training or testing
         if self.k_fold:# and not k_fold_sepfolders:
-        
-        # Rename path based on k_fold training or testing
-        if self.k_fold:# and not k_fold_sepfolders:
             if self.k_fold_train:
                 train_str = '_train'
                 train_str = '_train'
