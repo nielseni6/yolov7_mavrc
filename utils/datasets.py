@@ -426,7 +426,6 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
         if self.k_fold:# and not k_fold_sepfolders:
             if self.k_fold_train:
                 train_str = '_train'
-                train_str = '_train'
             else:
                 train_str = '_test'
             cpath = str(cache_path).replace('.cache', f'_kfold{k_fold_num}{train_str}')

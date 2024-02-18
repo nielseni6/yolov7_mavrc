@@ -42,7 +42,8 @@ import sys
 from PIL import Image
 import torchvision
 
-from plaus_functs import get_gradient, get_plaus_score, get_detections, get_labels, get_distance_grids
+from plaus_functs import get_gradient, get_plaus_score, get_detections, get_labels, get_distance_grids, \
+    get_plaus_loss
 from plaus_functs_original import generate_vanilla_grad, eval_plausibility
 
 logger = logging.getLogger(__name__)
@@ -483,18 +484,21 @@ def train(hyp, opt, device, tb_writer=None):
                             attribution_map = generate_vanilla_grad(model, imgs, loss_func=loss_attr, 
                                                                     targets=pred_labels, metric=opt.loss_metric, 
                                                                     out_num = out_num_attr, device=device) # mlc = max label class
-                            # Calculate Plausibility IoU with attribution maps
-                            plaus_score = get_plaus_score(imgs, targets_out = targets.to(device), attr = attribution_map)
                             
-                            # Calculate distance regularization
-                            distance_map = get_distance_grids(attribution_map, targets.to(device), imgs, opt.focus_coeff)
-                            dist_attr = distance_map * attribution_map
-                            dist_reg = torch.mean(dist_attr) # torch.sum(dist_attr) / torch.sum(torch.ones_like(dist_attr))
-                            plaus_reg = plaus_score - (dist_reg * opt.dist_coeff)
-                            # plaus_loss = dist_reg * opt.pgt_coeff # (1 - plaus_score) + dist_reg
-                            # opt.iou_coeff = 0.1
-                            plaus_loss = (1 - plaus_reg) * opt.pgt_coeff
-                            # plaus_loss_np = plaus_loss.cpu().clone().detach().numpy()
+                            plaus_loss, (plaus_score, dist_reg, plaus_reg,) = get_plaus_loss(targets, attribution_map, opt, imgs)
+                            
+                            # # Calculate Plausibility IoU with attribution maps
+                            # plaus_score = get_plaus_score(targets_out = targets.to(device), attr = attribution_map, imgs = imgs)
+                            
+                            # # Calculate distance regularization
+                            # distance_map = get_distance_grids(attribution_map, targets.to(device), imgs, opt.focus_coeff)
+                            # dist_attr = distance_map * attribution_map
+                            # dist_reg = torch.mean(dist_attr)
+                            # if not opt.dist_reg_only:
+                            #     plaus_reg = plaus_score - (dist_reg * opt.dist_coeff)
+                            # else:
+                            #     plaus_reg = - (dist_reg * opt.dist_coeff)
+                            # plaus_loss = (1 - plaus_reg) * opt.pgt_coeff
                             
                             loss = loss + (plaus_loss)
                             
@@ -751,6 +755,11 @@ if __name__ == '__main__':
     parser.add_argument('--seg-labels', action='store_true', help='If true, calculate plaus score with segmentation maps rather than bbox')
     parser.add_argument('--seg_size_factor', type=float, default=1.0, help='Factor to reduce weight of segmentation maps that cover entire image')
     parser.add_argument('--save_hybrid', action='store_true', help='If true, save hybrid attribution maps')
+    parser.add_argument('--dist_reg_only', action='store_true', help='If true, only calculate distance regularization and not plausibility')
+    parser.add_argument('--focus_coeff', type=float, default=0.5, help='focus_coeff')
+    parser.add_argument('--iou_coeff', type=float, default=0.05, help='iou_coeff')
+    parser.add_argument('--dist_coeff', type=float, default=100.0, help='dist_coeff')
+    parser.add_argument('--pgt_coeff', type=float, default=0.1, help='pgt_coeff')
     ############################################################################
     # parser.add_argument('--seed', type=int, default=None, help='reproduce results')
     opt = parser.parse_args() 
@@ -766,10 +775,9 @@ if __name__ == '__main__':
     # opt.sweep = True 
     # opt.loss_attr = True 
     # opt.out_num_attrs = [0,1,2,] # unused if opt.loss_attr == True 
+    # opt.dist_reg_only = True
     opt.pgt_built_in = False 
     opt.out_num_attrs = [1,] 
-    opt.focus_coeff = 1.0
-    opt.dist_coeff = 100.0
     opt.pgt_coeff = 0.1 # 25 
     opt.pgt_lr_decay = 1.0#5 # 5.0 float(7.0/9.0) # 0.9 
     opt.pgt_lr_decay_step = 1000 # 200 
@@ -794,7 +802,7 @@ if __name__ == '__main__':
     # opt.resume = "runs/pgt/train-pgt-yolov7/pgt5_214/weights/last.pt"
     # opt.weights = 'runs/pgt/train-pgt-yolov7/pgt5_214/weights/last.pt'
     
-    # nohup python train_pgt.py > ./output_logs/gpu0.log 2>&1 &
+    # nohup python train_pgt.py > ./output_logs/gpu6.log 2>&1 &
     # nohup python train_pgt.py > ./output_logs/gpu7_trpgt_drone_lr0_7_decay0_5_step50_fold2.log 2>&1 &
     # nohup python train_pgt.py > ./output_logs/gpu2_trpgt_drone_lr0_0_fold1.log 2>&1 &
     # nohup python -m torch.distributed.launch --nproc_per_node 4 --master_port 9528 train_pgt.py --sync-bn > ./output_logs/gpu2360_coco_pgtlr0_25.log 2>&1 &

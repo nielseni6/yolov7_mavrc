@@ -82,7 +82,7 @@ def get_gaussian(img, grad_wrt, norm=True, absolute=True, grayscale=True, keepme
     return gaussian_noise
     
 
-def get_plaus_score(imgs, targets_out, attr, debug=False, corners=False):
+def get_plaus_score(targets_out, attr, debug=False, corners=False, imgs=None):
     # TODO: Remove imgs from this function and only take it as input if debug is True
     """
     Calculates the plausibility score based on the given inputs.
@@ -96,7 +96,8 @@ def get_plaus_score(imgs, targets_out, attr, debug=False, corners=False):
     Returns:
         torch.Tensor: The plausibility score.
     """
-    
+    if imgs is None:
+        imgs = torch.zeros_like(attr)
     target_inds = targets_out[:, 0].int()
     xyxy_batch = targets_out[:, 2:6]# * pre_gen_gains[out_num]
     num_pixels = torch.tile(torch.tensor([imgs.shape[2], imgs.shape[3], imgs.shape[2], imgs.shape[3]], device=imgs.device), (xyxy_batch.shape[0], 1))
@@ -375,20 +376,28 @@ def get_distance_grids(attr, targets, imgs, focus_coeff=0.5, debug=False):
 
     return dist_grids
 
-def get_plaus_loss(imgs, targets, attribution_map, opt, device='cpu'):
+def get_plaus_loss(targets, attribution_map, opt, imgs=None, debug=False):
+    if imgs is None:
+        imgs = torch.zeros_like(attribution_map)
     # Calculate Plausibility IoU with attribution maps
-    plaus_score = get_plaus_score(imgs, targets_out = targets.to(device), attr = attribution_map)
+    plaus_score = get_plaus_score(targets_out = targets.to(imgs.device), attr = attribution_map, imgs = imgs)
     
     # Calculate distance regularization
-    distance_map = get_distance_grids(attribution_map, targets.to(device), imgs, opt.focus_coeff)
-    dist_attr = distance_map * attribution_map
-    dist_reg = torch.mean(dist_attr) # torch.sum(dist_attr) / torch.sum(torch.ones_like(dist_attr))
-    plaus_reg = plaus_score - (dist_reg * opt.dist_coeff)
-    # plaus_loss = dist_reg * opt.pgt_coeff # (1 - plaus_score) + dist_reg
-    # opt.iou_coeff = 0.1
+    distance_map = get_distance_grids(attribution_map, targets.to(imgs.device), imgs, opt.focus_coeff)
+    dist_attr_pos = (1 - distance_map) * attribution_map
+    dist_attr_pos = torch.mean(dist_attr_pos) 
+    dist_attr_neg = distance_map * attribution_map
+    dist_attr_neg = torch.mean(dist_attr_neg) 
+    dist_reg = (dist_attr_pos) - (dist_attr_neg)
+    if not opt.dist_reg_only:
+        plaus_reg = (plaus_score * opt.iou_coeff) + (dist_attr_pos * opt.dist_coeff) - (dist_attr_neg * opt.dist_coeff)
+    else:
+        plaus_reg = (dist_attr_pos * opt.dist_coeff) - (dist_attr_neg * opt.dist_coeff)
     plaus_loss = (1 - plaus_reg) * opt.pgt_coeff
-    
-    return plaus_loss
+    if not debug:
+        return plaus_loss, (plaus_score, dist_reg, plaus_reg,)
+    else:
+        return plaus_loss, (plaus_score, dist_reg, plaus_reg,), distance_map
 
 ####################################################################################
 #### ALL FUNCTIONS BELOW ARE DEPRECIATED AND WILL BE REMOVED IN FUTURE VERSIONS ####
