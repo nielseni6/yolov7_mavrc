@@ -234,21 +234,13 @@ def get_detections(model_clone, img):
     Returns:
         torch.Tensor: The detected bounding boxes.
     """
-    # mp = list(model.parameters())
-    # mcp = list(model_clone.parameters())
-    # n = len(mp)
-    # for i in range(0, n):
-    #     mcp[i].data[:] = mp[i].data[:]
-    
-    # model_clone.load_state_dict(copy.deepcopy(model.state_dict()))
-    # model_ = model
     model_clone.eval() # Set model to evaluation mode
     # Run inference
     with torch.no_grad():
         det_out, out = model_clone(img)
     
     # model_.train()
-    del img#, model_clone, out
+    del img 
     
     return det_out, out
 
@@ -384,15 +376,22 @@ def get_plaus_loss(targets, attribution_map, opt, imgs=None, debug=False):
     
     # Calculate distance regularization
     distance_map = get_distance_grids(attribution_map, targets.to(imgs.device), imgs, opt.focus_coeff)
+    
+    # Positive regularization term for incentivizing pixels near the target to have high attribution
     dist_attr_pos = (1 - distance_map) * attribution_map
     dist_attr_pos = torch.mean(dist_attr_pos) 
+
+    # Negative regularization term for incentivizing pixels far from the target to have low attribution
     dist_attr_neg = distance_map * attribution_map 
     dist_attr_neg = torch.mean(dist_attr_neg) 
+
+    # Calculate plausibility regularization term
     dist_reg = (dist_attr_pos) - (dist_attr_neg)
     if not opt.dist_reg_only:
         plaus_reg = (plaus_score * opt.iou_coeff) + (dist_attr_pos * opt.dist_coeff) - (dist_attr_neg * opt.dist_coeff)
     else:
         plaus_reg = (dist_attr_pos * opt.dist_coeff) - (dist_attr_neg * opt.dist_coeff)
+    # Calculate plausibility loss
     plaus_loss = (1 - plaus_reg) * opt.pgt_coeff
     if not debug:
         return plaus_loss, (plaus_score, dist_reg, plaus_reg,)

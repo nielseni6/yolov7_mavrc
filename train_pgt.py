@@ -372,8 +372,6 @@ def train(hyp, opt, device, tb_writer=None):
         # dataset.mosaic_border = [b - imgsz, -b]  # height, width borders
 
         num_losses = 5
-        # if opt.pgt_built_in:
-        #     num_losses += 1
         mloss = torch.zeros(num_losses, device=device)  # mean losses
         if rank != -1:
             dataloader.sampler.set_epoch(epoch)
@@ -384,11 +382,8 @@ def train(hyp, opt, device, tb_writer=None):
         optimizer.zero_grad()
         
         #################################################################################
-        # Set PGT learning rate scheduler\
+        # Set PGT learning rate scheduler
         opt.pgt_coeff = pgt_coeff_list[epoch]
-        # if (((epoch - start_epoch) % opt.pgt_lr_decay_step) == 0) and (epoch != start_epoch):
-        #     opt.pgt_coeff *= opt.pgt_lr_decay
-        #     print(f'PGT learning rate decayed to {opt.pgt_coeff} at epoch {epoch}')
         #################################################################################
         
         plaus_loss_total_train, plaus_score_total_train = 0.0, 0.0
@@ -398,16 +393,6 @@ def train(hyp, opt, device, tb_writer=None):
             ni = i + nb * epoch  # number integrated batches (since train start)
             imgs = imgs.to(device, non_blocking=True).float() / 255.0  # uint8 to float32, 0-255 to 0.0-1.0
             targets = targets.to(device)
-            
-            # if opt.dataset == 'real_world_drone':
-            #     path_labels, labels = [], []
-            #     for il, path in enumerate(paths):
-            #         path_ = path.replace('images', 'labels').replace('.jpg', '.txt').replace('../../..', '')
-            #         label = torch.tensor(np.insert(np.loadtxt(path_, dtype=np.float32), 0, il))
-            #         labels.append(label)
-            #         path_labels.append(path_)
-            #     labels = torch.stack(labels)
-            
             
             # Warmup
             if ni <= nw:
@@ -430,17 +415,21 @@ def train(hyp, opt, device, tb_writer=None):
 
             # Forward
             with amp.autocast(enabled=cuda):
-                # out_num_attr = opt.out_num_attrs[0]  
+                # Use PGT built-into the model 
                 use_pgt = (opt.pgt_coeff != 0.0) and (opt.pgt_built_in)
-                # use_pgt = False
-                
+
                 out = model(imgs.requires_grad_(True), pgt = use_pgt, out_nums = opt.out_num_attrs)  # forward
                 
-                if opt.pgt_coeff != 0.0:
+                # Get predicted labels for generating predicted attribution maps, 
+                # only needed for loss attributions since they are target specific
+                if (opt.pgt_coeff != 0.0) and opt.loss_attr:
                     ema.update_attr(model, include=['yaml', 'nc', 'hyp', 'gr', 'names', 'stride', 'class_weights'])
                     det_out, out_ = get_detections(ema.ema, imgs.clone().detach())
                     pred_labels = get_labels(det_out, imgs, targets.clone(), opt)
+                else:
+                    pred_labels = targets
 
+                # Get attribution map from model output if using built-in PGT
                 if use_pgt:
                     pred, attr = out[:3], out[3]
                 else:
@@ -449,27 +438,31 @@ def train(hyp, opt, device, tb_writer=None):
                 if 'loss_ota' not in hyp or hyp['loss_ota'] == 1:
                     print('Using loss_ota') if i == 0 else None
                     if opt.pgt_built_in:
-                        loss, loss_items = compute_pgt_loss(pred, targets.to(device), imgs, attr, pgt_coeff = opt.pgt_coeff, metric=opt.loss_metric)  # loss scaled by batch_size
+                        loss, loss_items = compute_pgt_loss(pred, targets, imgs, attr, pgt_coeff = opt.pgt_coeff, metric=opt.loss_metric)  # loss scaled by batch_size
                     else:
-                        loss, loss_items = compute_loss_ota(pred, targets.to(device), imgs, metric=opt.loss_metric)  # loss scaled by batch_size
+                        loss, loss_items = compute_loss_ota(pred, targets, imgs, metric=opt.loss_metric)  # loss scaled by batch_size
                 else:
                     print('Using loss') if i == 0 else None
-                    # This is currently broken due to the addition of plaussibility loss
-                    loss, loss_items = compute_loss(pred, targets.to(device), metric=opt.loss_metric)  # loss scaled by batch_size
+                    # This is currently broken due to the addition of plausibility loss
+                    loss, loss_items = compute_loss(pred, targets, metric=opt.loss_metric)  # loss scaled by batch_size
                 if rank != -1:
                     loss *= opt.world_size  # gradient averaged between devices in DDP mode
                 if opt.quad:
                     loss *= 4.
-            #########################################################
-            #         ADD PLAUSIBILITY LOSS FOR VALIDATION          #
-            #   ADD EXPLAINABILITY TO THE MEDIA OUTPUTS ON WANDB    #
-            #########################################################
+
+                #########################################################
+                #            ADDED PLAUSIBILITY LOSS BELOW              #
+                #########################################################
+                    
                 if (opt.pgt_coeff != 0.0) and (opt.pgt_built_in):
                     plaus_loss_total_train += loss_items[3]
                     plaus_score_total_train += compute_pgt_loss.plaus_score #(1 - (loss_items[3] / opt.pgt_coeff))
                     num_batches += 1
-                    
-            #################################################################################
+                
+                ##########################################################  
+                # Compute plausibility loss
+                ##########################################################
+                
                 if not opt.pgt_built_in:
                     if opt.loss_attr:
                         loss_attr = compute_loss_ota
@@ -480,41 +473,29 @@ def train(hyp, opt, device, tb_writer=None):
                     for out_num_attr in opt.out_num_attrs:
                         t0_pgt = time.time()
                         if not (opt.pgt_coeff == 0):
-                            # Add attribution maps
+                            # Get attribution maps
                             attribution_map = generate_vanilla_grad(model, imgs, loss_func=loss_attr, 
                                                                     targets=pred_labels, metric=opt.loss_metric, 
                                                                     out_num = out_num_attr, device=device) # mlc = max label class
                             
+                            # Compute plausibility loss
                             plaus_loss, (plaus_score, dist_reg, plaus_reg,) = get_plaus_loss(targets, attribution_map, opt, imgs)
                             
-                            # # Calculate Plausibility IoU with attribution maps
-                            # plaus_score = get_plaus_score(targets_out = targets.to(device), attr = attribution_map, imgs = imgs)
-                            
-                            # # Calculate distance regularization
-                            # distance_map = get_distance_grids(attribution_map, targets.to(device), imgs, opt.focus_coeff)
-                            # dist_attr = distance_map * attribution_map
-                            # dist_reg = torch.mean(dist_attr)
-                            # if not opt.dist_reg_only:
-                            #     plaus_reg = plaus_score - (dist_reg * opt.dist_coeff)
-                            # else:
-                            #     plaus_reg = - (dist_reg * opt.dist_coeff)
-                            # plaus_loss = (1 - plaus_reg) * opt.pgt_coeff
-                            
+                            # Add plausibility loss to total loss
                             loss = loss + (plaus_loss)
                             
+                            # Log plausibility loss and score metrics for evaluation
                             ploss = (float(plaus_loss) / float(len(opt.out_num_attrs)))
                             pscore = (float(plaus_score) / float(len(opt.out_num_attrs)))
                             plaus_loss_total_train += ploss if not math.isnan(ploss) else 0.0
                             plaus_score_total_train += pscore if not math.isnan(pscore) else 0.0
                             dist_reg_total_train += dist_reg
-                            # plaus_num_nan += int(math.isnan(pscore))
-                            # print(f'Plausibility eval and loss took {t1_pgt - t0_pgt} seconds')
                         else:
                             plaus_loss, plaus_score = torch.tensor(0.0), torch.tensor(0.0)
                         
                         t2_pgt = time.time()
-                model.zero_grad()
-            #################################################################################
+                # model.zero_grad()
+                ##########################################################
 
             # Backward
             scaler.scale(loss).backward()
@@ -550,13 +531,9 @@ def train(hyp, opt, device, tb_writer=None):
                     wandb_logger.log({"Mosaics": [wandb_logger.wandb.Image(str(x), caption=x.name) for x in
                                                   save_dir.glob('train*.jpg') if x.exists()]})
             
-            # if opt.pgt_coeff == 0.0:
-            #     attribution_map = get_gradient(imgs, grad_wrt = loss)
-            #     plaus_score = get_plaus_score(imgs, targets_out = targets, attr = attribution_map)
-            
             # end batch ------------------------------------------------------------------------------------------------
         # end epoch ----------------------------------------------------------------------------------------------------
-        # if opt.pgt_coeff != 0.0:
+        
         plaus_score_total_train /= len(dataloader)
         dist_reg_total_train /= len(dataloader)
         plaus_loss_total_train /= len(dataloader)
@@ -778,8 +755,8 @@ if __name__ == '__main__':
     # opt.dist_reg_only = True
     opt.pgt_built_in = False 
     opt.out_num_attrs = [1,] 
-    opt.pgt_coeff = 0.1 # 25 
-    opt.pgt_lr_decay = 1.0#5 # 5.0 float(7.0/9.0) # 0.9 
+    opt.pgt_coeff = 0.1 
+    opt.pgt_lr_decay = 1.0 
     opt.pgt_lr_decay_step = 1000 # 200 
     opt.epochs = 300 
     opt.data = check_file(opt.data)  # check file 
@@ -790,32 +767,21 @@ if __name__ == '__main__':
     opt.save_dir = str('runs/' + opt.name + '_lr' + str(opt.pgt_coeff)) 
     opt.device = '7' 
     # opt.device = "0,1,2,3"  
-    # opt.weights = 'weights/yolov7.pt'
     
     # lambda03 Console Commands
     # source /home/nielseni6/envs/yolo/bin/activate
     # cd /home/nielseni6/PythonScripts/yolov7_mavrc
 
     # Resume run
-    # nohup python train_pgt.py --resume runs/pgt/train-pgt-yolov7/pgt5_214/weights/last.pt > ./output_logs/gpu5_trpgt_coco_out1_lr0_25.log 2>&1 &
+    # nohup python train_pgt.py --resume runs/pgt/train-pgt-yolov7/pgt5_632/weights/last.pt > ./output_logs/gpu7_resume.log 2>&1 &
     # nohup python -m torch.distributed.launch --nproc_per_node 4 --master_port 9527 train_pgt.py --sync-bn --resume runs/pgt/train-pgt-yolov7/pgt5_214/weights/last.pt > ./output_logs/gpu1245_coco_pgtlr0_25.log 2>&1 &
     # opt.resume = "runs/pgt/train-pgt-yolov7/pgt5_214/weights/last.pt"
     # opt.weights = 'runs/pgt/train-pgt-yolov7/pgt5_214/weights/last.pt'
     
     # nohup python train_pgt.py > ./output_logs/gpu6.log 2>&1 &
-    # nohup python train_pgt.py > ./output_logs/gpu7_trpgt_drone_lr0_7_decay0_5_step50_fold2.log 2>&1 &
-    # nohup python train_pgt.py > ./output_logs/gpu2_trpgt_drone_lr0_0_fold1.log 2>&1 &
-    # nohup python -m torch.distributed.launch --nproc_per_node 4 --master_port 9528 train_pgt.py --sync-bn > ./output_logs/gpu2360_coco_pgtlr0_25.log 2>&1 &
-    # nohup python -m torch.distributed.launch --nproc_per_node 5 --master_port 9527 train_pgt.py --sync-bn > ./output_logs/gpu13456_coco_pgt_lr0_7_decay0_9_step25.log 2>&1 &
-    # opt.quad = True # Helps for multiple gpu training 
+    # nohup python -m torch.distributed.launch --nproc_per_node 4 --master_port 9528 train_pgt.py --sync-bn > ./output_logs/gpu2360.log 2>&1 &
     
-    # c = 0.0001
-    # for i in range(300):
-    #     c *= 1.05
-    #     if i % 50 == 0:
-    #         print(c)
-    
-    # opt.dataset = 'coco' # 'real_world_drone'
+    # opt.dataset = 'coco' 
     opt.dataset = 'real_world_drone'
     # opt.sync_bn = True
     
