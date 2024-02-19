@@ -757,8 +757,8 @@ if __name__ == '__main__':
     parser.add_argument('--save_hybrid', action='store_true', help='If true, save hybrid attribution maps')
     parser.add_argument('--dist_reg_only', action='store_true', help='If true, only calculate distance regularization and not plausibility')
     parser.add_argument('--focus_coeff', type=float, default=0.5, help='focus_coeff')
-    parser.add_argument('--iou_coeff', type=float, default=0.05, help='iou_coeff')
-    parser.add_argument('--dist_coeff', type=float, default=100.0, help='dist_coeff')
+    parser.add_argument('--iou_coeff', type=float, default=0.075, help='iou_coeff')
+    parser.add_argument('--dist_coeff', type=float, default=150.0, help='dist_coeff')
     parser.add_argument('--pgt_coeff', type=float, default=0.1, help='pgt_coeff')
     ############################################################################
     # parser.add_argument('--seed', type=int, default=None, help='reproduce results')

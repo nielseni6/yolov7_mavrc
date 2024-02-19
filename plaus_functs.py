@@ -386,7 +386,7 @@ def get_plaus_loss(targets, attribution_map, opt, imgs=None, debug=False):
     distance_map = get_distance_grids(attribution_map, targets.to(imgs.device), imgs, opt.focus_coeff)
     dist_attr_pos = (1 - distance_map) * attribution_map
     dist_attr_pos = torch.mean(dist_attr_pos) 
-    dist_attr_neg = distance_map * attribution_map
+    dist_attr_neg = distance_map * attribution_map 
     dist_attr_neg = torch.mean(dist_attr_neg) 
     dist_reg = (dist_attr_pos) - (dist_attr_neg)
     if not opt.dist_reg_only:

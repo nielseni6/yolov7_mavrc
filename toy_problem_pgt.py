@@ -29,8 +29,11 @@ if __name__ == '__main__':
     print(opt) 
 
     targets = torch.tensor([[0, 1, 0.4, 0.6, 0.05, 0.07],
-                           [1, 0, 0.25, 0.2, 0.04, 0.05],])
-    attr = (gaussian_blur(torch.rand(2, 1, 100, 100)**10, 3)**4).requires_grad_(True)
+                           [1, 0, 0.25, 0.2, 0.04, 0.05],
+                           [2, 0, 0.8, 0.76, 0.05, 0.05],
+                           [2, 0, 0.8, 0.2, 0.05, 0.05],])
+    unique_classes = torch.unique(targets[:,0])
+    attr = (gaussian_blur(torch.rand(len(unique_classes), 1, 100, 100)**10, 3)**4).requires_grad_(True)
     plaus_loss, (plaus_score, dist_reg, plaus_reg,), distance_map = get_plaus_loss(targets, attribution_map=attr, opt=opt, debug=True)
 
     nsamples = 10
@@ -47,7 +50,7 @@ if __name__ == '__main__':
         if j == 0:
             ax.set_title('Attr Step 0')
         if j == len(attr) - 1:
-            ax.set_title(f'plaus_loss:\n{round(float(plaus_loss), 5)}')
+            ax.set_title(f'PGT Loss:\n{round(float(plaus_loss), 5)}')
         subfigimshow(attr[j], ax)  # Display the image
         ax.axis('off')
     for i in range(10):
@@ -69,12 +72,13 @@ if __name__ == '__main__':
             if j == 0:
                 ax.set_title(f'Attr Step {i + 1}')
             if j == len(attr) - 1:
-                ax.set_title(f'plaus_loss:\n{round(float(plaus_loss), 5)}')
+                ax.set_title(f'PGT Loss:\n{round(float(plaus_loss), 5)}')
             subfigimshow(attr[j], ax)  # Display the image
             ax.axis('off')
             # imshow(attr[j], save_path=f'figs/test_map{j}_{i}')
     # Save the full figure
-    fig.savefig('figs/toy_problem_pgt.png')
+    fig.savefig('figs/toy_problem_pgt.png', bbox_inches='tight')
+    fig.savefig('figs/toy_problem_pgt.pdf', bbox_inches='tight')
     plt.close(fig)  # Close the figure to free up memory
     print(f'plaus_loss: {plaus_loss}, plaus_score: {plaus_score}, dist_reg: {dist_reg}, plaus_reg: {plaus_reg}')
 
