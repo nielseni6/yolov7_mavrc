@@ -368,6 +368,13 @@ def get_distance_grids(attr, targets, imgs, focus_coeff=0.5, debug=False):
 
     return dist_grids
 
+def attr_reg(attribution_map, distance_map):
+
+    dist_attr = distance_map * attribution_map 
+    dist_attr = torch.mean(dist_attr) 
+
+    return dist_attr
+
 def get_plaus_loss(targets, attribution_map, opt, imgs=None, debug=False):
     if imgs is None:
         imgs = torch.zeros_like(attribution_map)
@@ -378,25 +385,51 @@ def get_plaus_loss(targets, attribution_map, opt, imgs=None, debug=False):
     distance_map = get_distance_grids(attribution_map, targets.to(imgs.device), imgs, opt.focus_coeff)
     
     # Positive regularization term for incentivizing pixels near the target to have high attribution
-    dist_attr_pos = (1 - distance_map) * attribution_map
-    dist_attr_pos = torch.mean(dist_attr_pos) 
-
+    dist_attr_pos = attr_reg(attribution_map, (1 - distance_map))
     # Negative regularization term for incentivizing pixels far from the target to have low attribution
-    dist_attr_neg = distance_map * attribution_map 
-    dist_attr_neg = torch.mean(dist_attr_neg) 
-
+    dist_attr_neg = attr_reg(attribution_map, distance_map)
     # Calculate plausibility regularization term
     dist_reg = (dist_attr_pos) - (dist_attr_neg)
-    if not opt.dist_reg_only:
-        plaus_reg = (plaus_score * opt.iou_coeff) + (dist_attr_pos * opt.dist_coeff) - (dist_attr_neg * opt.dist_coeff)
+
+    if opt.bbox_coeff != 0.0:
+        bbox_map = get_bbox_map(targets, attribution_map)
+        attr_bbox_pos = attr_reg(attribution_map, bbox_map)
+        attr_bbox_neg = attr_reg(attribution_map, (1 - bbox_map))
+        bbox_reg = (attr_bbox_pos) - (attr_bbox_neg)
     else:
-        plaus_reg = (dist_attr_pos * opt.dist_coeff) - (dist_attr_neg * opt.dist_coeff)
+        bbox_reg = 0.0
+
+    if not opt.dist_reg_only:
+        plaus_reg = (plaus_score * opt.iou_coeff) + (dist_reg * opt.dist_coeff) + (bbox_reg * opt.bbox_coeff)
+    else:
+        plaus_reg = (dist_reg * opt.dist_coeff) + (bbox_reg * opt.bbox_coeff)
     # Calculate plausibility loss
     plaus_loss = (1 - plaus_reg) * opt.pgt_coeff
     if not debug:
         return plaus_loss, (plaus_score, dist_reg, plaus_reg,)
     else:
         return plaus_loss, (plaus_score, dist_reg, plaus_reg,), distance_map
+
+def get_bbox_map(targets_out, attr, corners=False):
+    target_inds = targets_out[:, 0].int()
+    xyxy_batch = targets_out[:, 2:6]# * pre_gen_gains[out_num]
+    num_pixels = torch.tile(torch.tensor([attr.shape[2], attr.shape[3], attr.shape[2], attr.shape[3]], device=attr.device), (xyxy_batch.shape[0], 1))
+    # num_pixels = torch.tile(torch.tensor([1.0, 1.0, 1.0, 1.0], device=imgs.device), (xyxy_batch.shape[0], 1))
+    xyxy_corners = (corners_coords_batch(xyxy_batch) * num_pixels).int()
+    co = xyxy_corners
+    if corners:
+        co = targets_out[:, 2:6].int()
+    coords_map = torch.zeros_like(attr, dtype=torch.bool)
+    # rows = np.arange(co.shape[0])
+    x1, x2 = co[:,1], co[:,3]
+    y1, y2 = co[:,0], co[:,2]
+    
+    for ic in range(co.shape[0]): # potential for speedup here with torch indexing instead of for loop
+        coords_map[target_inds[ic], :,x1[ic]:x2[ic],y1[ic]:y2[ic]] = True
+    
+    bbox_map = coords_map.to(torch.float32)
+
+    return bbox_map
 
 ####################################################################################
 #### ALL FUNCTIONS BELOW ARE DEPRECIATED AND WILL BE REMOVED IN FUTURE VERSIONS ####

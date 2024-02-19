@@ -25,6 +25,7 @@ if __name__ == '__main__':
     parser.add_argument('--pgt_coeff', type=float, default=1.0, help='pgt_coeff')
     parser.add_argument('--alpha', type=float, default=1.0, help='alpha')
     parser.add_argument('--iou_coeff', type=float, default=0.075, help='iou_coeff')
+    parser.add_argument('--bbox_coeff', type=float, default=5.0, help='bbox_coeff')
     opt = parser.parse_args() 
     print(opt) 
 

@@ -31,7 +31,7 @@ from utils.plots import plot_one_box
 from numpy import random
 from plot_bboxes import plot_one_box_PIL_, plot_one_box_seg
 # from visualize_plaus_faith import plot_plaus_faith
-import visualize_plaus_faith
+import PythonScripts.yolov7_mavrc.archive.visualize_plaus_faith as visualize_plaus_faith
 from plaus_functs import generate_vanilla_grad, eval_plausibility
 from plot_functs import *
 from plot_functs import normalize_tensor

@@ -7,7 +7,7 @@ import yaml
 from PIL import Image
 from tqdm import tqdm
 
-from PythonScripts.yolov7_mavrc.archive.utils_yolo_conv import make_dirs
+from PythonScripts.yolov7_mavrc.archive.data_format.utils_yolo_conv import make_dirs
 
 
 def convert(file, zip=False):
