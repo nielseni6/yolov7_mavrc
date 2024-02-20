@@ -213,9 +213,9 @@ class Perturbation:
                                      grad_wrt=wrt, 
                                      norm=True, keepmean=True, 
                                      absolute=True, grayscale=True)
-            plaus_score = get_plaus_score(img_, 
-                                          targets_out = targets.clone().detach(), 
-                                          attr = attr_grad)
+            plaus_score = get_plaus_score(targets_out = targets.clone().detach(), 
+                                          attr = attr_grad,
+                                          imgs=img_,)
             self.plaus_score_total += plaus_score
             self.plaus_list[step_i] += plaus_score
             self.num_batches[step_i] += 1

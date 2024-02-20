@@ -431,13 +431,14 @@ if __name__ == '__main__':
 
     opt.entire_folder = True
     opt.loss_attr = True
+    opt.models_folder = 'weights/drone_eval_pgt_dist_reg'
     #check_requirements()
     
     # opt.eval_type = 'default'
     
     
-    # opt.atk_list = ['none',]
-    opt.atk_list = ['none', 'gaussian', 'pgd', 'fgsm']
+    opt.atk_list = ['none',]
+    # opt.atk_list = ['none', 'gaussian', 'pgd', 'fgsm'] # Evaluate adversarial robustness
     # atk_list = ['grad', 'gaussian', 'none',] # 'pgd', 'fgsm'
     atk_list = opt.atk_list
     

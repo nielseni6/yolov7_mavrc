@@ -384,6 +384,11 @@ def get_plaus_loss(targets, attribution_map, opt, imgs=None, debug=False):
     # Calculate distance regularization
     distance_map = get_distance_grids(attribution_map, targets.to(imgs.device), imgs, opt.focus_coeff)
     
+    if opt.dist_x_bbox:
+        bbox_map = get_bbox_map(targets, attribution_map).to(torch.bool)
+        distance_map[bbox_map] = 0.0
+        # distance_map = distance_map * (1 - bbox_map)
+        
     # Positive regularization term for incentivizing pixels near the target to have high attribution
     dist_attr_pos = attr_reg(attribution_map, (1 - distance_map))
     # Negative regularization term for incentivizing pixels far from the target to have low attribution
@@ -400,7 +405,7 @@ def get_plaus_loss(targets, attribution_map, opt, imgs=None, debug=False):
         bbox_reg = 0.0
 
     if not opt.dist_reg_only:
-        plaus_reg = (plaus_score * opt.iou_coeff) + (dist_reg * opt.dist_coeff) + (bbox_reg * opt.bbox_coeff)
+        plaus_reg = (plaus_score * opt.iou_coeff) + ((dist_reg * opt.dist_coeff) + (bbox_reg * opt.bbox_coeff) / (1 - plaus_score))
     else:
         plaus_reg = (dist_reg * opt.dist_coeff) + (bbox_reg * opt.bbox_coeff)
     # Calculate plausibility loss

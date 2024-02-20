@@ -733,11 +733,12 @@ if __name__ == '__main__':
     parser.add_argument('--seg_size_factor', type=float, default=1.0, help='Factor to reduce weight of segmentation maps that cover entire image')
     parser.add_argument('--save_hybrid', action='store_true', help='If true, save hybrid attribution maps')
     parser.add_argument('--dist_reg_only', action='store_true', help='If true, only calculate distance regularization and not plausibility')
-    parser.add_argument('--focus_coeff', type=float, default=0.5, help='focus_coeff')
+    parser.add_argument('--focus_coeff', type=float, default=0.25, help='focus_coeff')
     parser.add_argument('--iou_coeff', type=float, default=0.075, help='iou_coeff')
     parser.add_argument('--dist_coeff', type=float, default=100.0, help='dist_coeff')
     parser.add_argument('--pgt_coeff', type=float, default=0.1, help='pgt_coeff')
     parser.add_argument('--bbox_coeff', type=float, default=5.0, help='bbox_coeff')
+    parser.add_argument('--dist_x_bbox', type=bool, default=True, help='If true, zero all distance regularization values to 0 within bbox region')
     ############################################################################
     # parser.add_argument('--seed', type=int, default=None, help='reproduce results')
     opt = parser.parse_args() 
@@ -753,7 +754,11 @@ if __name__ == '__main__':
     # opt.loss_attr = True
     # opt.save_hybrid = True 
     # opt.out_num_attrs = [0,1,2,] # unused if opt.loss_attr == True 
-    # opt.dist_reg_only = True
+    opt.dist_reg_only = True
+    opt.focus_coeff = 0.25
+    opt.dist_coeff = 500.0
+    opt.bbox_coeff = 0.0
+
     opt.pgt_built_in = False 
     opt.out_num_attrs = [1,] 
     opt.pgt_coeff = 0.5 
@@ -766,7 +771,7 @@ if __name__ == '__main__':
     opt.batch_size = 64 
     # opt.batch_size = 96 
     opt.save_dir = str('runs/' + opt.name + '_lr' + str(opt.pgt_coeff)) 
-    opt.device = '5' 
+    opt.device = '4' 
     # opt.device = "0,1,2,3"  
     
     # lambda03 Console Commands
@@ -779,7 +784,7 @@ if __name__ == '__main__':
     # opt.resume = "runs/pgt/train-pgt-yolov7/pgt5_214/weights/last.pt"
     # opt.weights = 'runs/pgt/train-pgt-yolov7/pgt5_214/weights/last.pt'
     
-    # nohup python train_pgt.py > ./output_logs/gpu6.log 2>&1 &
+    # nohup python train_pgt.py > ./output_logs/gpu4_focus_0_25.log 2>&1 &
     # nohup python -m torch.distributed.launch --nproc_per_node 4 --master_port 9528 train_pgt.py --sync-bn > ./output_logs/gpu2360.log 2>&1 &
     
     # opt.dataset = 'coco' 
