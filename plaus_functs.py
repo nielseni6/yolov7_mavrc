@@ -394,13 +394,13 @@ def get_plaus_loss(targets, attribution_map, opt, imgs=None, debug=False):
     # Negative regularization term for incentivizing pixels far from the target to have low attribution
     dist_attr_neg = attr_reg(attribution_map, distance_map)
     # Calculate plausibility regularization term
-    dist_reg = (dist_attr_pos) - (dist_attr_neg)
+    dist_reg = ((dist_attr_pos) - (dist_attr_neg)) / torch.mean(attribution_map)
 
     if opt.bbox_coeff != 0.0:
         bbox_map = get_bbox_map(targets, attribution_map)
         attr_bbox_pos = attr_reg(attribution_map, bbox_map)
         attr_bbox_neg = attr_reg(attribution_map, (1 - bbox_map))
-        bbox_reg = (attr_bbox_pos) - (attr_bbox_neg)
+        bbox_reg = (attr_bbox_pos) - (attr_bbox_neg) / torch.mean(attribution_map)
     else:
         bbox_reg = 0.0
 
@@ -409,7 +409,10 @@ def get_plaus_loss(targets, attribution_map, opt, imgs=None, debug=False):
     else:
         plaus_reg = (dist_reg * opt.dist_coeff) + (bbox_reg * opt.bbox_coeff)
     # Calculate plausibility loss
-    plaus_loss = (1 - plaus_reg) * opt.pgt_coeff
+    if opt.dist_reg_only:
+        plaus_loss = - plaus_reg * opt.pgt_coeff
+    else:
+        plaus_loss = (1 - plaus_reg) * opt.pgt_coeff
     if not debug:
         return plaus_loss, (plaus_score, dist_reg, plaus_reg,)
     else:

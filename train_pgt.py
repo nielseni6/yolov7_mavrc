@@ -732,14 +732,17 @@ if __name__ == '__main__':
     parser.add_argument('--seg-labels', action='store_true', help='If true, calculate plaus score with segmentation maps rather than bbox')
     parser.add_argument('--seg_size_factor', type=float, default=1.0, help='Factor to reduce weight of segmentation maps that cover entire image')
     parser.add_argument('--save_hybrid', action='store_true', help='If true, save hybrid attribution maps')
+    parser.add_argument('--plaus_results', action='store_true', help='If true, calculate plausibility on clean, non-augmented images and labels')
+    parser.add_argument('--pgt_built_in', action='store_true', help='If true, use built-in plausibility gradient training')
+    ################################### PGT Loss Variables ###################################
     parser.add_argument('--dist_reg_only', action='store_true', help='If true, only calculate distance regularization and not plausibility')
-    parser.add_argument('--focus_coeff', type=float, default=0.25, help='focus_coeff')
+    parser.add_argument('--focus_coeff', type=float, default=0.2, help='focus_coeff')
     parser.add_argument('--iou_coeff', type=float, default=0.075, help='iou_coeff')
-    parser.add_argument('--dist_coeff', type=float, default=100.0, help='dist_coeff')
-    parser.add_argument('--pgt_coeff', type=float, default=0.1, help='pgt_coeff')
-    parser.add_argument('--bbox_coeff', type=float, default=5.0, help='bbox_coeff')
+    parser.add_argument('--dist_coeff', type=float, default=5.0, help='dist_coeff')
+    parser.add_argument('--pgt_coeff', type=float, default=0.5, help='pgt_coeff')
+    parser.add_argument('--bbox_coeff', type=float, default=0.1, help='bbox_coeff')
     parser.add_argument('--dist_x_bbox', type=bool, default=False, help='If true, zero all distance regularization values to 0 within bbox region')
-    ############################################################################
+    ##########################################################################################
     # parser.add_argument('--seed', type=int, default=None, help='reproduce results')
     opt = parser.parse_args() 
     print(opt) 
@@ -756,7 +759,7 @@ if __name__ == '__main__':
     # opt.out_num_attrs = [0,1,2,] # unused if opt.loss_attr == True 
     opt.dist_reg_only = True
     opt.focus_coeff = 0.15
-    opt.dist_coeff = 5000.0
+    opt.dist_coeff = 1.0
     opt.bbox_coeff = 0.0
 
     opt.pgt_built_in = False 
