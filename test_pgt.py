@@ -422,23 +422,25 @@ if __name__ == '__main__':
     parser.add_argument('--eval_type', type=str, default='robust', help='robust, evalattai, default')
     parser.add_argument('--desired_snr', type=float, default=25.0, help='desired snr')
     parser.add_argument('--atk_list', nargs='+', type=str, default=['none', 'gaussian', 'fgsm', 'pgd',], help='atk list')
-    parser.add_argument('--models_folder', type=str, default='weights/eval_coco', help='models folder')
+    parser.add_argument('--weights_dir', type=str, default='weights/eval_coco', help='models folder')
     parser.add_argument('--entire_folder', action='store_true', help='entire folder')
     # parser.add_argument('--allow_val_change', type=bool, default=True, help='allow val change')
     # parser.add_argument('--debug', action='store_true', help='debug mode for visualizing figures')
     parser.add_argument('--loss_attr', action='store_true', help='loss attr')
+    parser.add_argument('--out_num_attrs', nargs='+', type=int, default=[1,], help='Default output for generating attribution maps')
     opt = parser.parse_args()
 
     opt.entire_folder = True
-    opt.loss_attr = True
-    opt.models_folder = 'weights/drone_eval_pgt_dist_reg'
+    # opt.loss_attr = True
+    opt.weights_dir = 'weights/drone_eval_pgt_dist_reg'
     #check_requirements()
     
-    # opt.eval_type = 'default'
-    
-    
+    opt.eval_type = 'default'
     opt.atk_list = ['none',]
+    
+    # opt.eval_type = 'robust'
     # opt.atk_list = ['none', 'gaussian', 'pgd', 'fgsm'] # Evaluate adversarial robustness
+    
     # atk_list = ['grad', 'gaussian', 'none',] # 'pgd', 'fgsm'
     atk_list = opt.atk_list
     
@@ -453,7 +455,7 @@ if __name__ == '__main__':
     opt.username = username
     
     opt.half_precision = True
-    opt.device = '7'
+    opt.device = '5'
     device_num = opt.device
     
     
@@ -478,24 +480,24 @@ if __name__ == '__main__':
     
     ########## CHANGE THIS TO CHANGE DATASET ##########
     opt.dataset = 'real_world_drone'
-    weights_dir = 'weights/drone_eval'
+    # opt.weights_dir = 'weights/drone_eval'
     opt.batch_size = 16
     ###################################################
     # opt.dataset = 'coco'
-    # weights_dir = 'weights/coco_eval'
+    # opt.weights_dir = 'weights/coco_eval'
     # opt.batch_size = 8
     ###################################################
-    opt.models_folder = weights_dir
+    opt.models_folder = opt.weights_dir
     initname = opt.name
     # if 'pgt' in opt.weights:
     #     opt.name += 'pgt'
-    weights_list = os.listdir(weights_dir)
-    opt.weights = f'{weights_dir}/{weights_list[0]}'
+    weights_list = os.listdir(opt.weights_dir)
+    opt.weights = f'{opt.weights_dir}/{weights_list[0]}'
     ###################################################
     print(opt)
     
     for weight_i in range(len(weights_list)):
-        opt.weights = f'{weights_dir}/{weights_list[weight_i]}'
+        opt.weights = f'{opt.weights_dir}/{weights_list[weight_i]}'
         
         opt.name = initname + weights_list[weight_i] # weights_dir.split('/')[-1]
         # wandb.config.update(opt)

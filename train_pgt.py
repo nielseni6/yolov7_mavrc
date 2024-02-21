@@ -738,7 +738,7 @@ if __name__ == '__main__':
     parser.add_argument('--dist_coeff', type=float, default=100.0, help='dist_coeff')
     parser.add_argument('--pgt_coeff', type=float, default=0.1, help='pgt_coeff')
     parser.add_argument('--bbox_coeff', type=float, default=5.0, help='bbox_coeff')
-    parser.add_argument('--dist_x_bbox', type=bool, default=True, help='If true, zero all distance regularization values to 0 within bbox region')
+    parser.add_argument('--dist_x_bbox', type=bool, default=False, help='If true, zero all distance regularization values to 0 within bbox region')
     ############################################################################
     # parser.add_argument('--seed', type=int, default=None, help='reproduce results')
     opt = parser.parse_args() 
@@ -755,13 +755,13 @@ if __name__ == '__main__':
     # opt.save_hybrid = True 
     # opt.out_num_attrs = [0,1,2,] # unused if opt.loss_attr == True 
     opt.dist_reg_only = True
-    opt.focus_coeff = 0.25
-    opt.dist_coeff = 500.0
+    opt.focus_coeff = 0.15
+    opt.dist_coeff = 5000.0
     opt.bbox_coeff = 0.0
 
     opt.pgt_built_in = False 
     opt.out_num_attrs = [1,] 
-    opt.pgt_coeff = 0.5 
+    opt.pgt_coeff = 1.0 
     opt.pgt_lr_decay = 1.0 
     opt.pgt_lr_decay_step = 1000 # 200 
     opt.epochs = 300 
