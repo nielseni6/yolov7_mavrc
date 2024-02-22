@@ -1724,7 +1724,7 @@ class ComputeLossAuxOTA:
 ############################################ BELOW IS PGT LOSS ############################################
 ###########################################################################################################
 
-from plaus_functs import get_plaus_score, corners_coords_batch # generate_vanilla_grad, corners_coords
+from plaus_functs import get_plaus_score, corners_coords_batch, get_plaus_loss # generate_vanilla_grad, corners_coords
 from plaus_functs import get_gradient
 import numpy as np
 from plot_functs import imshow
@@ -1757,7 +1757,7 @@ class ComputePGTLossOTA:
         
         self.n_nans = 0
 
-    def __call__(self, p, targets, imgs, attr=None, pgt_coeff = 1.0, metric='CIoU'):  # predictions, targets, model   
+    def __call__(self, p, targets, opt, imgs, attr=None, pgt_coeff = 1.0, metric='CIoU',):  # predictions, targets, model   
         device = targets.device
         targets_ = targets.clone()
         lcls, lbox, lobj = torch.zeros(1, device=device), torch.zeros(1, device=device), torch.zeros(1, device=device)
@@ -1826,14 +1826,16 @@ class ComputePGTLossOTA:
                 attribution_map = get_gradient(imgs, grad_wrt = lbox + lobj + lcls)
             else:
                 attribution_map = attr
-            plaus_score = get_plaus_score(imgs, targets_out = targets_, attr = attribution_map)
+            # Compute plausibility loss
+            plaus_loss, (plaus_score, dist_reg, plaus_reg,) = get_plaus_loss(targets_, attribution_map, opt, imgs)
+            # plaus_score = get_plaus_score(imgs, targets_out = targets_, attr = attribution_map)
             if torch.isnan(plaus_score).any():
                 self.n_nans += 1
                 plaus_score = torch.tensor(0.0, device=device)
                 print(f"plaus_score is nan, number of nans: {self.n_nans}")
             self.plaus_score = plaus_score
             # if pgt_coeff != 0.0:
-            lplaus = ((1 - plaus_score) * pgt_coeff).unsqueeze(0)
+            lplaus = plaus_loss.unsqueeze(0) #((1 - plaus_score) * pgt_coeff).unsqueeze(0)
         else:
             lplaus = torch.tensor([0.0], device=device)
         ####################################################################

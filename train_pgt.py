@@ -422,7 +422,7 @@ def train(hyp, opt, device, tb_writer=None):
                 
                 # Get predicted labels for generating predicted attribution maps, 
                 # only needed for loss attributions since they are target specific
-                if (opt.pgt_coeff != 0.0) and opt.loss_attr:
+                if (opt.pgt_coeff != 0.0) and opt.loss_attr and opt.pred_targets:
                     ema.update_attr(model, include=['yaml', 'nc', 'hyp', 'gr', 'names', 'stride', 'class_weights'])
                     det_out, out_ = get_detections(ema.ema, imgs.clone().detach())
                     pred_labels = get_labels(det_out, imgs, targets.clone(), opt)
@@ -438,7 +438,7 @@ def train(hyp, opt, device, tb_writer=None):
                 if 'loss_ota' not in hyp or hyp['loss_ota'] == 1:
                     print('Using loss_ota') if i == 0 else None
                     if opt.pgt_built_in:
-                        loss, loss_items = compute_pgt_loss(pred, targets, imgs, attr, pgt_coeff = opt.pgt_coeff, metric=opt.loss_metric)  # loss scaled by batch_size
+                        loss, loss_items = compute_pgt_loss(pred, targets, opt, imgs, attr, pgt_coeff = opt.pgt_coeff, metric=opt.loss_metric)  # loss scaled by batch_size
                     else:
                         loss, loss_items = compute_loss_ota(pred, targets, imgs, metric=opt.loss_metric)  # loss scaled by batch_size
                 else:
@@ -736,12 +736,13 @@ if __name__ == '__main__':
     parser.add_argument('--pgt_built_in', action='store_true', help='If true, use built-in plausibility gradient training')
     ################################### PGT Loss Variables ###################################
     parser.add_argument('--dist_reg_only', action='store_true', help='If true, only calculate distance regularization and not plausibility')
-    parser.add_argument('--focus_coeff', type=float, default=0.2, help='focus_coeff')
+    parser.add_argument('--focus_coeff', type=float, default=0.25, help='focus_coeff')
     parser.add_argument('--iou_coeff', type=float, default=0.075, help='iou_coeff')
-    parser.add_argument('--dist_coeff', type=float, default=5.0, help='dist_coeff')
-    parser.add_argument('--pgt_coeff', type=float, default=0.5, help='pgt_coeff')
-    parser.add_argument('--bbox_coeff', type=float, default=0.1, help='bbox_coeff')
-    parser.add_argument('--dist_x_bbox', type=bool, default=False, help='If true, zero all distance regularization values to 0 within bbox region')
+    parser.add_argument('--dist_coeff', type=float, default=1.0, help='dist_coeff')
+    parser.add_argument('--pgt_coeff', type=float, default=1.0, help='pgt_coeff')
+    parser.add_argument('--bbox_coeff', type=float, default=0.0, help='bbox_coeff')
+    parser.add_argument('--dist_x_bbox', type=bool, default=True, help='If true, zero all distance regularization values to 0 within bbox region')
+    parser.add_argument('--pred_targets', type=bool, default=False, help='If true, use predicted targets for plausibility loss')
     ##########################################################################################
     # parser.add_argument('--seed', type=int, default=None, help='reproduce results')
     opt = parser.parse_args() 
@@ -754,17 +755,17 @@ if __name__ == '__main__':
     opt.k_fold_sepfolders = True 
     
     # opt.sweep = True 
-    # opt.loss_attr = True
+    opt.loss_attr = True
     # opt.save_hybrid = True 
     # opt.out_num_attrs = [0,1,2,] # unused if opt.loss_attr == True 
     opt.dist_reg_only = True
-    opt.focus_coeff = 0.15
+    opt.focus_coeff = 0.25
     opt.dist_coeff = 1.0
     opt.bbox_coeff = 0.0
 
-    opt.pgt_built_in = False 
+    opt.pgt_built_in = True 
     opt.out_num_attrs = [1,] 
-    opt.pgt_coeff = 1.0 
+    opt.pgt_coeff = 0.2 
     opt.pgt_lr_decay = 1.0 
     opt.pgt_lr_decay_step = 1000 # 200 
     opt.epochs = 300 

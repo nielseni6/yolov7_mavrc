@@ -334,7 +334,7 @@ def get_distance_grids(attr, targets, imgs, focus_coeff=0.5, debug=False):
         
         if len(rows) != 0: 
             # Create a tensor for the target coordinates
-            xy = torch.tensor(rows[:,2:4]) # y, x
+            xy = rows[:,2:4].clone().detach() # y, x
             # Flip the x and y coordinates and scale them to the image size
             xy[:, 0], xy[:, 1] = xy[:, 1] * width, xy[:, 0] * height # y, x to x, y
             xy_center = xy.unsqueeze(1).unsqueeze(1) 
@@ -390,29 +390,29 @@ def get_plaus_loss(targets, attribution_map, opt, imgs=None, debug=False):
         # distance_map = distance_map * (1 - bbox_map)
         
     # Positive regularization term for incentivizing pixels near the target to have high attribution
-    dist_attr_pos = attr_reg(attribution_map, (1 - distance_map))
+    dist_attr_pos = attr_reg(attribution_map, (1.0 - distance_map))
     # Negative regularization term for incentivizing pixels far from the target to have low attribution
     dist_attr_neg = attr_reg(attribution_map, distance_map)
     # Calculate plausibility regularization term
-    dist_reg = ((dist_attr_pos) - (dist_attr_neg)) / torch.mean(attribution_map)
+    dist_reg = ((dist_attr_pos / torch.mean(attribution_map)) - (dist_attr_neg / torch.mean(attribution_map))) 
 
     if opt.bbox_coeff != 0.0:
         bbox_map = get_bbox_map(targets, attribution_map)
         attr_bbox_pos = attr_reg(attribution_map, bbox_map)
-        attr_bbox_neg = attr_reg(attribution_map, (1 - bbox_map))
-        bbox_reg = (attr_bbox_pos) - (attr_bbox_neg) / torch.mean(attribution_map)
+        attr_bbox_neg = attr_reg(attribution_map, (1.0 - bbox_map))
+        bbox_reg = (attr_bbox_pos / torch.mean(attribution_map)) - (attr_bbox_neg / torch.mean(attribution_map))
     else:
         bbox_reg = 0.0
 
     if not opt.dist_reg_only:
-        plaus_reg = (plaus_score * opt.iou_coeff) + ((dist_reg * opt.dist_coeff) + (bbox_reg * opt.bbox_coeff) / (1 - plaus_score))
+        plaus_reg = (plaus_score * opt.iou_coeff) + ((dist_reg * opt.dist_coeff) + (bbox_reg * opt.bbox_coeff))
     else:
-        plaus_reg = (dist_reg * opt.dist_coeff) + (bbox_reg * opt.bbox_coeff)
+        plaus_reg = ((1.0 + dist_reg) / 2.0)
     # Calculate plausibility loss
     if opt.dist_reg_only:
-        plaus_loss = - plaus_reg * opt.pgt_coeff
+        plaus_loss = ((1.0 - plaus_reg) ** 2.0) * opt.pgt_coeff
     else:
-        plaus_loss = (1 - plaus_reg) * opt.pgt_coeff
+        plaus_loss = - plaus_reg * opt.pgt_coeff
     if not debug:
         return plaus_loss, (plaus_score, dist_reg, plaus_reg,)
     else:
