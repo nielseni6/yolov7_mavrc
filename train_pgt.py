@@ -759,13 +759,13 @@ if __name__ == '__main__':
     # opt.save_hybrid = True 
     # opt.out_num_attrs = [0,1,2,] # unused if opt.loss_attr == True 
     opt.dist_reg_only = True
-    opt.focus_coeff = 0.25
+    opt.focus_coeff = 0.2
     opt.dist_coeff = 1.0
     opt.bbox_coeff = 0.0
 
     opt.pgt_built_in = True 
     opt.out_num_attrs = [1,] 
-    opt.pgt_coeff = 0.2 
+    opt.pgt_coeff = 0.05 
     opt.pgt_lr_decay = 1.0 
     opt.pgt_lr_decay_step = 1000 # 200 
     opt.epochs = 300 
@@ -775,7 +775,7 @@ if __name__ == '__main__':
     opt.batch_size = 64 
     # opt.batch_size = 96 
     opt.save_dir = str('runs/' + opt.name + '_lr' + str(opt.pgt_coeff)) 
-    opt.device = '4' 
+    opt.device = '1' 
     # opt.device = "0,1,2,3"  
     
     # lambda03 Console Commands

@@ -410,7 +410,7 @@ def get_plaus_loss(targets, attribution_map, opt, imgs=None, debug=False):
         plaus_reg = ((1.0 + dist_reg) / 2.0)
     # Calculate plausibility loss
     if opt.dist_reg_only:
-        plaus_loss = ((1.0 - plaus_reg) ** 2.0) * opt.pgt_coeff
+        plaus_loss = ((1.0 - plaus_reg)) * opt.pgt_coeff
     else:
         plaus_loss = - plaus_reg * opt.pgt_coeff
     if not debug:

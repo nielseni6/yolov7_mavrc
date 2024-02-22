@@ -1823,7 +1823,7 @@ class ComputePGTLossOTA:
         ####################### PGT CODE ADDED BELOW #######################
         if pgt_coeff != 0.0:
             if attr == None:
-                attribution_map = get_gradient(imgs, grad_wrt = lbox + lobj + lcls)
+                attribution_map = get_gradient(imgs, grad_wrt = lcls)
             else:
                 attribution_map = attr
             # Compute plausibility loss
