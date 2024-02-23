@@ -459,47 +459,62 @@ def train(hyp, opt, device, tb_writer=None):
                     plaus_score_total_train += compute_pgt_loss.plaus_score #(1 - (loss_items[3] / opt.pgt_coeff))
                     num_batches += 1
                 
-                ##########################################################  
-                # Compute plausibility loss
-                ##########################################################
+            ##########################################################  
+            # Compute plausibility loss
+            ##########################################################
+            
+            if not opt.pgt_built_in:
+                if opt.loss_attr:
+                    loss_attr = compute_loss_ota
+                    opt.out_num_attrs = [None,]
+                else:
+                    loss_attr = None
                 
-                if not opt.pgt_built_in:
-                    if opt.loss_attr:
-                        loss_attr = compute_loss_ota
-                        opt.out_num_attrs = [None,]
-                    else:
-                        loss_attr = None
-                    
-                    for out_num_attr in opt.out_num_attrs:
-                        t0_pgt = time.time()
-                        if not (opt.pgt_coeff == 0):
-                            # Get attribution maps
-                            attribution_map = generate_vanilla_grad(model, imgs, loss_func=loss_attr, 
-                                                                    targets=pred_labels, metric=opt.loss_metric, 
-                                                                    out_num = out_num_attr, device=device) # mlc = max label class
-                            
-                            # Compute plausibility loss
-                            plaus_loss, (plaus_score, dist_reg, plaus_reg,) = get_plaus_loss(targets, attribution_map, opt, imgs)
-                            
-                            # Add plausibility loss to total loss
-                            loss = loss + (plaus_loss)
-                            
-                            # Log plausibility loss and score metrics for evaluation
-                            ploss = (float(plaus_loss) / float(len(opt.out_num_attrs)))
-                            pscore = (float(plaus_score) / float(len(opt.out_num_attrs)))
-                            plaus_loss_total_train += ploss if not math.isnan(ploss) else 0.0
-                            plaus_score_total_train += pscore if not math.isnan(pscore) else 0.0
-                            dist_reg_total_train += dist_reg
-                        else:
-                            plaus_loss, plaus_score = torch.tensor(0.0), torch.tensor(0.0)
+                lplaus = torch.zeros_like(loss, device=device)
+                for out_num_attr in opt.out_num_attrs:
+                    t0_pgt = time.time()
+                    if not (opt.pgt_coeff == 0):
+                        # Get attribution maps
+
+                        attribution_map = generate_vanilla_grad(model, imgs, loss_func=loss_attr, 
+                                                                targets=pred_labels, metric=opt.loss_metric, 
+                                                                out_num = out_num_attr, device=device) # mlc = max label class
+                        # attribution_map = get_gradient(imgs, grad_wrt = loss)
+                        # optimizer.zero_grad()
+                        # Compute plausibility loss
+                        plaus_loss, (plaus_score, dist_reg, plaus_reg,) = get_plaus_loss(targets, attribution_map, opt, imgs)
                         
-                        t2_pgt = time.time()
-                # model.zero_grad()
-                ##########################################################
+                        # Add plausibility loss to total loss
+                        loss += (plaus_loss.unsqueeze(0) * batch_size)
+                        
+                        lplaus += (plaus_loss.unsqueeze(0) * batch_size)
+                        
+                        # Log plausibility loss and score metrics for evaluation
+                        ploss = (float(plaus_loss) / float(len(opt.out_num_attrs)))
+                        pscore = (float(plaus_score) / float(len(opt.out_num_attrs)))
+                        plaus_loss_total_train += ploss if not math.isnan(ploss) else 0.0
+                        plaus_score_total_train += pscore if not math.isnan(pscore) else 0.0
+                        dist_reg_total_train += dist_reg
+                    else:
+                        plaus_loss, plaus_score = torch.tensor(0.0), torch.tensor(0.0)
+                    
+                    t2_pgt = time.time()
+                
+                # plaus_loss.backward(retain_graph=True)
+                # optimizer.step()
+                # optimizer.zero_grad()
+                
+                # lplaus = lplaus.clamp(min=0,max=2)
+                # scaler.scale(lplaus).backward()#(retain_graph=True)
+                # if ni % accumulate == 0:
+                #     scaler.step(optimizer)  # optimizer.step
+                #     optimizer.zero_grad()
+            # model.zero_grad()
+            ##########################################################
 
             # Backward
-            scaler.scale(loss).backward()
-            t3_pgt = time.time()
+            scaler.scale(loss).backward() 
+            t3_pgt = time.time() 
             
             # Optimize
             if ni % accumulate == 0:
@@ -751,7 +766,7 @@ if __name__ == '__main__':
     opt.plaus_results = False 
     
     opt.k_fold = 10 
-    opt.k_fold_num = 1 
+    opt.k_fold_num = 0 
     opt.k_fold_sepfolders = True 
     
     # opt.sweep = True 
@@ -759,13 +774,13 @@ if __name__ == '__main__':
     # opt.save_hybrid = True 
     # opt.out_num_attrs = [0,1,2,] # unused if opt.loss_attr == True 
     opt.dist_reg_only = True
-    opt.focus_coeff = 0.2
+    opt.focus_coeff = 0.5
     opt.dist_coeff = 1.0
     opt.bbox_coeff = 0.0
 
-    opt.pgt_built_in = True 
+    # opt.pgt_built_in = True 
     opt.out_num_attrs = [1,] 
-    opt.pgt_coeff = 0.05 
+    opt.pgt_coeff = 0.1 
     opt.pgt_lr_decay = 1.0 
     opt.pgt_lr_decay_step = 1000 # 200 
     opt.epochs = 300 
@@ -775,7 +790,7 @@ if __name__ == '__main__':
     opt.batch_size = 64 
     # opt.batch_size = 96 
     opt.save_dir = str('runs/' + opt.name + '_lr' + str(opt.pgt_coeff)) 
-    opt.device = '1' 
+    opt.device = '7' 
     # opt.device = "0,1,2,3"  
     
     # lambda03 Console Commands

@@ -3,6 +3,7 @@ import numpy as np
 from plot_functs import * 
 from plot_functs import normalize_tensor
 import math   
+from plaus_functs import normalize_batch
 
 def generate_vanilla_grad(model, input_tensor, loss_func = None, 
                           targets=None, metric=None, out_num = 1, 
@@ -56,20 +57,27 @@ def generate_vanilla_grad(model, input_tensor, loss_func = None,
                                         retain_graph=True, create_graph=True)
 
     # Convert gradients to numpy array
-    gradients = gradients[0].detach().cpu().numpy()
+    attribution_map = gradients[0].detach()#.cpu().numpy()
 
+    # if abs:
+    #     # Take absolute values of gradients
+    #     gradients = np.absolute(gradients)
+    # if grayscale:
+    #     # Sum across color channels
+    #     attribution_map = np.sum(gradients, axis=1, keepdims=True)
+    # if norm:
+    #     # Normalize attribution map
+    #     attribution_map /= np.max(attribution_map)
+    # else:
+    #     # Sum across color channels
+    #     attribution_map = gradients
     if abs:
-        # Take absolute values of gradients
-        gradients = np.absolute(gradients)
-    if grayscale:
-        # Sum across color channels
-        attribution_map = np.sum(gradients, axis=1, keepdims=True)
+        attribution_map = torch.abs(attribution_map) # attribution_map ** 2 # Take absolute values of gradients
+    if grayscale: # Convert to grayscale, saves vram and computation time for plaus_eval
+        attribution_map = torch.sum(attribution_map, 1, keepdim=True)
     if norm:
-        # Normalize attribution map
-        attribution_map /= np.max(attribution_map)
-    else:
-        # Sum across color channels
-        attribution_map = gradients
+        attribution_map = normalize_batch(attribution_map) # Normalize attribution maps per image in batch
+
 
     # Set model back to original mode
     if not train_mode:

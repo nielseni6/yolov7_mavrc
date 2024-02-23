@@ -1823,7 +1823,8 @@ class ComputePGTLossOTA:
         ####################### PGT CODE ADDED BELOW #######################
         if pgt_coeff != 0.0:
             if attr == None:
-                attribution_map = get_gradient(imgs, grad_wrt = lcls)
+                attribution_map = get_gradient(imgs, grad_wrt = lcls).detach().cpu().numpy()
+                attribution_map = torch.tensor(attribution_map, dtype=torch.float32, device=device)
             else:
                 attribution_map = attr
             # Compute plausibility loss

@@ -24,7 +24,7 @@ def get_gradient(img, grad_wrt, norm=False, absolute=True, grayscale=True, keepm
         torch.Tensor: The computed attribution map.
 
     """
-    grad_wrt_outputs = torch.ones_like(grad_wrt)
+    grad_wrt_outputs = torch.ones_like(grad_wrt).requires_grad_(True)
     gradients = torch.autograd.grad(grad_wrt, img, 
                                     grad_outputs=grad_wrt_outputs, 
                                     retain_graph=True,
@@ -32,7 +32,7 @@ def get_gradient(img, grad_wrt, norm=False, absolute=True, grayscale=True, keepm
                                     )
     attribution_map = gradients[0]
     if absolute:
-        attribution_map = torch.abs(attribution_map) # Take absolute values of gradients
+        attribution_map = torch.abs(attribution_map) # attribution_map ** 2 # Take absolute values of gradients
     if grayscale: # Convert to grayscale, saves vram and computation time for plaus_eval
         attribution_map = torch.sum(attribution_map, 1, keepdim=True)
     if norm:
@@ -314,8 +314,8 @@ def get_distance_grids(attr, targets, imgs, focus_coeff=0.5, debug=False):
     # Assign the height and width of the input tensor to variables
     height, width = attr.shape[-1], attr.shape[-2]
     
-    attr = torch.abs(attr) # Take absolute values of gradients
-    attr = normalize_batch(attr) # Normalize attribution maps per image in batch
+    # attr = torch.abs(attr) # Take absolute values of gradients
+    # attr = normalize_batch(attr) # Normalize attribution maps per image in batch
 
     # Create a grid of indices
     xx, yy = torch.stack(torch.meshgrid(torch.arange(height), torch.arange(width))).to(attr.device)
@@ -337,7 +337,7 @@ def get_distance_grids(attr, targets, imgs, focus_coeff=0.5, debug=False):
             xy = rows[:,2:4].clone().detach() # y, x
             # Flip the x and y coordinates and scale them to the image size
             xy[:, 0], xy[:, 1] = xy[:, 1] * width, xy[:, 0] * height # y, x to x, y
-            xy_center = xy.unsqueeze(1).unsqueeze(1) 
+            xy_center = xy.unsqueeze(1).unsqueeze(1)#.requires_grad_(True) 
             
             # Compute the Euclidean distance from each pixel to the target coordinates
             dists = torch.norm(idx_batch_grid[j].expand(len(xy_center), -1, -1, -1) - xy_center, dim=-1)
@@ -371,7 +371,7 @@ def get_distance_grids(attr, targets, imgs, focus_coeff=0.5, debug=False):
 def attr_reg(attribution_map, distance_map):
 
     dist_attr = distance_map * attribution_map 
-    dist_attr = torch.mean(dist_attr) 
+    dist_attr = torch.mean(dist_attr)#, dim=(1, 2, 3)) 
 
     return dist_attr
 
@@ -394,25 +394,34 @@ def get_plaus_loss(targets, attribution_map, opt, imgs=None, debug=False):
     # Negative regularization term for incentivizing pixels far from the target to have low attribution
     dist_attr_neg = attr_reg(attribution_map, distance_map)
     # Calculate plausibility regularization term
+    # dist_reg = dist_attr_pos - dist_attr_neg
     dist_reg = ((dist_attr_pos / torch.mean(attribution_map)) - (dist_attr_neg / torch.mean(attribution_map))) 
+    # dist_reg = torch.mean((dist_attr_pos / torch.mean(attribution_map, dim=(1, 2, 3))) - (dist_attr_neg / torch.mean(attribution_map, dim=(1, 2, 3)))) 
+    # dist_reg = (torch.mean(torch.exp((dist_attr_pos / torch.mean(attribution_map, dim=(1, 2, 3)))) + \
+    #                             torch.exp(1 - (dist_attr_neg / torch.mean(attribution_map, dim=(1, 2, 3)))))) \
+    #                             / 2.5
 
     if opt.bbox_coeff != 0.0:
         bbox_map = get_bbox_map(targets, attribution_map)
         attr_bbox_pos = attr_reg(attribution_map, bbox_map)
         attr_bbox_neg = attr_reg(attribution_map, (1.0 - bbox_map))
-        bbox_reg = (attr_bbox_pos / torch.mean(attribution_map)) - (attr_bbox_neg / torch.mean(attribution_map))
+        bbox_reg = attr_bbox_pos - attr_bbox_neg
+        # bbox_reg = (attr_bbox_pos / torch.mean(attribution_map)) - (attr_bbox_neg / torch.mean(attribution_map))
     else:
         bbox_reg = 0.0
 
     if not opt.dist_reg_only:
-        plaus_reg = (plaus_score * opt.iou_coeff) + ((dist_reg * opt.dist_coeff) + (bbox_reg * opt.bbox_coeff))
+        plaus_reg = (plaus_score * opt.iou_coeff) + \
+                    (((dist_reg * opt.dist_coeff) + (bbox_reg * opt.bbox_coeff))\
+                    # ((((((1.0 + dist_reg) / 2.0) - 1.0) * opt.dist_coeff) + ((((1.0 + bbox_reg) / 2.0) - 1.0) * opt.bbox_coeff))\
+                    # / (plaus_score) \
+                    ) - (1.0 * opt.iou_coeff)
     else:
-        plaus_reg = ((1.0 + dist_reg) / 2.0)
+        plaus_reg = ((1.0 + dist_reg) / 2.0) - 1.0
+        # plaus_reg = dist_reg 
     # Calculate plausibility loss
-    if opt.dist_reg_only:
-        plaus_loss = ((1.0 - plaus_reg)) * opt.pgt_coeff
-    else:
-        plaus_loss = - plaus_reg * opt.pgt_coeff
+    # plaus_loss = (1 - plaus_reg) * opt.pgt_coeff
+    plaus_loss = (- plaus_reg) * opt.pgt_coeff
     if not debug:
         return plaus_loss, (plaus_score, dist_reg, plaus_reg,)
     else:
