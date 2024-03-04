@@ -29,8 +29,8 @@ def generate_vanilla_grad(model, input_tensor, loss_func = None,
     if not train_mode:
         model.train()
 
-    # Set requires_grad attribute of tensor. Important for computing gradients
-    input_tensor.requires_grad = True
+    # # Set requires_grad attribute of tensor. Important for computing gradients
+    # input_tensor.requires_grad = True
     
     # Zero gradients
     model.zero_grad()
@@ -42,11 +42,17 @@ def generate_vanilla_grad(model, input_tensor, loss_func = None,
     # train_out[0] = torch.Size([4, 3, 160, 160, 7]) HxWx(#anchorx4) reg (location and scaling)
     # train_out[2] = torch.Size([4, 3, 40, 40, 7]) HxWx(#anchorx1) obj (objectness score or confidence)
     
+    if len(train_out) > 3:#use_pgt:
+        pred, attr = train_out[:3], train_out[3][...,0]
+    else:
+        pred = train_out
+        attr = None
+
     if loss_func is None:
-        grad_wrt = train_out[out_num]
+        grad_wrt = pred[out_num]
         grad_wrt_outputs = torch.ones_like(grad_wrt)
     else:
-        loss, loss_items = loss_func(train_out, targets.to(device), input_tensor, metric=metric)  # loss scaled by batch_size
+        loss, loss_items = loss_func(pred, targets.to(device), input_tensor, metric=metric)  # loss scaled by batch_size
         grad_wrt = loss
         grad_wrt_outputs = None
         # loss.backward(retain_graph=True, create_graph=True)
@@ -54,10 +60,12 @@ def generate_vanilla_grad(model, input_tensor, loss_func = None,
     
     gradients = torch.autograd.grad(grad_wrt, input_tensor, 
                                         grad_outputs=grad_wrt_outputs, 
-                                        retain_graph=True, create_graph=True)
+                                        retain_graph=True, 
+                                        create_graph=False,
+                                        )
 
     # Convert gradients to numpy array
-    attribution_map = gradients[0].detach()#.cpu().numpy()
+    attribution_map = gradients[0]#.detach()#.cpu().numpy()
 
     # if abs:
     #     # Take absolute values of gradients
@@ -83,7 +91,7 @@ def generate_vanilla_grad(model, input_tensor, loss_func = None,
     if not train_mode:
         model.eval()
     
-    return torch.tensor(attribution_map, dtype=torch.float32, device=device)
+    return attribution_map.to(torch.float32).to(device)
 
 
 def eval_plausibility(imgs, targets, attr_tensor, device, debug=False):

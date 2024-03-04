@@ -431,8 +431,9 @@ if __name__ == '__main__':
     opt = parser.parse_args()
 
     opt.entire_folder = True
-    # opt.loss_attr = True
-    opt.weights_dir = 'weights/drone_eval_pgt_dist_reg'
+    opt.loss_attr = True
+    # opt.weights_dir = 'weights/drone_eval_pgt_dist_reg'
+    opt.weights_dir = 'weights/baselines_kfold'
     #check_requirements()
     
     opt.eval_type = 'default'
@@ -455,7 +456,7 @@ if __name__ == '__main__':
     opt.username = username
     
     opt.half_precision = True
-    opt.device = '5'
+    opt.device = '4'
     device_num = opt.device
     
     

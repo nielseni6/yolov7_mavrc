@@ -64,7 +64,7 @@ def exif_size(img):
 
 def create_dataloader(path, imgsz, batch_size, stride, opt, hyp=None, augment=False, cache=False, pad=0.0, rect=False,
                       rank=-1, world_size=1, workers=8, image_weights=False, quad=False, prefix='', k_fold = None, 
-                      k_fold_num = 0, k_fold_train = True, k_fold_sepfolders = True):
+                      k_fold_num = 0, k_fold_train = True):
     # Make sure only the first process in DDP process the dataset first, and the following others can use the cache
     with torch_distributed_zero_first(rank):
         dataset = LoadImagesAndLabels(path, imgsz, batch_size,
@@ -80,7 +80,7 @@ def create_dataloader(path, imgsz, batch_size, stride, opt, hyp=None, augment=Fa
                                       k_fold = k_fold, 
                                       k_fold_num = k_fold_num, 
                                       k_fold_train = k_fold_train,
-                                      k_fold_sepfolders = k_fold_sepfolders)
+                                      )
 
     batch_size = min(batch_size, len(dataset))
     nw = min([os.cpu_count() // world_size, batch_size if batch_size > 1 else 0, workers])  # number of workers
@@ -376,7 +376,7 @@ def k_fold_split(img_files, k_fold=10, k_fold_num=0, train = True):
 class LoadImagesAndLabels(Dataset):  # for training/testing
     def __init__(self, path, img_size=640, batch_size=16, augment=False, hyp=None, rect=False, image_weights=False,
                  cache_images=False, single_cls=False, stride=32, pad=0.0, prefix='', k_fold=None, k_fold_num=0, 
-                 k_fold_train = True, k_fold_sepfolders = True): 
+                 k_fold_train = True): 
         self.img_size = img_size
         self.augment = augment
         self.hyp = hyp
@@ -407,7 +407,7 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
                         # f += [p.parent / x.lstrip(os.sep) for x in t]  # local to global path (pathlib)
                 else:
                     raise Exception(f'{prefix}{p} does not exist')
-            if k_fold and not k_fold_sepfolders:
+            if k_fold:
                 f = k_fold_split(f, k_fold, k_fold_num, train = k_fold_train)
             self.img_files = sorted([x.replace('/', os.sep) for x in f if x.split('.')[-1].lower() in img_formats])
             # if self.k_fold:
@@ -423,7 +423,7 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
         cache_path = (p if p.is_file() else Path(self.label_files[0]).parent).with_suffix('.cache')  # cached labels
         
         # Rename path based on k_fold training or testing
-        if self.k_fold:# and not k_fold_sepfolders:
+        if self.k_fold:
             if self.k_fold_train:
                 train_str = '_train'
             else:

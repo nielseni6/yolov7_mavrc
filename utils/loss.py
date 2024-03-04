@@ -1728,6 +1728,7 @@ from plaus_functs import get_plaus_score, corners_coords_batch, get_plaus_loss #
 from plaus_functs import get_gradient
 import numpy as np
 from plot_functs import imshow
+from plaus_functs import get_distance_grids, get_bbox_map, normalize_batch
 
 class ComputePGTLossOTA:
     # Compute losses
@@ -1739,6 +1740,7 @@ class ComputePGTLossOTA:
         # Define criteria
         BCEcls = nn.BCEWithLogitsLoss(pos_weight=torch.tensor([h['cls_pw']], device=device))
         BCEobj = nn.BCEWithLogitsLoss(pos_weight=torch.tensor([h['obj_pw']], device=device))
+        BCEplaus = nn.BCEWithLogitsLoss(pos_weight=torch.tensor([h['cls_pw']], device=device))
 
         # Class label smoothing https://arxiv.org/pdf/1902.04103.pdf eqn 3
         self.cp, self.cn = smooth_BCE(eps=h.get('label_smoothing', 0.0))  # positive, negative BCE targets
@@ -1752,18 +1754,25 @@ class ComputePGTLossOTA:
         self.balance = {3: [4.0, 1.0, 0.4]}.get(det.nl, [4.0, 1.0, 0.25, 0.06, .02])  # P3-P7
         self.ssi = list(det.stride).index(16) if autobalance else 0  # stride 16 index
         self.BCEcls, self.BCEobj, self.gr, self.hyp, self.autobalance = BCEcls, BCEobj, model.gr, h, autobalance
+        self.BCEplaus = BCEplaus
         for k in 'na', 'nc', 'nl', 'anchors', 'stride':
             setattr(self, k, getattr(det, k))
         
         self.n_nans = 0
 
     def __call__(self, p, targets, opt, imgs, attr=None, pgt_coeff = 1.0, metric='CIoU',):  # predictions, targets, model   
+
         device = targets.device
         targets_ = targets.clone()
         lcls, lbox, lobj = torch.zeros(1, device=device), torch.zeros(1, device=device), torch.zeros(1, device=device)
+        lplaus, plaus_score = torch.zeros(1, device=device), torch.zeros(1, device=device)
         bs, as_, gjs, gis, targets, anchors = self.build_targets(p, targets, imgs)
         pre_gen_gains = [torch.tensor(pp.shape, device=device)[[3, 2, 3, 2]] for pp in p] 
-        
+        if attr is not None:
+            distance_map = (get_bbox_map(targets_, attr))
+        else:
+            distance_map = None
+
         # Losses
         for i, pi in enumerate(p):  # layer index, layer predictions
             b, a, gj, gi = bs[i], as_[i], gjs[i], gis[i]  # image, anchor, gridy, gridx
@@ -1798,10 +1807,30 @@ class ComputePGTLossOTA:
                     t[range(n), selected_tcls] = self.cp
                     lcls += self.BCEcls(ps[:, 5:], t)  # BCE
 
+                ########### PGT Loss ###########
+                if pgt_coeff != 0.0:
+                    if opt.loss_attr:
+                        attr = get_gradient(imgs, grad_wrt = self.BCEcls(ps[:, 5:], t))
+                    else:
+                        attr = get_gradient(imgs, grad_wrt = ps)
+                    # plaus_loss, (plaus_score, dist_reg, plaus_reg,) = get_plaus_loss(targets_, attr,#.clone().detach().requires_grad_(True), 
+                    #                                                                  opt, imgs)
+                    # lplaus += plaus_loss
+                    self.attr = attr
+                    if distance_map is None:
+                        distance_map = (get_bbox_map(targets_, attr))
+                    
+                    plausi = self.BCEplaus(attr, distance_map)
+                    # plausi=plausi.clamp(max=1.0)
+                    lplaus += plausi * self.balance[i]
+                else:
+                    self.attr = None
+                ################################
+
                 # Append targets to text file
                 # with open('targets.txt', 'a') as file:
                 #     [file.write('%11.5g ' * 4 % tuple(x) + '\n') for x in torch.cat((txy[i], twh[i]), 1)]
-
+            
             obji = self.BCEobj(pi[..., 4], tobj)
             if obji > 1.0:
                 print("obji",obji)
@@ -1809,46 +1838,73 @@ class ComputePGTLossOTA:
             lobj += obji * self.balance[i] 
             if lobj > 1.0: # obj loss
                 print("lobj",lobj)
+
             if self.autobalance:
                 self.balance[i] = self.balance[i] * 0.9999 + 0.0001 / obji.detach().item()
 
+        # distance_map = get_distance_grids(attr, targets_, opt.focus_coeff)
+        # if opt.loss_attr:
+        #     attr = get_gradient(imgs, grad_wrt = lcls)
+        # self.attr = attr
+        # distance_map = (get_bbox_map(targets_, attr))
+        # plausi = self.BCEplaus(attr, distance_map)
+        # # plausi=plausi.clamp(max=1.0)
+        # lplaus += plausi * self.balance[i]
+        # # lplaus = plausi * pgt_coeff
+        
         if self.autobalance:
             self.balance = [x / self.balance[self.ssi] for x in self.balance]
+
+        # ####################### PGT CODE ADDED BELOW #######################
+        # if pgt_coeff != 0.0:
+        #     if attr == None:
+        #         attribution_map = get_gradient(imgs, grad_wrt = lcls)#.clone().detach().cpu().numpy()
+        #         # attribution_map = torch.tensor(att, dtype=torch.float32, device=device)#.requires_grad_(True)
+        #     else:
+        #         attribution_map = normalize_batch(attr)
+        #     # Compute plausibility loss
+        #     plaus_loss = torch.tensor(0.0, device=device)
+        #     # plaus_loss, (plaus_score, dist_reg, plaus_reg,) = get_plaus_loss(targets_, attribution_map, opt, imgs)
+        #     plaus_score = get_plaus_score(targets_out = targets_, attr = attribution_map, imgs = imgs)#.requires_grad_(True)
+        #     # if torch.isnan(plaus_score).any():
+        #     #     self.n_nans += 1
+        #     #     plaus_score = torch.tensor(0.0, device=device)
+        #     #     print(f"plaus_score is nan, number of nans: {self.n_nans}")
+        #     # if pgt_coeff != 0.0:
+        #     lplaus = ((1 - plaus_score) * pgt_coeff).unsqueeze(0)
+            
+        #     # # distance_map = get_distance_grids(attribution_map, targets_, imgs, opt.focus_coeff)
+        #     # distance_map = get_bbox_map(targets_, attribution_map)
+        #     # plausi = self.BCEplaus((attr), distance_map).unsqueeze(0)
+        #     # # plausi=plausi.clamp(max=1.0)
+
+        #     # tp = torch.tensor([[1.0, 0.0],], device=device)
+        #     # psplaus = torch.tensor([[- plaus_loss, plaus_loss],], device=device)
+        #     # plausi = self.BCEplaus(psplaus, tp).unsqueeze(0)
+        #     # lplaus = plausi * pgt_coeff # * self.balance[i]
+        # else:
+        #     lplaus = torch.tensor([0.0], device=device)
+        # ####################################################################
+        
         lbox *= self.hyp['box']
         lobj *= self.hyp['obj']
         lcls *= self.hyp['cls']
+        lplaus *= pgt_coeff
         bs = tobj.shape[0]  # batch size
         lobj=lobj.clamp(max=2)
+        # lplaus=lplaus.clamp(max=2)
         
-        ####################### PGT CODE ADDED BELOW #######################
-        if pgt_coeff != 0.0:
-            if attr == None:
-                attribution_map = get_gradient(imgs, grad_wrt = lcls).detach().cpu().numpy()
-                attribution_map = torch.tensor(attribution_map, dtype=torch.float32, device=device)
-            else:
-                attribution_map = attr
-            # Compute plausibility loss
-            plaus_loss, (plaus_score, dist_reg, plaus_reg,) = get_plaus_loss(targets_, attribution_map, opt, imgs)
-            # plaus_score = get_plaus_score(imgs, targets_out = targets_, attr = attribution_map)
-            if torch.isnan(plaus_score).any():
-                self.n_nans += 1
-                plaus_score = torch.tensor(0.0, device=device)
-                print(f"plaus_score is nan, number of nans: {self.n_nans}")
-            self.plaus_score = plaus_score
-            # if pgt_coeff != 0.0:
-            lplaus = plaus_loss.unsqueeze(0) #((1 - plaus_score) * pgt_coeff).unsqueeze(0)
-        else:
-            lplaus = torch.tensor([0.0], device=device)
-        ####################################################################
+        self.plaus_score = plaus_score 
         
         if pgt_coeff != 0.0:
-            loss_r = lbox + lobj + lcls + lplaus # lplaus is the PGT loss added to the original loss
+            loss_r = lplaus
+            # loss_r = lbox + lobj + lcls + lplaus # lplaus is the PGT loss added to the original loss
         else:
-            loss_r = lbox + lobj + lcls
-        loss=loss_r.clamp(max=2)
-        return loss * bs, torch.cat((lbox, lobj, lcls, lplaus, loss)).detach() # lplaus added to loss_items as well
+            loss_r = lbox + lobj + lcls 
+        loss=loss_r.clamp(max=2) 
+        return loss * bs, torch.cat((lbox, lobj, lcls, lplaus, loss)).detach() # lplaus added to loss_items as well 
 
-    def build_targets(self, p, targets, imgs):
+    def build_targets(self, p, targets, imgs): 
         
         #indices, anch = self.find_positive(p, targets)
         indices, anch = self.find_3_positive(p, targets)

@@ -42,8 +42,9 @@ import sys
 from PIL import Image
 import torchvision
 
+import plaus_functs
 from plaus_functs import get_gradient, get_plaus_score, get_detections, get_labels, get_distance_grids, \
-    get_plaus_loss
+    get_plaus_loss, get_attr_corners
 from plaus_functs_original import generate_vanilla_grad, eval_plausibility
 
 logger = logging.getLogger(__name__)
@@ -116,7 +117,7 @@ def train(hyp, opt, device, tb_writer=None):
         #     wandb_logger.wandb_run.step = wandb_logger.wandb_run.starting_step
         #####################################################################################
         model = ModelPGT(opt.cfg or ckpt['model'].yaml, ch=3, nc=nc, anchors=hyp.get('anchors'), 
-                         conf_thres=opt.conf_thres, iou_thres=opt.iou_thres, classes=opt.classes, 
+                         iou_thres=opt.iou_thres, classes=opt.classes, 
                          agnostic=opt.agnostic_nms).to(device)
         # model = Model(opt.cfg or ckpt['model'].yaml, ch=3, nc=nc, anchors=hyp.get('anchors')).to(device)  # create
         exclude = ['anchor'] if (opt.cfg or hyp.get('anchors')) and not opt.resume else []  # exclude keys
@@ -283,7 +284,7 @@ def train(hyp, opt, device, tb_writer=None):
                                             world_size=opt.world_size, workers=opt.workers,
                                             image_weights=opt.image_weights, quad=opt.quad, prefix=colorstr('train: '),
                                             k_fold = opt.k_fold, k_fold_num = opt.k_fold_num, k_fold_train = True, 
-                                            k_fold_sepfolders = opt.k_fold_sepfolders)
+                                            )
     # dataset_w_labels = LoadImagesAndLabels(train_path, img_size=imgsz, batch_size=batch_size, stride=gs,
     #                                        augment=True, hyp=hyp, cache=opt.cache_images, rect=opt.rect, 
     #                                        image_weights=opt.image_weights, prefix=colorstr('train: '))
@@ -299,7 +300,7 @@ def train(hyp, opt, device, tb_writer=None):
                                        world_size=opt.world_size, workers=opt.workers,
                                        pad=0.5, prefix=colorstr('val: '), k_fold = opt.k_fold, 
                                        k_fold_num = opt.k_fold_num, k_fold_train = False, 
-                                       k_fold_sepfolders = opt.k_fold_sepfolders)[0]
+                                       )[0]
 
         if not opt.resume:
             labels = np.concatenate(dataset.labels, 0)
@@ -341,7 +342,7 @@ def train(hyp, opt, device, tb_writer=None):
     maps = np.zeros(nc)  # mAP per class
     results = (0, 0, 0, 0, 0, 0, 0)  # P, R, mAP@.5, mAP@.5-.95, val_loss(box, obj, cls)
     scheduler.last_epoch = start_epoch - 1  # do not move
-    scaler = amp.GradScaler(enabled=cuda)
+    # scaler = amp.GradScaler(enabled=False)#cuda)
     compute_pgt_loss = ComputePGTLossOTA(model)  # init loss class for plausibility guided training
     compute_loss_ota = ComputeLossOTA(model)  # init loss class
     compute_loss = ComputeLoss(model)  # init loss class
@@ -350,9 +351,11 @@ def train(hyp, opt, device, tb_writer=None):
                 f'Logging results to {save_dir}\n'
                 f'Starting training for {epochs} epochs...')
     torch.save(model, wdir / 'init.pt')
+    
     for epoch in range(start_epoch, epochs):  # epoch ------------------------------------------------------------------
         model.train()
-        
+        plaus_score_conf_total = 0.0
+        conf_nans = 0
         # Update image weights (optional)
         if opt.image_weights:
             # Generate indices
@@ -376,7 +379,7 @@ def train(hyp, opt, device, tb_writer=None):
         if rank != -1:
             dataloader.sampler.set_epoch(epoch)
         pbar = enumerate(dataloader)
-        logger.info(('\n' + '%10s' * 9) % ('Epoch', 'gpu_mem', 'box', 'obj', 'cls', 'plaus', 'total', 'labels', 'img_size'))
+        logger.info(('\n' + '%10s' * 11) % ('Epoch', 'gpu_mem', 'box', 'obj', 'cls', 'plaus', 'total', 'pscore', 'psavg', 'labels', 'img_size'))
         if rank in [-1, 0]:
             pbar = tqdm(pbar, total=nb)  # progress bar
         optimizer.zero_grad()
@@ -412,11 +415,14 @@ def train(hyp, opt, device, tb_writer=None):
                 if sf != 1:
                     ns = [math.ceil(x * sf / gs) * gs for x in imgs.shape[2:]]  # new shape (stretched to gs-multiple)
                     imgs = F.interpolate(imgs, size=ns, mode='bilinear', align_corners=False)
-
+            
+            # current_memory = torch.cuda.memory_reserved()
             # Forward
-            with amp.autocast(enabled=cuda):
+            # with amp.autocast(enabled=cuda):
+            if True:
                 # Use PGT built-into the model 
-                use_pgt = (opt.pgt_coeff != 0.0) and (opt.pgt_built_in)
+                use_pgt = (opt.pgt_coeff != 0.0) and (opt.pgt_built_in) and (not opt.loss_attr)
+                # use_pgt = False
 
                 out = model(imgs.requires_grad_(True), pgt = use_pgt, out_nums = opt.out_num_attrs)  # forward
                 
@@ -424,21 +430,36 @@ def train(hyp, opt, device, tb_writer=None):
                 # only needed for loss attributions since they are target specific
                 if (opt.pgt_coeff != 0.0) and opt.loss_attr and opt.pred_targets:
                     ema.update_attr(model, include=['yaml', 'nc', 'hyp', 'gr', 'names', 'stride', 'class_weights'])
+                    ema.update(model)
                     det_out, out_ = get_detections(ema.ema, imgs.clone().detach())
                     pred_labels = get_labels(det_out, imgs, targets.clone(), opt)
                 else:
                     pred_labels = targets
 
+                # ema.update_attr(model, include=['yaml', 'nc', 'hyp', 'gr', 'names', 'stride', 'class_weights'])
+                # ema.update(model)
+                # model_ = ema.ema
+                # out_ = model_(imgs.requires_grad_(True), pgt = use_pgt, out_nums = opt.out_num_attrs)  # forward
+                # pred_, attr_ = out_[:3], out_[3]
+
                 # Get attribution map from model output if using built-in PGT
-                if use_pgt:
-                    pred, attr = out[:3], out[3]
+                
+                if use_pgt:#len(out) > 3:#use_pgt:
+                    pred, attr = out[:3], out[3]#[...,0]
                 else:
                     pred = out
                     attr = None
+                    # attr = out[0][...,0]
+                compute_pgt_loss.nl = 3
+                compute_loss_ota.nl = 3
+                # model.zero_grad()
+                # optimizer.zero_grad()
                 if 'loss_ota' not in hyp or hyp['loss_ota'] == 1:
                     print('Using loss_ota') if i == 0 else None
-                    if opt.pgt_built_in:
+                    if opt.pgt_built_in:#attr is not None:#opt.pgt_built_in:
                         loss, loss_items = compute_pgt_loss(pred, targets, opt, imgs, attr, pgt_coeff = opt.pgt_coeff, metric=opt.loss_metric)  # loss scaled by batch_size
+                        if compute_pgt_loss.attr is not None:
+                            attr = compute_pgt_loss.attr
                     else:
                         loss, loss_items = compute_loss_ota(pred, targets, imgs, metric=opt.loss_metric)  # loss scaled by batch_size
                 else:
@@ -463,6 +484,15 @@ def train(hyp, opt, device, tb_writer=None):
             # Compute plausibility loss
             ##########################################################
             
+            if opt.test_plaus_confirm:
+                attribution_map = attr
+                plaus_score_conf = get_plaus_score(targets_out = targets.to(imgs.device), attr = attribution_map)
+                conf_nans += 1 if math.isnan(plaus_score_conf) else 0
+                plaus_score_conf = plaus_score_conf if not math.isnan(plaus_score_conf) else 0.0
+                plaus_score_conf_total += plaus_score_conf
+                plaus_score_total_train += plaus_score_conf
+                # plaus_loss, (plaus_score, dist_reg, plaus_reg,) = get_plaus_loss(targets, attribution_map, opt)
+                
             if not opt.pgt_built_in:
                 if opt.loss_attr:
                     loss_attr = compute_loss_ota
@@ -475,19 +505,29 @@ def train(hyp, opt, device, tb_writer=None):
                     t0_pgt = time.time()
                     if not (opt.pgt_coeff == 0):
                         # Get attribution maps
-
-                        attribution_map = generate_vanilla_grad(model, imgs, loss_func=loss_attr, 
-                                                                targets=pred_labels, metric=opt.loss_metric, 
-                                                                out_num = out_num_attr, device=device) # mlc = max label class
+                        
+                        # attribution_map = generate_vanilla_grad(model, imgs, loss_func=loss_attr, 
+                        #                                         targets=pred_labels, metric=opt.loss_metric, 
+                        #                                         out_num = out_num_attr, device=device) # mlc = max label class
+                        
+                        attribution_map = attr
+                        
                         # attribution_map = get_gradient(imgs, grad_wrt = loss)
                         # optimizer.zero_grad()
                         # Compute plausibility loss
-                        plaus_loss, (plaus_score, dist_reg, plaus_reg,) = get_plaus_loss(targets, attribution_map, opt, imgs)
+
+                        plaus_loss, plaus_score, dist_reg, plaus_reg = torch.tensor(0.0), torch.tensor(0.0), torch.tensor(0.0), torch.tensor(0.0)
+                        # plaus_loss, (plaus_score, dist_reg, plaus_reg,) = get_plaus_loss(targets, attribution_map, opt)
+
+                        plaus_score = get_plaus_score(targets_out = targets.to(imgs.device), attr = attribution_map)
+                        # plaus_score = get_attr_corners(targets_out = targets.to(imgs.device), attr = attribution_map)
+
+                        plaus_loss = (1.0 - plaus_score) * opt.pgt_coeff
                         
                         # Add plausibility loss to total loss
-                        loss += (plaus_loss.unsqueeze(0) * batch_size)
+                        loss = (plaus_loss.unsqueeze(0) * batch_size)
                         
-                        lplaus += (plaus_loss.unsqueeze(0) * batch_size)
+                        lplaus = (plaus_loss.unsqueeze(0) * batch_size)
                         
                         # Log plausibility loss and score metrics for evaluation
                         ploss = (float(plaus_loss) / float(len(opt.out_num_attrs)))
@@ -513,26 +553,30 @@ def train(hyp, opt, device, tb_writer=None):
             ##########################################################
 
             # Backward
-            scaler.scale(loss).backward() 
+            # scaler.scale(loss).backward() 
+            loss.backward()
             t3_pgt = time.time() 
             
             # Optimize
             if ni % accumulate == 0:
-                scaler.step(optimizer)  # optimizer.step
-                scaler.update()
+                # scaler.step(optimizer)  # optimizer.step
+                optimizer.step()
+                # scaler.update()
+                # del plaus.plaus_score
                 optimizer.zero_grad()
+                # model.zero_grad()
                 if ema:
                     ema.update(model)
             
             if not opt.pgt_built_in:
                 lplaus = (plaus_loss).to(loss_items.device)
-                loss_items = torch.cat((loss_items[:-1], lplaus.unsqueeze(0), loss_items[-1].unsqueeze(0)))
+                loss_items = torch.cat((loss_items[:-1], lplaus.unsqueeze(0), (loss_items[-1] + lplaus).unsqueeze(0)))
             # Print
             if rank in [-1, 0]:
                 mloss = (mloss * i + loss_items) / (i + 1)  # update mean losses
                 mem = '%.3gG' % (torch.cuda.memory_reserved() / 1E9 if torch.cuda.is_available() else 0)  # (GB)
-                s = ('%10s' * 2 + '%10.4g' * int(num_losses + 2)) % (
-                    '%g/%g' % (epoch, epochs - 1), mem, *mloss, targets.shape[0], imgs.shape[-1])
+                s = ('%10s' * 2 + '%10.4g' * int(num_losses + 2 + 2)) % (
+                    '%g/%g' % (epoch, epochs - 1), mem, *mloss, plaus_score_conf, plaus_score_conf_total / (i - conf_nans + 1), targets.shape[0], imgs.shape[-1])
                 pbar.set_description(s)
 
                 # Plot
@@ -549,7 +593,7 @@ def train(hyp, opt, device, tb_writer=None):
             # end batch ------------------------------------------------------------------------------------------------
         # end epoch ----------------------------------------------------------------------------------------------------
         
-        plaus_score_total_train /= len(dataloader)
+        plaus_score_total_train /= (len(dataloader) - conf_nans)
         dist_reg_total_train /= len(dataloader)
         plaus_loss_total_train /= len(dataloader)
         
@@ -669,8 +713,8 @@ def train(hyp, opt, device, tb_writer=None):
                                           is_coco=is_coco,
                                           v5_metric=opt.v5_metric)
 
-        # Strip optimizers
-        final = best if best.exists() else last  # final model
+        # Strip optimizers 
+        final = best if best.exists() else last  # final model 
         for f in last, best:
             if f.exists():
                 strip_optimizer(f)  # strip optimizers
@@ -694,7 +738,7 @@ if __name__ == '__main__':
     parser.add_argument('--data', type=str, default='data/real_world.yaml', help='data.yaml path')
     parser.add_argument('--hyp', type=str, default='data/hyp.real_world.yaml', help='hyperparameters path')
     parser.add_argument('--epochs', type=int, default=300)
-    parser.add_argument('--batch-size', type=int, default=16, help='total batch size for all GPUs')
+    parser.add_argument('--batch-size', type=int, default=32, help='total batch size for all GPUs') # 16 for coco
     parser.add_argument('--img-size', nargs='+', type=int, default=[640, 640], help='[train, test] image sizes')
     parser.add_argument('--rect', action='store_true', help='rectangular training')
     parser.add_argument('--resume', nargs='?', const=True, default=False, help='resume most recent training')
@@ -730,7 +774,6 @@ if __name__ == '__main__':
     parser.add_argument('--v5-metric', action='store_true', help='assume maximum recall as 1.0 in AP calculation')
     parser.add_argument('--loss_metric', type=str, default="CIoU",help='metric to minimize: CIoU, NWD')
     ############################################################################
-    parser.add_argument('--conf-thres', type=float, default=0.001, help='object confidence threshold')
     parser.add_argument('--iou-thres', type=float, default=0.65, help='IOU threshold for NMS')
     parser.add_argument('--agnostic-nms', action='store_true', help='class-agnostic NMS')
     parser.add_argument('--classes', nargs='+', type=int, help='filter by class: --class 0, or --class 0 2 3')
@@ -751,46 +794,43 @@ if __name__ == '__main__':
     parser.add_argument('--pgt_built_in', action='store_true', help='If true, use built-in plausibility gradient training')
     ################################### PGT Loss Variables ###################################
     parser.add_argument('--dist_reg_only', action='store_true', help='If true, only calculate distance regularization and not plausibility')
-    parser.add_argument('--focus_coeff', type=float, default=0.25, help='focus_coeff')
+    parser.add_argument('--focus_coeff', type=float, default=0.5, help='focus_coeff')
     parser.add_argument('--iou_coeff', type=float, default=0.075, help='iou_coeff')
     parser.add_argument('--dist_coeff', type=float, default=1.0, help='dist_coeff')
-    parser.add_argument('--pgt_coeff', type=float, default=1.0, help='pgt_coeff')
+    parser.add_argument('--pgt_coeff', type=float, default=0.1, help='pgt_coeff')
     parser.add_argument('--bbox_coeff', type=float, default=0.0, help='bbox_coeff')
-    parser.add_argument('--dist_x_bbox', type=bool, default=True, help='If true, zero all distance regularization values to 0 within bbox region')
-    parser.add_argument('--pred_targets', type=bool, default=False, help='If true, use predicted targets for plausibility loss')
+    parser.add_argument('--dist_x_bbox', type=bool, default=True, help='If true, zero all distance regularization values to 0 within bbox region') 
+    parser.add_argument('--pred_targets', type=bool, default=False, help='If true, use predicted targets for plausibility loss') 
     ##########################################################################################
-    # parser.add_argument('--seed', type=int, default=None, help='reproduce results')
+    parser.add_argument('--k_fold', type=int, default=10, help='Number of folds for k-fold cross validation') 
+    parser.add_argument('--k_fold_num', type=int, default=0, help='Fold number to use for training') 
+    # parser.add_argument('--seed', type=int, default=None, help='reproduce results') 
     opt = parser.parse_args() 
     print(opt) 
     
-    opt.plaus_results = False 
+    # opt.plaus_results = True 
     
-    opt.k_fold = 10 
-    opt.k_fold_num = 0 
-    opt.k_fold_sepfolders = True 
-    
+    opt.test_plaus_confirm = True
     # opt.sweep = True 
-    opt.loss_attr = True
+    opt.loss_attr = True 
     # opt.save_hybrid = True 
     # opt.out_num_attrs = [0,1,2,] # unused if opt.loss_attr == True 
-    opt.dist_reg_only = True
-    opt.focus_coeff = 0.5
-    opt.dist_coeff = 1.0
-    opt.bbox_coeff = 0.0
+    opt.dist_reg_only = True 
+    opt.focus_coeff = 0.15 
+    opt.dist_coeff = 1.0 
+    opt.bbox_coeff = 0.0 
 
-    # opt.pgt_built_in = True 
+    opt.pgt_built_in = True 
     opt.out_num_attrs = [1,] 
-    opt.pgt_coeff = 0.1 
+    opt.pgt_coeff = 0.05
     opt.pgt_lr_decay = 1.0 
     opt.pgt_lr_decay_step = 1000 # 200 
     opt.epochs = 300 
     opt.data = check_file(opt.data)  # check file 
     opt.no_trace = True 
-    opt.conf_thres = 0.50 
-    opt.batch_size = 64 
     # opt.batch_size = 96 
     opt.save_dir = str('runs/' + opt.name + '_lr' + str(opt.pgt_coeff)) 
-    opt.device = '7' 
+    # opt.device = '5' 
     # opt.device = "0,1,2,3"  
     
     # lambda03 Console Commands
@@ -803,14 +843,14 @@ if __name__ == '__main__':
     # opt.resume = "runs/pgt/train-pgt-yolov7/pgt5_214/weights/last.pt"
     # opt.weights = 'runs/pgt/train-pgt-yolov7/pgt5_214/weights/last.pt'
     
-    # nohup python train_pgt.py > ./output_logs/gpu4_focus_0_25.log 2>&1 &
+    # nohup python train_pgt.py --device 5 > ./output_logs/gpu5.log 2>&1 &
     # nohup python -m torch.distributed.launch --nproc_per_node 4 --master_port 9528 train_pgt.py --sync-bn > ./output_logs/gpu2360.log 2>&1 &
     
     # opt.dataset = 'coco' 
     opt.dataset = 'real_world_drone'
     # opt.sync_bn = True
     
-    opt.seed = random.randrange(sys.maxsize)
+    opt.seed = random.randrange(sys.maxsize) 
     # if opt.seed is None: 
     #     opt.seed = random.randrange(sys.maxsize) 
     rng = random.Random(opt.seed) 
@@ -827,31 +867,28 @@ if __name__ == '__main__':
     os.environ["OMP_NUM_THREADS"] = "1" 
     # opt.local_rank = -1 # os.environ["LOCAL_RANK"] 
     
-    if opt.dataset == 'real_world_drone':
-        if ('lambda02' == opt.host_name) or ('lambda03' == opt.host_name) or ('lambda05' == opt.host_name):    
+    if opt.dataset == 'real_world_drone': 
+        if ('lambda02' == opt.host_name) or ('lambda03' == opt.host_name) or ('lambda05' == opt.host_name): 
             opt.source = '/data/Koutsoubn8/ijcnn_v7data/Real_world_test/images' 
             opt.data = 'data/real_world.yaml' 
             opt.hyp = 'data/hyp.real_world.yaml' 
-        if ('lambda01' == opt.host_name):
+        if ('lambda01' == opt.host_name): 
             opt.source = '/data/nielseni6/ijcnn_v7data/Real_world_test/images' 
             opt.data = 'data/real_world_lambda01.yaml' 
             opt.hyp = 'data/hyp.real_world_lambda01.yaml' 
-        if opt.k_fold:
-            opt.source = '/data/nielseni6/drone_data/Real_world_drone_data/images'
-            opt.hyp = 'data/hyp.real_world_kfold.yaml' 
-            opt.data = 'data/real_world_kfold.yaml' 
-        if opt.k_fold and opt.k_fold_sepfolders:
+        if opt.k_fold: 
             opt.source = [f'/data/nielseni6/drone_data/k_fold{int(i + (int(i>=opt.k_fold_num)))}/images' for i in range(9)] 
             opt.hyp = f'data/hyp.real_world_kfold{opt.k_fold_num}.yaml' 
             opt.data = f'data/real_world_kfold{opt.k_fold_num}.yaml' 
         opt.weights = ''
-        opt.cfg = 'cfg/training/yolov7-tiny-drone.yaml'
-    if opt.dataset == 'coco':
-        opt.source = "/data/nielseni6/coco/images"
+        opt.cfg = 'cfg/training/yolov7-tiny-drone.yaml' 
+        # opt.cfg = 'cfg/training/yolov7-tiny-drone-pgt.yaml' 
+    if opt.dataset == 'coco': 
+        opt.source = "/data/nielseni6/coco/images" 
         ######### scratch #########
-        opt.cfg = 'cfg/training/yolov7.yaml'
-        opt.weights = ''
-        opt.hyp = 'data/hyp.scratch.p5.yaml'
+        opt.cfg = 'cfg/training/yolov7.yaml' 
+        opt.weights = '' 
+        opt.hyp = 'data/hyp.scratch.p5.yaml' 
         ###########################
         # ######## pretrained #######
         # opt.cfg = 'cfg/training/yolov7.yaml'
@@ -863,10 +900,10 @@ if __name__ == '__main__':
         # opt.weights = 'weights/yolov7x_training.pt'
         # opt.hyp = 'data/hyp.scratch.custom.yaml'
         # ###########################
-        opt.data = 'data/coco_lambda01.yaml'
+        opt.data = 'data/coco_lambda01.yaml' 
         
         
-        # opt.clean_plaus_eval = True
+        # opt.clean_plaus_eval = True 
 
     opt.data = check_file(opt.data)  # check file 
     

@@ -415,8 +415,8 @@ def calculate_nwd(anchor, ground_truth):
     # print("=========================================================")
     # print("NWD", torch.exp(-torch.sqrt(mu_diff.T + cov_diff)/C))
     # print("==========================================================")
-
-    return torch.exp(-torch.sqrt(mu_diff.T + cov_diff)/C)
+    
+    return torch.exp(-torch.sqrt(mu_diff.T + cov_diff)/C) 
 # def bbox_iou(box1, box2, x1y1x2y2=True, GIoU=False, DIoU=False, CIoU=False,NWD = False, eps=1e-7):
 def bbox_iou(box1, box2, x1y1x2y2=True,metric='CIoU', eps=1e-7):
     

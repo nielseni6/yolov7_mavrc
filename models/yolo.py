@@ -10,8 +10,7 @@ from models.common import *
 from models.experimental import *
 from utils.autoanchor import check_anchor_order
 from utils.general import make_divisible, check_file, set_logging
-from utils.torch_utils import time_synchronized, fuse_conv_and_bn, model_info, scale_img, initialize_weights, \
-    select_device, copy_attr
+from utils.torch_utils import time_synchronized, fuse_conv_and_bn, model_info, scale_img, initialize_weights, select_device, copy_attr 
 from utils.loss import SigmoidBin
 
 try:
@@ -112,6 +111,7 @@ class IDetect(nn.Module):
         self.register_buffer('anchors', a)  # shape(nl,na,2)
         self.register_buffer('anchor_grid', a.clone().view(self.nl, 1, -1, 1, 1, 2))  # shape(nl,1,na,1,1,2)
         self.m = nn.ModuleList(nn.Conv2d(x, self.no * self.na, 1) for x in ch)  # output conv
+        self.m_attr = nn.ConvTranspose2d(in_channels=128, out_channels=3, kernel_size=8, stride=8, padding=0)  # output conv
         
         self.ia = nn.ModuleList(ImplicitA(x) for x in ch)
         self.im = nn.ModuleList(ImplicitM(self.no * self.na) for _ in ch)
@@ -121,6 +121,9 @@ class IDetect(nn.Module):
         z = []  # inference output
         self.training |= self.export
         for i in range(self.nl):
+            # if i == 3:
+            #     x[i] = self.m_attr((self.ia[i](x[i]))).contiguous()
+            # else:
             x[i] = self.m[i](self.ia[i](x[i]))  # conv
             x[i] = self.im[i](x[i])
             bs, _, ny, nx = x[i].shape  # x(bs,255,20,20) to x(bs,3,20,20,85)
@@ -754,6 +757,8 @@ def parse_model(d, ch):  # model_dict, input_channels(3)
                 args[j] = eval(a) if isinstance(a, str) else a  # eval strings
             except:
                 pass
+        
+        # convT = nn.ConvTranspose2d(in_channels=128, out_channels=3, kernel_size=8, stride=8, padding=0)
 
         n = max(round(n * gd), 1) if n > 1 else n  # depth gain
         if m in [nn.Conv2d, Conv, RobustConv, RobustConv2, DWConv, GhostConv, RepConv, RepConv_OREPA, DownC, 
@@ -766,7 +771,7 @@ def parse_model(d, ch):  # model_dict, input_channels(3)
                  RepResX, RepResXCSPA, RepResXCSPB, RepResXCSPC, 
                  Ghost, GhostCSPA, GhostCSPB, GhostCSPC,
                  SwinTransformerBlock, STCSPA, STCSPB, STCSPC,
-                 SwinTransformer2Block, ST2CSPA, ST2CSPB, ST2CSPC]:
+                 SwinTransformer2Block, ST2CSPA, ST2CSPB, ST2CSPC, ]:
             c1, c2 = ch[f], args[0]
             if c2 != no:  # if not output
                 c2 = make_divisible(c2 * gw, 8)
@@ -784,6 +789,8 @@ def parse_model(d, ch):  # model_dict, input_channels(3)
                      ST2CSPA, ST2CSPB, ST2CSPC]:
                 args.insert(2, n)  # number of repeats
                 n = 1
+        elif m is ConvTranspose:
+            c1, c2 = args[0], args[1]
         elif m is nn.BatchNorm2d:
             args = [ch[f]]
         elif m is Concat:
@@ -812,7 +819,7 @@ def parse_model(d, ch):  # model_dict, input_channels(3)
         np = sum([x.numel() for x in m_.parameters()])  # number params
         m_.i, m_.f, m_.type, m_.np = i, f, t, np  # attach index, 'from' index, type, number params
         logger.info('%3s%18s%3s%10.0f  %-40s%-30s' % (i, f, n, np, t, args))  # print
-        save.extend(x % i for x in ([f] if isinstance(f, int) else f) if x != -1)  # append to savelist
+        save.extend(x % i for x in ([f] if isinstance(f, int) else f) if ((x != -1)))# or (i == 77)))  # append to savelist
         layers.append(m_)
         if i == 0:
             ch = []
@@ -903,10 +910,10 @@ from utils.general import non_max_suppression#, apply_classifier
 
 class ModelPGT(nn.Module):
     def __init__(self, cfg='yolor-csp-c.yaml', ch=3, nc=None, anchors=None, 
-                 conf_thres=0.50, iou_thres=0.65, classes=[], agnostic=False):  # model, input channels, number of classes
+                 iou_thres=0.65, classes=[], agnostic=False):  # model, input channels, number of classes
         super(ModelPGT, self).__init__()
         
-        self.conf_thres, self.iou_thres, self.classes, self.agnostic = conf_thres, iou_thres, classes, agnostic
+        self.iou_thres, self.classes, self.agnostic = iou_thres, classes, agnostic
         
         self.traced = False
         if isinstance(cfg, dict):
@@ -1000,7 +1007,7 @@ class ModelPGT(nn.Module):
     
     def forward_once(self, x, profile=False, 
                      pgt=False, out_nums=[1], grayscale = True, 
-                     norm = True, absolute = True, ): # Inputs modified for PGT
+                     norm = True, absolute = True,): # Inputs modified for PGT
         if not hasattr(self, 'k'):
             self.k = 0
 
@@ -1038,6 +1045,9 @@ class ModelPGT(nn.Module):
                 x = m(img)  # run
             else:
                 x = m(x)  # run
+            # if m.type == 'models.common.ConvTranspose':
+            #     attr = x#.clone().requires_grad_(True)
+
             self.k += 1
 
             y.append(x if m.i in self.save else None)  # save output
@@ -1049,17 +1059,18 @@ class ModelPGT(nn.Module):
             return x
         else:
             attr_list = []
-            # pred = non_max_suppression(x, self.conf_thres, self.iou_thres, classes=self.classes, agnostic=self.agnostic)
             for out_num in out_nums:
-                attribution_map = get_gradient(img, grad_wrt = x[out_num]).requires_grad_(True)#pred)#x[out_num])
+                if self.training:
+                    attribution_map = get_gradient(img, grad_wrt = x[out_num])#pred)#x[out_num])
+                else:
+                    attribution_map = get_gradient(img, grad_wrt = x[0][out_num])
                 attr_list.append(attribution_map)
-            
-            if len(out_nums) == 1:
+            # if len(out_nums) == 1:
                 x.append(attribution_map)
                 return x
-            else:
-                x.append(torch.stack(attr_list, dim=2).squeeze(1))
-                return x
+            # else:
+            #     x.append(attr)
+            #     return x
         #######################################################################################
             
 
