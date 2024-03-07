@@ -22,8 +22,8 @@ if __name__ == '__main__':
     parser.add_argument('--focus_coeff', type=float, default=0.5, help='focus_coeff')
     parser.add_argument('--dist_coeff', type=float, default=1.0, help='dist_coeff')
     parser.add_argument('--dist_reg_only', type=bool, default=True, help='dist_reg_only')
-    parser.add_argument('--pgt_coeff', type=float, default=1.0, help='pgt_coeff')
-    parser.add_argument('--alpha', type=float, default=250.0, help='alpha')
+    parser.add_argument('--pgt_coeff', type=float, default=2.0, help='pgt_coeff')
+    parser.add_argument('--alpha', type=float, default=500.0, help='alpha')
     parser.add_argument('--iou_coeff', type=float, default=0.1, help='iou_coeff')
     parser.add_argument('--bbox_coeff', type=float, default=0.0, help='bbox_coeff')
     parser.add_argument('--dist_x_bbox', type=bool, default=True, help='dist_x_bbox')
@@ -36,7 +36,7 @@ if __name__ == '__main__':
                            [2, 0, 0.8, 0.2, 0.05, 0.05],])
     unique_classes = torch.unique(targets[:,0])
     # X = (gaussian_blur(torch.rand(len(unique_classes), 1, 50, 50)**2, 3)**4)
-    attr = (gaussian_blur(torch.rand(len(unique_classes), 1, 50, 50)**2, 3)**4).requires_grad_(True)
+    attr = (gaussian_blur(torch.rand(len(unique_classes), 1, 640, 640)**2, 3)**4).requires_grad_(True)
     plaus_loss, (plaus_score, dist_reg, plaus_reg,), distance_map = get_plaus_loss(targets, attribution_map=attr, 
                                                                                    opt=opt, 
                                                                                    debug=True)

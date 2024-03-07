@@ -1768,10 +1768,10 @@ class ComputePGTLossOTA:
         lplaus, plaus_score = torch.zeros(1, device=device), torch.zeros(1, device=device)
         bs, as_, gjs, gis, targets, anchors = self.build_targets(p, targets, imgs)
         pre_gen_gains = [torch.tensor(pp.shape, device=device)[[3, 2, 3, 2]] for pp in p] 
-        if attr is not None:
-            distance_map = (get_bbox_map(targets_, attr))
-        else:
-            distance_map = None
+        # if attr is not None:
+        #     distance_map = (get_bbox_map(targets_, attr))
+        # else:
+        #     distance_map = None
 
         # Losses
         for i, pi in enumerate(p):  # layer index, layer predictions
@@ -1807,25 +1807,25 @@ class ComputePGTLossOTA:
                     t[range(n), selected_tcls] = self.cp
                     lcls += self.BCEcls(ps[:, 5:], t)  # BCE
 
-                ########### PGT Loss ###########
-                if pgt_coeff != 0.0:
-                    if opt.loss_attr:
-                        attr = get_gradient(imgs, grad_wrt = self.BCEcls(ps[:, 5:], t))
-                    else:
-                        attr = get_gradient(imgs, grad_wrt = ps)
-                    # plaus_loss, (plaus_score, dist_reg, plaus_reg,) = get_plaus_loss(targets_, attr,#.clone().detach().requires_grad_(True), 
-                    #                                                                  opt, imgs)
-                    # lplaus += plaus_loss
-                    self.attr = attr
-                    if distance_map is None:
-                        distance_map = (get_bbox_map(targets_, attr))
+                # ########### PGT Loss ###########
+                # if pgt_coeff != 0.0:
+                #     # if opt.loss_attr:
+                #     #     attr = get_gradient(imgs, grad_wrt = self.BCEcls(ps[:, 5:], t))
+                #     # else:
+                #     attr = get_gradient(imgs, grad_wrt = ps)
+                #     # plaus_loss, (plaus_score, dist_reg, plaus_reg,) = get_plaus_loss(targets_, attr,#.clone().detach().requires_grad_(True), 
+                #     #                                                                  opt, imgs)
+                #     # lplaus += plaus_loss
+                #     self.attr = attr
+                #     if distance_map is None:
+                #         distance_map = (get_bbox_map(targets_, attr))
                     
-                    plausi = self.BCEplaus(attr, distance_map)
-                    # plausi=plausi.clamp(max=1.0)
-                    lplaus += plausi * self.balance[i]
-                else:
-                    self.attr = None
-                ################################
+                #     plausi = self.BCEplaus(attr, distance_map)
+                #     # plausi=plausi.clamp(max=1.0)
+                #     lplaus += plausi * self.balance[i]
+                # else:
+                #     self.attr = None
+                # ################################
 
                 # Append targets to text file
                 # with open('targets.txt', 'a') as file:
@@ -1842,15 +1842,21 @@ class ComputePGTLossOTA:
             if self.autobalance:
                 self.balance[i] = self.balance[i] * 0.9999 + 0.0001 / obji.detach().item()
 
-        # distance_map = get_distance_grids(attr, targets_, opt.focus_coeff)
-        # if opt.loss_attr:
-        #     attr = get_gradient(imgs, grad_wrt = lcls)
-        # self.attr = attr
+        # if distance_map is None:
+        #     # distance_map = get_distance_grids(attr, targets_, opt.focus_coeff)
+        #     distance_map = get_bbox_map(targets_, attr)
+        if opt.loss_attr:
+            attr = get_gradient(imgs, grad_wrt = lcls)
+        self.attr = attr
         # distance_map = (get_bbox_map(targets_, attr))
+        # plausi = (1 - get_plaus_score(targets_, attr))
+        plaus_loss = get_plaus_loss(targets_, attr, opt, only_loss = True)
+        # plaus_loss = torch.zeros(1, device=device).requires_grad_(True)
+        plausi = plaus_loss
         # plausi = self.BCEplaus(attr, distance_map)
-        # # plausi=plausi.clamp(max=1.0)
-        # lplaus += plausi * self.balance[i]
-        # # lplaus = plausi * pgt_coeff
+        # plausi=plausi.clamp(max=1.0)
+        lplaus += plausi * self.balance[i]
+        # lplaus = plausi * pgt_coeff
         
         if self.autobalance:
             self.balance = [x / self.balance[self.ssi] for x in self.balance]
@@ -1897,8 +1903,8 @@ class ComputePGTLossOTA:
         self.plaus_score = plaus_score 
         
         if pgt_coeff != 0.0:
-            loss_r = lplaus
-            # loss_r = lbox + lobj + lcls + lplaus # lplaus is the PGT loss added to the original loss
+            # loss_r = lplaus
+            loss_r = lbox + lobj + lcls + lplaus # lplaus is the PGT loss added to the original loss
         else:
             loss_r = lbox + lobj + lcls 
         loss=loss_r.clamp(max=2) 

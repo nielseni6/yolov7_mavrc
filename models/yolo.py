@@ -1013,7 +1013,7 @@ class ModelPGT(nn.Module):
 
         # if pgt:
         #     img = x.clone().requires_grad_(True)
-        
+        inherently_explainable = False
         y, dt = [], []  # outputs
         for m in self.model:
             if m.f != -1:  # if not from previous layer
@@ -1045,8 +1045,9 @@ class ModelPGT(nn.Module):
                 x = m(img)  # run
             else:
                 x = m(x)  # run
-            # if m.type == 'models.common.ConvTranspose':
-            #     attr = x#.clone().requires_grad_(True)
+            if m.type == 'models.common.ConvTranspose':
+                attr = x#.clone().requires_grad_(True)
+                inherently_explainable = True
 
             self.k += 1
 
@@ -1058,16 +1059,18 @@ class ModelPGT(nn.Module):
         if not pgt:
             return x
         else:
-            attr_list = []
-            for out_num in out_nums:
-                if self.training:
-                    attribution_map = get_gradient(img, grad_wrt = x[out_num])#pred)#x[out_num])
-                else:
-                    attribution_map = get_gradient(img, grad_wrt = x[0][out_num])
-                attr_list.append(attribution_map)
-            # if len(out_nums) == 1:
-                x.append(attribution_map)
-                return x
+            if inherently_explainable:
+                x.append(attr)
+            else:
+                attr_list = []
+                for out_num in out_nums:
+                    if self.training:
+                        attribution_map = get_gradient(img, grad_wrt = x[out_num])#pred)#x[out_num])
+                    else:
+                        attribution_map = get_gradient(img, grad_wrt = x[0][out_num])
+                    attr_list.append(attribution_map)
+                    x.append(attribution_map)
+            return x
             # else:
             #     x.append(attr)
             #     return x

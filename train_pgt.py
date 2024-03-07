@@ -47,6 +47,9 @@ from plaus_functs import get_gradient, get_plaus_score, get_detections, get_labe
     get_plaus_loss, get_attr_corners
 from plaus_functs_original import generate_vanilla_grad, eval_plausibility
 
+from torchviz import make_dot
+import matplotlib.pyplot as plt
+
 logger = logging.getLogger(__name__)
 # import torch
 torch.manual_seed(8)
@@ -425,7 +428,7 @@ def train(hyp, opt, device, tb_writer=None):
                 # use_pgt = False
 
                 out = model(imgs.requires_grad_(True), pgt = use_pgt, out_nums = opt.out_num_attrs)  # forward
-                
+
                 # Get predicted labels for generating predicted attribution maps, 
                 # only needed for loss attributions since they are target specific
                 if (opt.pgt_coeff != 0.0) and opt.loss_attr and opt.pred_targets:
@@ -450,6 +453,7 @@ def train(hyp, opt, device, tb_writer=None):
                     pred = out
                     attr = None
                     # attr = out[0][...,0]
+                
                 compute_pgt_loss.nl = 3
                 compute_loss_ota.nl = 3
                 # model.zero_grad()
@@ -460,6 +464,7 @@ def train(hyp, opt, device, tb_writer=None):
                         loss, loss_items = compute_pgt_loss(pred, targets, opt, imgs, attr, pgt_coeff = opt.pgt_coeff, metric=opt.loss_metric)  # loss scaled by batch_size
                         if compute_pgt_loss.attr is not None:
                             attr = compute_pgt_loss.attr
+                        # loss = get_plaus_loss(targets, attr, opt, only_loss = True)
                     else:
                         loss, loss_items = compute_loss_ota(pred, targets, imgs, metric=opt.loss_metric)  # loss scaled by batch_size
                 else:
@@ -470,7 +475,7 @@ def train(hyp, opt, device, tb_writer=None):
                     loss *= opt.world_size  # gradient averaged between devices in DDP mode
                 if opt.quad:
                     loss *= 4.
-
+                # model.zero_grad()
                 #########################################################
                 #            ADDED PLAUSIBILITY LOSS BELOW              #
                 #########################################################
@@ -485,14 +490,15 @@ def train(hyp, opt, device, tb_writer=None):
             ##########################################################
             
             if opt.test_plaus_confirm:
-                attribution_map = attr
-                plaus_score_conf = get_plaus_score(targets_out = targets.to(imgs.device), attr = attribution_map)
-                conf_nans += 1 if math.isnan(plaus_score_conf) else 0
-                plaus_score_conf = plaus_score_conf if not math.isnan(plaus_score_conf) else 0.0
-                plaus_score_conf_total += plaus_score_conf
-                plaus_score_total_train += plaus_score_conf
+                with torch.no_grad():
+                    attribution_map = attr
+                    plaus_score_conf = get_plaus_score(targets_out = targets.to(imgs.device), attr = attribution_map)
+                    conf_nans += 1 if math.isnan(plaus_score_conf) else 0
+                    plaus_score_conf = plaus_score_conf if not math.isnan(plaus_score_conf) else 0.0
+                    plaus_score_conf_total += plaus_score_conf
+                    plaus_score_total_train += plaus_score_conf
                 # plaus_loss, (plaus_score, dist_reg, plaus_reg,) = get_plaus_loss(targets, attribution_map, opt)
-                
+
             if not opt.pgt_built_in:
                 if opt.loss_attr:
                     loss_attr = compute_loss_ota
@@ -556,13 +562,24 @@ def train(hyp, opt, device, tb_writer=None):
             # scaler.scale(loss).backward() 
             loss.backward()
             t3_pgt = time.time() 
-            
+
+            # make_dot(loss, params=dict(model.named_parameters()), show_attrs=True, show_saved=True)
+            # graph = make_dot(loss, params=dict(model.named_parameters()), show_attrs=True, show_saved=True)
+            # plt.imsave('figs/loss_graph.pdf', graph)
+
+            # import matplotlib
+            # matplotlib.use('GTK3Agg')
+            # npimg = (imgs[0].clone().detach().cpu().numpy())
+            # tpimg = np.transpose(npimg, (1, 2, 0))
+            # plt.imshow(tpimg)
+            # plt.show()
+
             # Optimize
             if ni % accumulate == 0:
                 # scaler.step(optimizer)  # optimizer.step
                 optimizer.step()
                 # scaler.update()
-                # del plaus.plaus_score
+                
                 optimizer.zero_grad()
                 # model.zero_grad()
                 if ema:
@@ -811,8 +828,9 @@ if __name__ == '__main__':
     # opt.plaus_results = True 
     
     opt.test_plaus_confirm = True
+    opt.inherently_explainable = True
     # opt.sweep = True 
-    opt.loss_attr = True 
+    # opt.loss_attr = True 
     # opt.save_hybrid = True 
     # opt.out_num_attrs = [0,1,2,] # unused if opt.loss_attr == True 
     opt.dist_reg_only = True 
@@ -822,7 +840,7 @@ if __name__ == '__main__':
 
     opt.pgt_built_in = True 
     opt.out_num_attrs = [1,] 
-    opt.pgt_coeff = 0.05
+    opt.pgt_coeff = 0.5
     opt.pgt_lr_decay = 1.0 
     opt.pgt_lr_decay_step = 1000 # 200 
     opt.epochs = 300 
@@ -881,8 +899,8 @@ if __name__ == '__main__':
             opt.hyp = f'data/hyp.real_world_kfold{opt.k_fold_num}.yaml' 
             opt.data = f'data/real_world_kfold{opt.k_fold_num}.yaml' 
         opt.weights = ''
-        opt.cfg = 'cfg/training/yolov7-tiny-drone.yaml' 
-        # opt.cfg = 'cfg/training/yolov7-tiny-drone-pgt.yaml' 
+        # opt.cfg = 'cfg/training/yolov7-tiny-drone.yaml' 
+        opt.cfg = 'cfg/training/yolov7-tiny-drone-pgt.yaml' 
     if opt.dataset == 'coco': 
         opt.source = "/data/nielseni6/coco/images" 
         ######### scratch #########
