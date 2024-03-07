@@ -1060,7 +1060,9 @@ class ModelPGT(nn.Module):
             return x
         else:
             if inherently_explainable:
-                x.append(attr)
+                # x.append(normalize_batch(attr))
+                # x.append(attr.sigmoid())
+                x.append(torch.abs(attr))
             else:
                 attr_list = []
                 for out_num in out_nums:

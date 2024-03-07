@@ -132,13 +132,13 @@ def get_plaus_score(targets_out, attr, debug=False, corners=False, imgs=None, ep
     
     # with torch.no_grad():
     att_select = attr[coords_map]
-    # att_select = attr * coords_map.to(torch.int8)
+    # att_select = attr * coords_map.to(torch.float32)
     att_total = attr
     
-    IoU_denom = torch.sum(att_total.cpu())
-    IoU_num = torch.sum(att_select.cpu())
+    IoU_num = torch.sum(att_select)
+    IoU_denom = torch.sum(att_total)
     
-    IoU_ = (IoU_num.to(attr.device) / IoU_denom.to(attr.device))
+    IoU_ = (IoU_num / IoU_denom)
     plaus_score = IoU_
 
     # plaus_score = ((torch.sum(attr[coords_map])) / (torch.sum(attr)))
@@ -615,8 +615,8 @@ def get_plaus_loss(targets, attribution_map, opt, imgs=None, debug=False, only_l
         plaus_reg = (((1.0 + dist_reg) / 2.0))
         # plaus_reg = dist_reg 
     # Calculate plausibility loss
-    plaus_loss = (1 - plaus_reg) * opt.pgt_coeff
-    # plaus_loss = (- plaus_reg) * opt.pgt_coeff
+    # plaus_loss = (1 - plaus_reg) * opt.pgt_coeff
+    plaus_loss = (plaus_reg) * opt.pgt_coeff
     if only_loss:
         return plaus_loss
     if not debug:

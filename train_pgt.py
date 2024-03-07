@@ -47,7 +47,6 @@ from plaus_functs import get_gradient, get_plaus_score, get_detections, get_labe
     get_plaus_loss, get_attr_corners
 from plaus_functs_original import generate_vanilla_grad, eval_plausibility
 
-from torchviz import make_dot
 import matplotlib.pyplot as plt
 
 logger = logging.getLogger(__name__)
@@ -546,33 +545,12 @@ def train(hyp, opt, device, tb_writer=None):
                     
                     t2_pgt = time.time()
                 
-                # plaus_loss.backward(retain_graph=True)
-                # optimizer.step()
-                # optimizer.zero_grad()
-                
-                # lplaus = lplaus.clamp(min=0,max=2)
-                # scaler.scale(lplaus).backward()#(retain_graph=True)
-                # if ni % accumulate == 0:
-                #     scaler.step(optimizer)  # optimizer.step
-                #     optimizer.zero_grad()
-            # model.zero_grad()
             ##########################################################
 
             # Backward
             # scaler.scale(loss).backward() 
             loss.backward()
             t3_pgt = time.time() 
-
-            # make_dot(loss, params=dict(model.named_parameters()), show_attrs=True, show_saved=True)
-            # graph = make_dot(loss, params=dict(model.named_parameters()), show_attrs=True, show_saved=True)
-            # plt.imsave('figs/loss_graph.pdf', graph)
-
-            # import matplotlib
-            # matplotlib.use('GTK3Agg')
-            # npimg = (imgs[0].clone().detach().cpu().numpy())
-            # tpimg = np.transpose(npimg, (1, 2, 0))
-            # plt.imshow(tpimg)
-            # plt.show()
 
             # Optimize
             if ni % accumulate == 0:
@@ -899,8 +877,11 @@ if __name__ == '__main__':
             opt.hyp = f'data/hyp.real_world_kfold{opt.k_fold_num}.yaml' 
             opt.data = f'data/real_world_kfold{opt.k_fold_num}.yaml' 
         opt.weights = ''
-        # opt.cfg = 'cfg/training/yolov7-tiny-drone.yaml' 
-        opt.cfg = 'cfg/training/yolov7-tiny-drone-pgt.yaml' 
+        if opt.inherently_explainable:
+            opt.cfg = 'cfg/training/yolov7-tiny-drone-pgt.yaml' 
+        else:
+            opt.cfg = 'cfg/training/yolov7-tiny-drone.yaml' 
+        
     if opt.dataset == 'coco': 
         opt.source = "/data/nielseni6/coco/images" 
         ######### scratch #########
