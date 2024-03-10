@@ -1063,15 +1063,15 @@ class ModelPGT(nn.Module):
                 # x.append(normalize_batch(attr))
                 # x.append(attr.sigmoid())
                 x.append(torch.abs(attr))
-            else:
-                attr_list = []
-                for out_num in out_nums:
-                    if self.training:
-                        attribution_map = get_gradient(img, grad_wrt = x[out_num])#pred)#x[out_num])
-                    else:
-                        attribution_map = get_gradient(img, grad_wrt = x[0][out_num])
-                    attr_list.append(attribution_map)
-                    x.append(attribution_map)
+            # else:
+            #     attr_list = []
+            #     for out_num in out_nums:
+            #         if self.training:
+            #             attribution_map = get_gradient(img, grad_wrt = x[out_num])#pred)#x[out_num])
+            #         else:
+            #             attribution_map = get_gradient(img, grad_wrt = x[0][out_num])
+            #         attr_list.append(attribution_map)
+            #         x.append(attribution_map)
             return x
             # else:
             #     x.append(attr)

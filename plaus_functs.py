@@ -8,7 +8,7 @@ import matplotlib.path as mplPath
 from matplotlib.path import Path
 from utils.general import non_max_suppression, xyxy2xywh, scale_coords
 
-def get_gradient(img, grad_wrt, norm=True, absolute=False, grayscale=False, keepmean=False):
+def get_gradient(img, grad_wrt, norm=False, absolute=True, grayscale=False, keepmean=False):
     """
     Compute the gradient of an image with respect to a given tensor.
 
@@ -100,48 +100,54 @@ def get_plaus_score(targets_out, attr, debug=False, corners=False, imgs=None, ep
     Returns:
         torch.Tensor: The plausibility score.
     """
-    # if imgs is None:
-    #     imgs = torch.zeros_like(attr)
-    # with torch.no_grad():
-    target_inds = targets_out[:, 0].int()
-    xyxy_batch = targets_out[:, 2:6]# * pre_gen_gains[out_num]
-    num_pixels = torch.tile(torch.tensor([attr.shape[2], attr.shape[3], attr.shape[2], attr.shape[3]], device=attr.device), (xyxy_batch.shape[0], 1))
-    # num_pixels = torch.tile(torch.tensor([1.0, 1.0, 1.0, 1.0], device=imgs.device), (xyxy_batch.shape[0], 1))
-    xyxy_corners = (corners_coords_batch(xyxy_batch) * num_pixels).int()
-    co = xyxy_corners
-    if corners:
-        co = targets_out[:, 2:6].int()
-    coords_map = torch.zeros_like(attr, dtype=torch.bool)
-    # rows = np.arange(co.shape[0])
-    x1, x2 = co[:,1], co[:,3]
-    y1, y2 = co[:,0], co[:,2]
+    # # if imgs is None:
+    # #     imgs = torch.zeros_like(attr)
+    # # with torch.no_grad():
+    # target_inds = targets_out[:, 0].int()
+    # xyxy_batch = targets_out[:, 2:6]# * pre_gen_gains[out_num]
+    # num_pixels = torch.tile(torch.tensor([attr.shape[2], attr.shape[3], attr.shape[2], attr.shape[3]], device=attr.device), (xyxy_batch.shape[0], 1))
+    # # num_pixels = torch.tile(torch.tensor([1.0, 1.0, 1.0, 1.0], device=imgs.device), (xyxy_batch.shape[0], 1))
+    # xyxy_corners = (corners_coords_batch(xyxy_batch) * num_pixels).int()
+    # co = xyxy_corners
+    # if corners:
+    #     co = targets_out[:, 2:6].int()
+    # coords_map = torch.zeros_like(attr, dtype=torch.bool)
+    # # rows = np.arange(co.shape[0])
+    # x1, x2 = co[:,1], co[:,3]
+    # y1, y2 = co[:,0], co[:,2]
     
-    for ic in range(co.shape[0]): # potential for speedup here with torch indexing instead of for loop
-        coords_map[target_inds[ic], :,x1[ic]:x2[ic],y1[ic]:y2[ic]] = True
+    # for ic in range(co.shape[0]): # potential for speedup here with torch indexing instead of for loop
+    #     coords_map[target_inds[ic], :,x1[ic]:x2[ic],y1[ic]:y2[ic]] = True
 
-    if torch.isnan(attr).any():
-        attr = torch.nan_to_num(attr, nan=0.0)
+    # if torch.isnan(attr).any():
+    #     attr = torch.nan_to_num(attr, nan=0.0)
+
+    coords_map = get_bbox_map(targets_out, attr)
+    plaus_score = ((torch.sum((attr * coords_map))) / (torch.sum(attr)))
+
     if debug:
         for i in range(len(coords_map)):
             coords_map3ch = torch.cat([coords_map[i][:1], coords_map[i][:1], coords_map[i][:1]], dim=0)
             test_bbox = torch.zeros_like(imgs[i])
             test_bbox[coords_map3ch] = imgs[i][coords_map3ch]
             imshow(test_bbox, save_path='figs/test_bbox')
+            if imgs is None:
+                imgs = torch.zeros_like(attr)
             imshow(imgs[i], save_path='figs/im0')
             imshow(attr[i], save_path='figs/attr')
     
     # with torch.no_grad():
-    att_select = attr[coords_map]
+    # # att_select = attr[coords_map]
     # att_select = attr * coords_map.to(torch.float32)
-    att_total = attr
+    # att_total = attr
     
-    IoU_num = torch.sum(att_select)
-    IoU_denom = torch.sum(att_total)
+    # IoU_num = torch.sum(att_select)
+    # IoU_denom = torch.sum(att_total)
     
-    IoU_ = (IoU_num / IoU_denom)
-    plaus_score = IoU_
+    # IoU_ = (IoU_num / IoU_denom)
+    # plaus_score = IoU_
 
-    # plaus_score = ((torch.sum(attr[coords_map])) / (torch.sum(attr)))
+    # # plaus_score = ((torch.sum(attr[coords_map])) / (torch.sum(attr)))
     
     return plaus_score
 
@@ -475,6 +481,8 @@ def get_distance_grids(attr, targets, imgs=None, focus_coeff=0.5, debug=False):
             if ((i % 8) == 0):
                 grid_show = torch.cat([dist_grids[i][:1], dist_grids[i][:1], dist_grids[i][:1]], dim=0)
                 imshow(grid_show, save_path='figs/dist_grids')
+                if imgs is None:
+                    imgs = torch.zeros_like(attr)
                 imshow(imgs[i], save_path='figs/im0')
                 img_overlay = (overlay_mask(imgs[i], dist_grids[i][0], alpha = 0.75))
                 imshow(img_overlay, save_path='figs/dist_grid_overlay')
@@ -490,59 +498,6 @@ def attr_reg(attribution_map, distance_map):
     dist_attr = torch.mean(distance_map * attribution_map)#, dim=(1, 2, 3)) 
     # del distance_map, attribution_map
     return dist_attr
-
-def get_plaus_loss_(targets, attribution_map, opt, imgs=None, debug=False, eps=1e-7):
-    if imgs is None:
-        imgs = torch.zeros_like(attribution_map)
-    # Calculate Plausibility IoU with attribution maps
-    plaus_score = get_plaus_score(targets_out = targets.to(imgs.device), attr = attribution_map, imgs = imgs)
-    
-    # Calculate distance regularization
-    distance_map = get_distance_grids(attribution_map, targets.to(imgs.device), opt.focus_coeff)
-    
-    if opt.dist_x_bbox:
-        bbox_map = get_bbox_map(targets, attribution_map).to(torch.bool)
-        distance_map[bbox_map] = 0.0
-        # distance_map = distance_map * (1 - bbox_map)
-        
-    # Positive regularization term for incentivizing pixels near the target to have high attribution
-    dist_attr_pos = attr_reg(attribution_map, (1.0 - distance_map)) / (torch.abs(attribution_map).mean())
-    # Negative regularization term for incentivizing pixels far from the target to have low attribution
-    dist_attr_neg = attr_reg(attribution_map, distance_map) / (torch.abs(attribution_map).mean())
-    # Calculate plausibility regularization term
-    # dist_reg = (1.0 + ((-(1.0 - dist_attr_pos)) + ((1.0 - dist_attr_neg)))).mean() / 2.0
-    dist_reg = ((1.0 + dist_attr_pos - dist_attr_neg).mean() / 2.0) # best possible score is 1.0, worst possible score is 0.0
-    # dist_reg = ((dist_attr_pos / torch.mean(attribution_map)) - (dist_attr_neg / torch.mean(attribution_map))) 
-    # dist_reg = torch.mean((dist_attr_pos / torch.mean(attribution_map, dim=(1, 2, 3))) - (dist_attr_neg / torch.mean(attribution_map, dim=(1, 2, 3)))) 
-    # dist_reg = (torch.mean(torch.exp((dist_attr_pos / torch.mean(attribution_map, dim=(1, 2, 3)))) + \
-    #                             torch.exp(1 - (dist_attr_neg / torch.mean(attribution_map, dim=(1, 2, 3)))))) \
-    #                             / 2.5
-
-    if opt.bbox_coeff != 0.0:
-        bbox_map = get_bbox_map(targets, attribution_map)
-        attr_bbox_pos = attr_reg(attribution_map, bbox_map) /  torch.abs(attribution_map).mean()
-        attr_bbox_neg = attr_reg(attribution_map, (1.0 - bbox_map)) /  torch.abs(attribution_map).mean()
-        bbox_reg = (1.0 + attr_bbox_pos - attr_bbox_neg).mean() / 2.0 # best possible score is 1.0, worst possible score is 0.0
-        # bbox_reg = (attr_bbox_pos / torch.mean(attribution_map)) - (attr_bbox_neg / torch.mean(attribution_map))
-    else:
-        bbox_reg = 0.0
-
-    if not opt.dist_reg_only:
-        plaus_reg = (plaus_score * opt.iou_coeff) + \
-                    (((dist_reg * opt.dist_coeff) + (bbox_reg * opt.bbox_coeff))\
-                    # ((((((1.0 + dist_reg) / 2.0) - 1.0) * opt.dist_coeff) + ((((1.0 + bbox_reg) / 2.0) - 1.0) * opt.bbox_coeff))\
-                    # / (plaus_score) \
-                    ) - (1.0 * opt.iou_coeff)
-    else:
-        # plaus_reg = ((1.0 + dist_reg) / 2.0) - 1.0
-        plaus_reg = dist_reg 
-    # Calculate plausibility loss
-    # plaus_loss = (1 - plaus_reg) * opt.pgt_coeff
-    plaus_loss = (1.0 - plaus_reg) * opt.pgt_coeff
-    if not debug:
-        return plaus_loss, (plaus_score, dist_reg, plaus_reg,)
-    else:
-        return plaus_loss, (plaus_score, dist_reg, plaus_reg,), distance_map
 
 def get_bbox_map(targets_out, attr, corners=False):
     target_inds = targets_out[:, 0].int()
@@ -570,8 +525,10 @@ def get_plaus_loss(targets, attribution_map, opt, imgs=None, debug=False, only_l
     #     imgs = torch.zeros_like(attribution_map)
     # Calculate Plausibility IoU with attribution maps
     # attribution_map.retains_grad = True
-    plaus_score = get_plaus_score(targets_out = targets.to(attribution_map.device), attr = attribution_map.clone().detach().requires_grad_(True), imgs = imgs)
-    # plaus_score = torch.tensor(0.0)
+    if not only_loss:
+        plaus_score = get_plaus_score(targets_out = targets.to(attribution_map.device), attr = attribution_map.clone().detach().requires_grad_(True), imgs = imgs)
+    else:
+        plaus_score = torch.tensor(0.0)
     
     # attribution_map = normalize_batch(attribution_map) # Normalize attribution maps per image in batch
 
@@ -615,8 +572,8 @@ def get_plaus_loss(targets, attribution_map, opt, imgs=None, debug=False, only_l
         plaus_reg = (((1.0 + dist_reg) / 2.0))
         # plaus_reg = dist_reg 
     # Calculate plausibility loss
-    # plaus_loss = (1 - plaus_reg) * opt.pgt_coeff
-    plaus_loss = (plaus_reg) * opt.pgt_coeff
+    plaus_loss = (1 - plaus_reg) * opt.pgt_coeff
+    # plaus_loss = (plaus_reg) * opt.pgt_coeff
     if only_loss:
         return plaus_loss
     if not debug:
@@ -823,59 +780,3 @@ class RVNonLinearFunc(nn.Module):
 
         return mu_out, Sigma_out
 
-class PGT_Losses:
-
-    def __init__(self):
-        self.plaus_score = torch.tensor(0.0)
-
-
-    def get_plaus_score(self, targets_out, attr, debug=False, corners=False, imgs=None, eps = 1e-7):
-        # TODO: Remove imgs from this function and only take it as input if debug is True
-        """
-        Calculates the plausibility score based on the given inputs.
-
-        Args:
-            imgs (torch.Tensor): The input images.
-            targets_out (torch.Tensor): The output targets.
-            attr (torch.Tensor): The attribute tensor.
-            debug (bool, optional): Whether to enable debug mode. Defaults to False.
-
-        Returns:
-            torch.Tensor: The plausibility score.
-        """
-        # if imgs is None:
-        #     imgs = torch.zeros_like(attr)
-        target_inds = targets_out[:, 0].int()
-        xyxy_batch = targets_out[:, 2:6]# * pre_gen_gains[out_num]
-        num_pixels = torch.tile(torch.tensor([attr.shape[2], attr.shape[3], attr.shape[2], attr.shape[3]], device=attr.device), (xyxy_batch.shape[0], 1))
-        # num_pixels = torch.tile(torch.tensor([1.0, 1.0, 1.0, 1.0], device=imgs.device), (xyxy_batch.shape[0], 1))
-        xyxy_corners = (corners_coords_batch(xyxy_batch) * num_pixels).int()
-        co = xyxy_corners
-        if corners:
-            co = targets_out[:, 2:6].int()
-        coords_map = torch.zeros_like(attr, dtype=torch.bool)
-        # rows = np.arange(co.shape[0])
-        x1, x2 = co[:,1], co[:,3]
-        y1, y2 = co[:,0], co[:,2]
-        
-        for ic in range(co.shape[0]): # potential for speedup here with torch indexing instead of for loop
-            coords_map[target_inds[ic], :,x1[ic]:x2[ic],y1[ic]:y2[ic]] = True
-        
-        if torch.isnan(attr).any():
-            attr = torch.nan_to_num(attr, nan=0.0)
-        if debug:
-            for i in range(len(coords_map)):
-                coords_map3ch = torch.cat([coords_map[i][:1], coords_map[i][:1], coords_map[i][:1]], dim=0)
-                test_bbox = torch.zeros_like(imgs[i])
-                test_bbox[coords_map3ch] = imgs[i][coords_map3ch]
-                imshow(test_bbox, save_path='figs/test_bbox')
-                imshow(imgs[i], save_path='figs/im0')
-                imshow(attr[i], save_path='figs/attr')
-        
-        # IoU_num = (torch.sum(attr[coords_map]))
-        # IoU_denom = torch.sum(attr)
-        # IoU_ = (IoU_num / (IoU_denom))
-        # plaus_score = IoU_
-        self.plaus_score = (torch.sum(attr[coords_map]) / (torch.sum(attr)))
-
-        return self.plaus_score

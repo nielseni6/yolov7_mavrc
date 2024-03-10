@@ -1763,7 +1763,7 @@ class ComputePGTLossOTA:
     def __call__(self, p, targets, opt, imgs, attr=None, pgt_coeff = 1.0, metric='CIoU',):  # predictions, targets, model   
 
         device = targets.device
-        targets_ = targets.clone()
+        targets_ = targets.clone().detach()
         lcls, lbox, lobj = torch.zeros(1, device=device), torch.zeros(1, device=device), torch.zeros(1, device=device)
         lplaus, plaus_score = torch.zeros(1, device=device), torch.zeros(1, device=device)
         bs, as_, gjs, gis, targets, anchors = self.build_targets(p, targets, imgs)
@@ -1772,7 +1772,8 @@ class ComputePGTLossOTA:
         #     distance_map = (get_bbox_map(targets_, attr))
         # else:
         #     distance_map = None
-
+        
+        ps_list = []
         # Losses
         for i, pi in enumerate(p):  # layer index, layer predictions
             b, a, gj, gi = bs[i], as_[i], gjs[i], gis[i]  # image, anchor, gridy, gridx
@@ -1807,6 +1808,8 @@ class ComputePGTLossOTA:
                     t[range(n), selected_tcls] = self.cp
                     lcls += self.BCEcls(ps[:, 5:], t)  # BCE
 
+                if i in opt.out_num_attrs:
+                    ps_list.append(ps)
                 # Append targets to text file
                 # with open('targets.txt', 'a') as file:
                 #     [file.write('%11.5g ' * 4 % tuple(x) + '\n') for x in torch.cat((txy[i], twh[i]), 1)]
@@ -1821,11 +1824,20 @@ class ComputePGTLossOTA:
 
             if self.autobalance:
                 self.balance[i] = self.balance[i] * 0.9999 + 0.0001 / obji.detach().item()
-
-        if opt.loss_attr:
-            attr = get_gradient(imgs, grad_wrt = lcls)
+        if not opt.inherently_explainable:
+            if opt.loss_attr:
+                attr = get_gradient(imgs, grad_wrt = lcls)
+            else:
+                attr = get_gradient(imgs, grad_wrt = ps_list[0])
         self.attr = attr
-        plaus_loss = get_plaus_loss(targets_, attr, opt, only_loss = True)
+
+        if opt.iou_loss_only:
+            bbox_map = get_bbox_map(targets_, attr)
+            plaus_score = ((torch.sum((attr * bbox_map))) / (torch.sum(attr)))
+            plaus_loss = (1.0 - plaus_score)
+        else:
+            plaus_loss = get_plaus_loss(targets_, attr, opt, only_loss = True)
+
         plausi = plaus_loss
         lplaus += plausi * self.balance[i]
         
@@ -1839,12 +1851,15 @@ class ComputePGTLossOTA:
         bs = tobj.shape[0]  # batch size
         lobj=lobj.clamp(max=2)
         # lplaus=lplaus.clamp(max=2)
-        
+        with torch.no_grad():
+            plaus_score = get_plaus_score(targets_, attr)
         self.plaus_score = plaus_score 
         
         if pgt_coeff != 0.0:
-            # loss_r = lplaus
-            loss_r = lbox + lobj + lcls + lplaus # lplaus is the PGT loss added to the original loss
+            if opt.lplaus_only:
+                loss_r = lplaus
+            else:
+                loss_r = lbox + lobj + lcls + lplaus # lplaus is the PGT loss added to the original loss
         else:
             loss_r = lbox + lobj + lcls 
         loss=loss_r.clamp(max=2) 

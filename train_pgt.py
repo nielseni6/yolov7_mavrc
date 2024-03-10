@@ -357,7 +357,7 @@ def train(hyp, opt, device, tb_writer=None):
     for epoch in range(start_epoch, epochs):  # epoch ------------------------------------------------------------------
         model.train()
         plaus_score_conf_total = 0.0
-        conf_nans = 0
+        conf_i = 0
         # Update image weights (optional)
         if opt.image_weights:
             # Generate indices
@@ -423,7 +423,7 @@ def train(hyp, opt, device, tb_writer=None):
             # with amp.autocast(enabled=cuda):
             if True:
                 # Use PGT built-into the model 
-                use_pgt = (opt.pgt_coeff != 0.0) and (opt.pgt_built_in) and (not opt.loss_attr)
+                use_pgt = (opt.pgt_coeff != 0.0) and (opt.pgt_built_in) and (opt.inherently_explainable)
                 # use_pgt = False
 
                 out = model(imgs.requires_grad_(True), pgt = use_pgt, out_nums = opt.out_num_attrs)  # forward
@@ -446,7 +446,8 @@ def train(hyp, opt, device, tb_writer=None):
 
                 # Get attribution map from model output if using built-in PGT
                 
-                if use_pgt:#len(out) > 3:#use_pgt:
+                # if use_pgt and (len(out) > 3):#use_pgt:
+                if opt.inherently_explainable or (len(out) > 3):
                     pred, attr = out[:3], out[3]#[...,0]
                 else:
                     pred = out
@@ -461,7 +462,8 @@ def train(hyp, opt, device, tb_writer=None):
                     print('Using loss_ota') if i == 0 else None
                     if opt.pgt_built_in:#attr is not None:#opt.pgt_built_in:
                         loss, loss_items = compute_pgt_loss(pred, targets, opt, imgs, attr, pgt_coeff = opt.pgt_coeff, metric=opt.loss_metric)  # loss scaled by batch_size
-                        if compute_pgt_loss.attr is not None:
+                        # if (attr is None) and (compute_pgt_loss.attr is not None)
+                        if not opt.inherently_explainable:
                             attr = compute_pgt_loss.attr
                         # loss = get_plaus_loss(targets, attr, opt, only_loss = True)
                     else:
@@ -490,12 +492,11 @@ def train(hyp, opt, device, tb_writer=None):
             
             if opt.test_plaus_confirm:
                 with torch.no_grad():
-                    attribution_map = attr
-                    plaus_score_conf = get_plaus_score(targets_out = targets.to(imgs.device), attr = attribution_map)
-                    conf_nans += 1 if math.isnan(plaus_score_conf) else 0
+                    plaus_score_conf = get_plaus_score(targets_out = targets.to(imgs.device), attr = attr)
+                    conf_i += 1 if not math.isnan(plaus_score_conf) else 0
                     plaus_score_conf = plaus_score_conf if not math.isnan(plaus_score_conf) else 0.0
                     plaus_score_conf_total += plaus_score_conf
-                    plaus_score_total_train += plaus_score_conf
+                    # plaus_score_total_train += plaus_score_conf
                 # plaus_loss, (plaus_score, dist_reg, plaus_reg,) = get_plaus_loss(targets, attribution_map, opt)
 
             if not opt.pgt_built_in:
@@ -571,7 +572,7 @@ def train(hyp, opt, device, tb_writer=None):
                 mloss = (mloss * i + loss_items) / (i + 1)  # update mean losses
                 mem = '%.3gG' % (torch.cuda.memory_reserved() / 1E9 if torch.cuda.is_available() else 0)  # (GB)
                 s = ('%10s' * 2 + '%10.4g' * int(num_losses + 2 + 2)) % (
-                    '%g/%g' % (epoch, epochs - 1), mem, *mloss, plaus_score_conf, plaus_score_conf_total / (i - conf_nans + 1), targets.shape[0], imgs.shape[-1])
+                    '%g/%g' % (epoch, epochs - 1), mem, *mloss, compute_pgt_loss.plaus_score, (plaus_score_total_train / num_batches), targets.shape[0], imgs.shape[-1])
                 pbar.set_description(s)
 
                 # Plot
@@ -588,7 +589,7 @@ def train(hyp, opt, device, tb_writer=None):
             # end batch ------------------------------------------------------------------------------------------------
         # end epoch ----------------------------------------------------------------------------------------------------
         
-        plaus_score_total_train /= (len(dataloader) - conf_nans)
+        plaus_score_total_train /= (len(dataloader))
         dist_reg_total_train /= len(dataloader)
         plaus_loss_total_train /= len(dataloader)
         
@@ -638,8 +639,11 @@ def train(hyp, opt, device, tb_writer=None):
                     'metrics/precision', 'metrics/recall', 'metrics/mAP_0.5', 'metrics/mAP_0.5:0.95',
                     'val/box_loss', 'val/obj_loss', 'val/cls_loss',  # val loss
                     'x/lr0', 'x/lr1', 'x/lr2',  # params
-                    ] + ['plaus_loss_train', 'plaus_score_train', 'dist_reg_train', 'pgt_coeff']
-            for x, tag in zip(list(mloss[:-1]) + list((results)) + lr + [plaus_loss_total_train, plaus_score_total_train, dist_reg_total_train, opt.pgt_coeff,], tags):
+                    ] + ['plaus_loss_train', 'plaus_score_train', 'dist_reg_train', 'plaus_score_confirmation', 'pgt_coeff']
+            for x, tag in zip(list(mloss[:-1]) + list((results)) + lr + [plaus_loss_total_train, 
+                                                                         plaus_score_total_train, dist_reg_total_train, 
+                                                                         (plaus_score_conf_total / conf_i), opt.pgt_coeff,]
+                                                                         , tags):
                 if tb_writer:
                     tb_writer.add_scalar(tag, x, epoch)  # tensorboard
                 if wandb_logger.wandb:
@@ -807,12 +811,14 @@ if __name__ == '__main__':
     
     opt.test_plaus_confirm = True
     opt.inherently_explainable = True
+    opt.lplaus_only = False
+    opt.iou_loss_only = True
     # opt.sweep = True 
-    # opt.loss_attr = True 
+    opt.loss_attr = True 
     # opt.save_hybrid = True 
-    # opt.out_num_attrs = [0,1,2,] # unused if opt.loss_attr == True 
+    # opt.out_num_attrs = [0,1,2,] # unused if opt.loss_attr == True ``
     opt.dist_reg_only = True 
-    opt.focus_coeff = 0.15 
+    opt.focus_coeff = 0.1#15 
     opt.dist_coeff = 1.0 
     opt.bbox_coeff = 0.0 
 

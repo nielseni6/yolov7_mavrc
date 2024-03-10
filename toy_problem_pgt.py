@@ -19,7 +19,7 @@ def subfigimshow(img, ax):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--device', type=str, default='cuda', help='device')
-    parser.add_argument('--focus_coeff', type=float, default=0.5, help='focus_coeff')
+    parser.add_argument('--focus_coeff', type=float, default=0.01, help='focus_coeff')
     parser.add_argument('--dist_coeff', type=float, default=1.0, help='dist_coeff')
     parser.add_argument('--dist_reg_only', type=bool, default=True, help='dist_reg_only')
     parser.add_argument('--pgt_coeff', type=float, default=2.0, help='pgt_coeff')
@@ -82,11 +82,12 @@ if __name__ == '__main__':
             ax.axis('off')
             # imshow(attr[j], save_path=f'figs/test_map{j}_{i}')
     # Save the full figure
-    fig.savefig('figs/toy_problem_pgt.png', bbox_inches='tight')
-    fig.savefig('figs/toy_problem_pgt.pdf', bbox_inches='tight')
+    save_path = 'figs/toy_problem_pgt'
+    fig.savefig(f'{save_path}.png', bbox_inches='tight')
+    fig.savefig(f'{save_path}.pdf', bbox_inches='tight')
     plt.close(fig)  # Close the figure to free up memory
     print(f'plaus_loss: {plaus_loss}, plaus_score: {plaus_score}, dist_reg: {dist_reg}, plaus_reg: {plaus_reg}')
-
+    print(f'saved as: {save_path}.png')
 # for i in range(10):
 #     delta_attr = torch.autograd.grad(plaus_loss, attr, retain_graph=True,)[0]
 #     or j in range(len(attr)):
