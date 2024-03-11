@@ -737,7 +737,7 @@ if __name__ == '__main__':
     parser.add_argument('--data', type=str, default='data/real_world.yaml', help='data.yaml path')
     parser.add_argument('--hyp', type=str, default='data/hyp.real_world.yaml', help='hyperparameters path')
     parser.add_argument('--epochs', type=int, default=300)
-    parser.add_argument('--batch-size', type=int, default=32, help='total batch size for all GPUs') # 16 for coco
+    parser.add_argument('--batch-size', type=int, default=64, help='total batch size for all GPUs') # 16 for coco
     parser.add_argument('--img-size', nargs='+', type=int, default=[640, 640], help='[train, test] image sizes')
     parser.add_argument('--rect', action='store_true', help='rectangular training')
     parser.add_argument('--resume', nargs='?', const=True, default=False, help='resume most recent training')
@@ -809,22 +809,21 @@ if __name__ == '__main__':
     
     # opt.plaus_results = True 
     
-    opt.test_plaus_confirm = True
-    opt.inherently_explainable = True
-    opt.lplaus_only = False
-    opt.iou_loss_only = True
-    # opt.sweep = True 
-    opt.loss_attr = True 
+    opt.test_plaus_confirm = True 
+    opt.inherently_explainable = False 
+    opt.lplaus_only = True 
+    opt.iou_loss_only = True 
+    opt.loss_attr = False 
     # opt.save_hybrid = True 
     # opt.out_num_attrs = [0,1,2,] # unused if opt.loss_attr == True ``
     opt.dist_reg_only = True 
-    opt.focus_coeff = 0.1#15 
+    opt.focus_coeff = 0.1 # 15 
     opt.dist_coeff = 1.0 
     opt.bbox_coeff = 0.0 
-
+    
     opt.pgt_built_in = True 
     opt.out_num_attrs = [1,] 
-    opt.pgt_coeff = 0.5
+    opt.pgt_coeff = 0.1 
     opt.pgt_lr_decay = 1.0 
     opt.pgt_lr_decay_step = 1000 # 200 
     opt.epochs = 300 
@@ -849,7 +848,7 @@ if __name__ == '__main__':
     # nohup python -m torch.distributed.launch --nproc_per_node 4 --master_port 9528 train_pgt.py --sync-bn > ./output_logs/gpu2360.log 2>&1 &
     
     # opt.dataset = 'coco' 
-    opt.dataset = 'real_world_drone'
+    opt.dataset = 'real_world_drone' 
     # opt.sync_bn = True
     
     opt.seed = random.randrange(sys.maxsize) 

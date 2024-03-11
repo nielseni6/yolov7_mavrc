@@ -1765,7 +1765,8 @@ class ComputePGTLossOTA:
         device = targets.device
         targets_ = targets.clone().detach()
         lcls, lbox, lobj = torch.zeros(1, device=device), torch.zeros(1, device=device), torch.zeros(1, device=device)
-        lplaus, plaus_score = torch.zeros(1, device=device), torch.zeros(1, device=device)
+        lplaus, self.plaus_score = torch.zeros(1, device=device), torch.zeros(1, device=device)
+        num_attrs = 0
         bs, as_, gjs, gis, targets, anchors = self.build_targets(p, targets, imgs)
         pre_gen_gains = [torch.tensor(pp.shape, device=device)[[3, 2, 3, 2]] for pp in p] 
         # if attr is not None:
@@ -1773,12 +1774,12 @@ class ComputePGTLossOTA:
         # else:
         #     distance_map = None
         
-        ps_list = []
         # Losses
         for i, pi in enumerate(p):  # layer index, layer predictions
             b, a, gj, gi = bs[i], as_[i], gjs[i], gis[i]  # image, anchor, gridy, gridx
             tobj = torch.zeros_like(pi[..., 0], device=device)  # target obj
-
+            get_loss = True if (i == len(p) - 1) else False # only calculate loss on final layer unless not loss_attr
+            
             n = b.shape[0]  # number of targets
             if n:
                 ps = pi[b, a, gj, gi]  # prediction subset corresponding to targets
@@ -1808,11 +1809,41 @@ class ComputePGTLossOTA:
                     t[range(n), selected_tcls] = self.cp
                     lcls += self.BCEcls(ps[:, 5:], t)  # BCE
 
-                if i in opt.out_num_attrs:
-                    ps_list.append(ps)
                 # Append targets to text file
                 # with open('targets.txt', 'a') as file:
                 #     [file.write('%11.5g ' * 4 % tuple(x) + '\n') for x in torch.cat((txy[i], twh[i]), 1)]
+                
+                ################################################
+                if not opt.inherently_explainable:
+                    if opt.loss_attr:
+                        if get_loss:
+                            attr = get_gradient(imgs, grad_wrt = lcls)
+                    else:
+                        if i in opt.out_num_attrs:
+                            attr = get_gradient(imgs, grad_wrt = ps)
+                            get_loss = True
+                        else:
+                            get_loss = False
+                ################################################
+            ################################################
+            self.attr = attr
+            
+            if get_loss:
+                if opt.iou_loss_only:
+                    bbox_map = get_bbox_map(targets_, attr)
+                    plaus_score = ((torch.sum((attr * bbox_map))) / (torch.sum(attr)))
+                    plaus_loss = (1.0 - plaus_score)
+                else:
+                    plaus_loss = get_plaus_loss(targets_, attr, opt, only_loss = True)
+
+                plausi = plaus_loss
+                lplaus += plausi * self.balance[i]
+                
+                with torch.no_grad():
+                    plaus_score = get_plaus_score(targets_, attr)
+                self.plaus_score += plaus_score 
+                num_attrs += 1
+            ################################################
             
             obji = self.BCEobj(pi[..., 4], tobj)
             if obji > 1.0:
@@ -1821,25 +1852,12 @@ class ComputePGTLossOTA:
             lobj += obji * self.balance[i] 
             if lobj > 1.0: # obj loss
                 print("lobj",lobj)
-
+            
             if self.autobalance:
                 self.balance[i] = self.balance[i] * 0.9999 + 0.0001 / obji.detach().item()
-        if not opt.inherently_explainable:
-            if opt.loss_attr:
-                attr = get_gradient(imgs, grad_wrt = lcls)
-            else:
-                attr = get_gradient(imgs, grad_wrt = ps_list[0])
-        self.attr = attr
-
-        if opt.iou_loss_only:
-            bbox_map = get_bbox_map(targets_, attr)
-            plaus_score = ((torch.sum((attr * bbox_map))) / (torch.sum(attr)))
-            plaus_loss = (1.0 - plaus_score)
-        else:
-            plaus_loss = get_plaus_loss(targets_, attr, opt, only_loss = True)
-
-        plausi = plaus_loss
-        lplaus += plausi * self.balance[i]
+        
+        if num_attrs > 1:
+            self.plaus_score /= num_attrs
         
         if self.autobalance:
             self.balance = [x / self.balance[self.ssi] for x in self.balance]
@@ -1851,9 +1869,6 @@ class ComputePGTLossOTA:
         bs = tobj.shape[0]  # batch size
         lobj=lobj.clamp(max=2)
         # lplaus=lplaus.clamp(max=2)
-        with torch.no_grad():
-            plaus_score = get_plaus_score(targets_, attr)
-        self.plaus_score = plaus_score 
         
         if pgt_coeff != 0.0:
             if opt.lplaus_only:
@@ -1881,14 +1896,14 @@ class ComputePGTLossOTA:
         matching_anchs = [[] for pp in p]
         
         nl = len(p)    
-    
-        for batch_idx in range(p[0].shape[0]):
         
+        for batch_idx in range(p[0].shape[0]):
+            
             b_idx = targets[:, 0]==batch_idx
             this_target = targets[b_idx]
             if this_target.shape[0] == 0:
                 continue
-                
+            
             txywh = this_target[:, 2:6] * imgs[batch_idx].shape[1]
             txyxy = xywh2xyxy(txywh)
 
