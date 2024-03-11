@@ -423,7 +423,7 @@ def train(hyp, opt, device, tb_writer=None):
             # with amp.autocast(enabled=cuda):
             if True:
                 # Use PGT built-into the model 
-                use_pgt = (opt.pgt_coeff != 0.0) and (opt.pgt_built_in) and (opt.inherently_explainable)
+                use_pgt = (opt.pgt_coeff != 0.0) and (opt.inherently_explainable)
                 # use_pgt = False
 
                 out = model(imgs.requires_grad_(True), pgt = use_pgt, out_nums = opt.out_num_attrs)  # forward
@@ -437,14 +437,6 @@ def train(hyp, opt, device, tb_writer=None):
                     pred_labels = get_labels(det_out, imgs, targets.clone(), opt)
                 else:
                     pred_labels = targets
-
-                # ema.update_attr(model, include=['yaml', 'nc', 'hyp', 'gr', 'names', 'stride', 'class_weights'])
-                # ema.update(model)
-                # model_ = ema.ema
-                # out_ = model_(imgs.requires_grad_(True), pgt = use_pgt, out_nums = opt.out_num_attrs)  # forward
-                # pred_, attr_ = out_[:3], out_[3]
-
-                # Get attribution map from model output if using built-in PGT
                 
                 # if use_pgt and (len(out) > 3):#use_pgt:
                 if opt.inherently_explainable or (len(out) > 3):
@@ -456,18 +448,13 @@ def train(hyp, opt, device, tb_writer=None):
                 
                 compute_pgt_loss.nl = 3
                 compute_loss_ota.nl = 3
-                # model.zero_grad()
-                # optimizer.zero_grad()
+
                 if 'loss_ota' not in hyp or hyp['loss_ota'] == 1:
                     print('Using loss_ota') if i == 0 else None
-                    if opt.pgt_built_in:#attr is not None:#opt.pgt_built_in:
-                        loss, loss_items = compute_pgt_loss(pred, targets, opt, imgs, attr, pgt_coeff = opt.pgt_coeff, metric=opt.loss_metric)  # loss scaled by batch_size
-                        # if (attr is None) and (compute_pgt_loss.attr is not None)
-                        if not opt.inherently_explainable:
-                            attr = compute_pgt_loss.attr
-                        # loss = get_plaus_loss(targets, attr, opt, only_loss = True)
-                    else:
-                        loss, loss_items = compute_loss_ota(pred, targets, imgs, metric=opt.loss_metric)  # loss scaled by batch_size
+                    loss, loss_items = compute_pgt_loss(pred, targets, opt, imgs, attr, pgt_coeff = opt.pgt_coeff, metric=opt.loss_metric)  # loss scaled by batch_size
+                    # if (attr is None) and (compute_pgt_loss.attr is not None)
+                    if not opt.inherently_explainable:
+                        attr = compute_pgt_loss.attr
                 else:
                     print('Using loss') if i == 0 else None
                     # This is currently broken due to the addition of plausibility loss
@@ -481,15 +468,13 @@ def train(hyp, opt, device, tb_writer=None):
                 #            ADDED PLAUSIBILITY LOSS BELOW              #
                 #########################################################
                     
-                if (opt.pgt_coeff != 0.0) and (opt.pgt_built_in):
+                if (opt.pgt_coeff != 0.0):
                     plaus_loss_total_train += loss_items[3]
                     plaus_score_total_train += compute_pgt_loss.plaus_score #(1 - (loss_items[3] / opt.pgt_coeff))
                     num_batches += 1
                 
             ##########################################################  
-            # Compute plausibility loss
-            ##########################################################
-            
+            # Confirm plausibility scores
             if opt.test_plaus_confirm:
                 with torch.no_grad():
                     plaus_score_conf = get_plaus_score(targets_out = targets.to(imgs.device), attr = attr)
@@ -498,54 +483,6 @@ def train(hyp, opt, device, tb_writer=None):
                     plaus_score_conf_total += plaus_score_conf
                     # plaus_score_total_train += plaus_score_conf
                 # plaus_loss, (plaus_score, dist_reg, plaus_reg,) = get_plaus_loss(targets, attribution_map, opt)
-
-            if not opt.pgt_built_in:
-                if opt.loss_attr:
-                    loss_attr = compute_loss_ota
-                    opt.out_num_attrs = [None,]
-                else:
-                    loss_attr = None
-                
-                lplaus = torch.zeros_like(loss, device=device)
-                for out_num_attr in opt.out_num_attrs:
-                    t0_pgt = time.time()
-                    if not (opt.pgt_coeff == 0):
-                        # Get attribution maps
-                        
-                        # attribution_map = generate_vanilla_grad(model, imgs, loss_func=loss_attr, 
-                        #                                         targets=pred_labels, metric=opt.loss_metric, 
-                        #                                         out_num = out_num_attr, device=device) # mlc = max label class
-                        
-                        attribution_map = attr
-                        
-                        # attribution_map = get_gradient(imgs, grad_wrt = loss)
-                        # optimizer.zero_grad()
-                        # Compute plausibility loss
-
-                        plaus_loss, plaus_score, dist_reg, plaus_reg = torch.tensor(0.0), torch.tensor(0.0), torch.tensor(0.0), torch.tensor(0.0)
-                        # plaus_loss, (plaus_score, dist_reg, plaus_reg,) = get_plaus_loss(targets, attribution_map, opt)
-
-                        plaus_score = get_plaus_score(targets_out = targets.to(imgs.device), attr = attribution_map)
-                        # plaus_score = get_attr_corners(targets_out = targets.to(imgs.device), attr = attribution_map)
-
-                        plaus_loss = (1.0 - plaus_score) * opt.pgt_coeff
-                        
-                        # Add plausibility loss to total loss
-                        loss = (plaus_loss.unsqueeze(0) * batch_size)
-                        
-                        lplaus = (plaus_loss.unsqueeze(0) * batch_size)
-                        
-                        # Log plausibility loss and score metrics for evaluation
-                        ploss = (float(plaus_loss) / float(len(opt.out_num_attrs)))
-                        pscore = (float(plaus_score) / float(len(opt.out_num_attrs)))
-                        plaus_loss_total_train += ploss if not math.isnan(ploss) else 0.0
-                        plaus_score_total_train += pscore if not math.isnan(pscore) else 0.0
-                        dist_reg_total_train += dist_reg
-                    else:
-                        plaus_loss, plaus_score = torch.tensor(0.0), torch.tensor(0.0)
-                    
-                    t2_pgt = time.time()
-                
             ##########################################################
 
             # Backward
@@ -564,9 +501,6 @@ def train(hyp, opt, device, tb_writer=None):
                 if ema:
                     ema.update(model)
             
-            if not opt.pgt_built_in:
-                lplaus = (plaus_loss).to(loss_items.device)
-                loss_items = torch.cat((loss_items[:-1], lplaus.unsqueeze(0), (loss_items[-1] + lplaus).unsqueeze(0)))
             # Print
             if rank in [-1, 0]:
                 mloss = (mloss * i + loss_items) / (i + 1)  # update mean losses
@@ -777,59 +711,47 @@ if __name__ == '__main__':
     parser.add_argument('--agnostic-nms', action='store_true', help='class-agnostic NMS')
     parser.add_argument('--classes', nargs='+', type=int, help='filter by class: --class 0, or --class 0 2 3')
     ############################## PGT Variables ###############################
+    parser.add_argument('--seed', type=int, default=None, help='reproduce results') 
     parser.add_argument('--pgt-coeff', type=float, default=0.5, help='learning rate for plausibility gradient')
     parser.add_argument('--pgt-lr-decay', type=float, default=0.75, help='learning rate decay for plausibility gradient')
     parser.add_argument('--pgt-lr-decay-step', type=int, default=100, help='learning rate decay step for plausibility gradient')
     parser.add_argument('--n-max-attr-labels', type=int, default=100, help='maximum number of attribution maps generated for each image')
     # parser.add_argument('--out_num_attr', type=float, default=1, help='Default output for generating attribution maps')
     parser.add_argument('--out_num_attrs', nargs='+', type=int, default=[1,], help='Default output for generating attribution maps')
-    parser.add_argument('--loss_attr', action='store_true', help='If true, use loss to generate attribution maps') # Not yet implemented for built-in pgt
     parser.add_argument('--clean_plaus_eval', action='store_true', help='If true, calculate plausibility on clean, non-augmented images and labels')
     parser.add_argument('--class_specific_attr', action='store_true', help='If true, calculate attribution maps for each class individually')
     parser.add_argument('--seg-labels', action='store_true', help='If true, calculate plaus score with segmentation maps rather than bbox')
     parser.add_argument('--seg_size_factor', type=float, default=1.0, help='Factor to reduce weight of segmentation maps that cover entire image')
     parser.add_argument('--save_hybrid', action='store_true', help='If true, save hybrid attribution maps')
-    parser.add_argument('--plaus_results', action='store_true', help='If true, calculate plausibility on clean, non-augmented images and labels')
-    parser.add_argument('--pgt_built_in', action='store_true', help='If true, use built-in plausibility gradient training')
+    parser.add_argument('--plaus_results', action='store_true', help='If true, calculate plausibility on clean, non-augmented images and labels during testing')
+    parser.add_argument('--pgt_lr_decay', type=float, default=0.75, help='learning rate decay for plausibility gradient')
+    parser.add_argument('--pgt_lr_decay_step', type=int, default=1000, help='learning rate decay step for plausibility gradient')
     ################################### PGT Loss Variables ###################################
-    parser.add_argument('--dist_reg_only', action='store_true', help='If true, only calculate distance regularization and not plausibility')
-    parser.add_argument('--focus_coeff', type=float, default=0.5, help='focus_coeff')
+    parser.add_argument('--dist_reg_only', type=bool, default=True, help='If true, only calculate distance regularization and not plausibility')
+    parser.add_argument('--focus_coeff', type=float, default=0.1, help='focus_coeff')
     parser.add_argument('--iou_coeff', type=float, default=0.075, help='iou_coeff')
     parser.add_argument('--dist_coeff', type=float, default=1.0, help='dist_coeff')
     parser.add_argument('--pgt_coeff', type=float, default=0.1, help='pgt_coeff')
     parser.add_argument('--bbox_coeff', type=float, default=0.0, help='bbox_coeff')
-    parser.add_argument('--dist_x_bbox', type=bool, default=True, help='If true, zero all distance regularization values to 0 within bbox region') 
+    parser.add_argument('--dist_x_bbox', type=bool, default=False, help='If true, zero all distance regularization values to 0 within bbox region') 
     parser.add_argument('--pred_targets', type=bool, default=False, help='If true, use predicted targets for plausibility loss') 
+    parser.add_argument('--iou_loss_only', type=bool, default=False, help='If true, only calculate iou loss, no distance regularizers')
     ##########################################################################################
     parser.add_argument('--k_fold', type=int, default=10, help='Number of folds for k-fold cross validation') 
     parser.add_argument('--k_fold_num', type=int, default=0, help='Fold number to use for training') 
-    # parser.add_argument('--seed', type=int, default=None, help='reproduce results') 
+    parser.add_argument('--inherently_explainable', type=bool, default=False, help='If true, use inherently explainable model')
+    parser.add_argument('--test_plaus_confirm', type=bool, default=True, help='If true, test plausibility confirmation')
+    parser.add_argument('--lplaus_only', type=bool, default=False, help='If true, only calculate plausibility loss')
+    parser.add_argument('--loss_attr', type=bool, default=True, help='If true, use loss to generate attribution maps')
+    ##########################################################################################
     opt = parser.parse_args() 
     print(opt) 
-    
-    # opt.plaus_results = True 
-    
-    opt.test_plaus_confirm = True 
-    opt.inherently_explainable = False 
-    opt.lplaus_only = True 
-    opt.iou_loss_only = True 
-    opt.loss_attr = False 
+    # opt.plaus_results = True # this is broken
     # opt.save_hybrid = True 
-    # opt.out_num_attrs = [0,1,2,] # unused if opt.loss_attr == True ``
-    opt.dist_reg_only = True 
-    opt.focus_coeff = 0.1 # 15 
-    opt.dist_coeff = 1.0 
-    opt.bbox_coeff = 0.0 
+    # opt.out_num_attrs = [0,1,2,] # unused if opt.loss_attr == True 
     
-    opt.pgt_built_in = True 
-    opt.out_num_attrs = [1,] 
-    opt.pgt_coeff = 0.1 
-    opt.pgt_lr_decay = 1.0 
-    opt.pgt_lr_decay_step = 1000 # 200 
-    opt.epochs = 300 
     opt.data = check_file(opt.data)  # check file 
     opt.no_trace = True 
-    # opt.batch_size = 96 
     opt.save_dir = str('runs/' + opt.name + '_lr' + str(opt.pgt_coeff)) 
     # opt.device = '5' 
     # opt.device = "0,1,2,3"  
@@ -838,20 +760,21 @@ if __name__ == '__main__':
     # source /home/nielseni6/envs/yolo/bin/activate
     # cd /home/nielseni6/PythonScripts/yolov7_mavrc
 
+    # nohup python train_pgt.py --device 5 > ./output_logs/gpu5.log 2>&1 &
+    # nohup python -m torch.distributed.launch --nproc_per_node 4 --master_port 9528 train_pgt.py --sync-bn > ./output_logs/gpu2360.log 2>&1 &
+    
     # Resume run
     # nohup python train_pgt.py --resume runs/pgt/train-pgt-yolov7/pgt5_632/weights/last.pt > ./output_logs/gpu7_resume.log 2>&1 &
     # nohup python -m torch.distributed.launch --nproc_per_node 4 --master_port 9527 train_pgt.py --sync-bn --resume runs/pgt/train-pgt-yolov7/pgt5_214/weights/last.pt > ./output_logs/gpu1245_coco_pgtlr0_25.log 2>&1 &
     # opt.resume = "runs/pgt/train-pgt-yolov7/pgt5_214/weights/last.pt"
     # opt.weights = 'runs/pgt/train-pgt-yolov7/pgt5_214/weights/last.pt'
     
-    # nohup python train_pgt.py --device 5 > ./output_logs/gpu5.log 2>&1 &
-    # nohup python -m torch.distributed.launch --nproc_per_node 4 --master_port 9528 train_pgt.py --sync-bn > ./output_logs/gpu2360.log 2>&1 &
-    
     # opt.dataset = 'coco' 
     opt.dataset = 'real_world_drone' 
     # opt.sync_bn = True
     
-    opt.seed = random.randrange(sys.maxsize) 
+    if opt.seed is None:
+        opt.seed = random.randrange(sys.maxsize) 
     # if opt.seed is None: 
     #     opt.seed = random.randrange(sys.maxsize) 
     rng = random.Random(opt.seed) 
