@@ -20,7 +20,7 @@ def subfigimshow(img, ax):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--device', type=str, default='0', help='device')
-    parser.add_argument('--focus_coeff', type=float, default=0.15, help='focus_coeff')
+    parser.add_argument('--focus_coeff', type=float, default=0.3, help='focus_coeff')
     parser.add_argument('--dist_coeff', type=float, default=1.0, help='dist_coeff')
     parser.add_argument('--dist_reg_only', type=bool, default=True, help='dist_reg_only')
     parser.add_argument('--pgt_coeff', type=float, default=3.0, help='pgt_coeff')
