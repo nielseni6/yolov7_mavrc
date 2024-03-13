@@ -574,9 +574,10 @@ def train(hyp, opt, device, tb_writer=None):
                     'val/box_loss', 'val/obj_loss', 'val/cls_loss',  # val loss
                     'x/lr0', 'x/lr1', 'x/lr2',  # params
                     ] + ['plaus_loss_train', 'plaus_score_train', 'dist_reg_train', 'plaus_score_confirmation', 'pgt_coeff']
+            ps_conf_avg = (plaus_score_conf_total / conf_i) if conf_i != 0 else 0.0
             for x, tag in zip(list(mloss[:-1]) + list((results)) + lr + [plaus_loss_total_train, 
                                                                          plaus_score_total_train, dist_reg_total_train, 
-                                                                         (plaus_score_conf_total / conf_i), opt.pgt_coeff,]
+                                                                         ps_conf_avg, opt.pgt_coeff,]
                                                                          , tags):
                 if tb_writer:
                     tb_writer.add_scalar(tag, x, epoch)  # tensorboard
@@ -671,7 +672,7 @@ if __name__ == '__main__':
     parser.add_argument('--data', type=str, default='data/real_world.yaml', help='data.yaml path') 
     parser.add_argument('--hyp', type=str, default='data/hyp.real_world.yaml', help='hyperparameters path') 
     parser.add_argument('--epochs', type=int, default=300) 
-    parser.add_argument('--batch-size', type=int, default=32, help='total batch size for all GPUs') # 16 for coco
+    parser.add_argument('--batch-size', type=int, default=64, help='total batch size for all GPUs') # 16 for coco
     parser.add_argument('--img-size', nargs='+', type=int, default=[640, 640], help='[train, test] image sizes') 
     parser.add_argument('--rect', action='store_true', help='rectangular training') 
     parser.add_argument('--resume', nargs='?', const=True, default=False, help='resume most recent training') 
@@ -712,11 +713,11 @@ if __name__ == '__main__':
     parser.add_argument('--classes', nargs='+', type=int, help='filter by class: --class 0, or --class 0 2 3') 
     ############################## PGT Variables ############################### 
     parser.add_argument('--seed', type=int, default=None, help='reproduce results') 
-    parser.add_argument('--pgt-coeff', type=float, default=0.08, help='learning rate for plausibility gradient') 
+    parser.add_argument('--pgt-coeff', type=float, default=0.3, help='learning rate for plausibility gradient') 
     parser.add_argument('--pgt-lr-decay', type=float, default=1.0, help='learning rate decay for plausibility gradient') 
     parser.add_argument('--pgt-lr-decay-step', type=int, default=1000, help='learning rate decay step for plausibility gradient') 
-    parser.add_argument('--n-max-attr-labels', type=int, default=1000, help='maximum number of attribution maps generated for each image') 
-    parser.add_argument('--out_num_attrs', nargs='+', type=int, default=[0,1,2], help='Output for generating attribution maps (for loss_attr 0: box, 1: obj, 2: cls)') 
+    parser.add_argument('--n-max-attr-labels', type=int, default=100, help='maximum number of attribution maps generated for each image') 
+    parser.add_argument('--out_num_attrs', nargs='+', type=int, default=[2,], help='Output for generating attribution maps (for loss_attr 0: box, 1: obj, 2: cls)') 
     parser.add_argument('--clean_plaus_eval', action='store_true', help='If true, calculate plausibility on clean, non-augmented images and labels') 
     parser.add_argument('--class_specific_attr', action='store_true', help='If true, calculate attribution maps for each class individually') 
     parser.add_argument('--seg-labels', action='store_true', help='If true, calculate plaus score with segmentation maps rather than bbox') 
@@ -732,13 +733,14 @@ if __name__ == '__main__':
     parser.add_argument('--dist_x_bbox', type=bool, default=False, help='If true, zero all distance regularization values to 0 within bbox region') 
     parser.add_argument('--pred_targets', type=bool, default=False, help='If true, use predicted targets for plausibility loss') 
     parser.add_argument('--iou_loss_only', type=bool, default=False, help='If true, only calculate iou loss, no distance regularizers') 
+    parser.add_argument('--weighted_loss_attr', type=bool, default=False, help='If true, weight individual loss terms before used to generate attribution maps')
     ########################################################################################## 
     parser.add_argument('--k_fold', type=int, default=10, help='Number of folds for k-fold cross validation') 
     parser.add_argument('--k_fold_num', type=int, default=0, help='Fold number to use for training') 
     parser.add_argument('--inherently_explainable', type=bool, default=False, help='If true, use inherently explainable model') 
     parser.add_argument('--test_plaus_confirm', type=bool, default=True, help='If true, test plausibility confirmation') 
     parser.add_argument('--lplaus_only', type=bool, default=False, help='If true, only calculate plausibility loss') 
-    parser.add_argument('--loss_attr', type=bool, default=False, help='If true, use loss to generate attribution maps') 
+    parser.add_argument('--loss_attr', type=bool, default=True, help='If true, use loss to generate attribution maps') 
     ########################################################################################## 
     opt = parser.parse_args() 
     print(opt) 

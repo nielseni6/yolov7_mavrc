@@ -1822,10 +1822,12 @@ class ComputePGTLossOTA:
                 print("lobj",lobj)
 
             ################################################
+            ############## Plausibility Loss ############### 
+            ################################################
             if (not opt.inherently_explainable) and n:
                 if opt.loss_attr:
                     if get_loss and (len(opt.out_num_attrs) > 0):
-                        losses = [lbox * self.hyp['box'], lobj * self.hyp['obj'], lcls * self.hyp['cls']]
+                        losses = [lbox * self.hyp['box'], lobj * self.hyp['obj'], lcls * self.hyp['cls']] if opt.weighted_loss_attr else [lbox, lobj, lcls]
                         for il, ls in enumerate(losses):
                             if il in opt.out_num_attrs:
                                 if il == min(opt.out_num_attrs):
