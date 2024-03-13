@@ -526,14 +526,14 @@ def get_plaus_loss(targets, attribution_map, opt, imgs=None, debug=False, only_l
     # Calculate Plausibility IoU with attribution maps
     # attribution_map.retains_grad = True
     if not only_loss:
-        plaus_score = get_plaus_score(targets_out = targets.to(attribution_map.device), attr = attribution_map.clone().detach().requires_grad_(True), imgs = imgs)
+        plaus_score = get_plaus_score(targets_out = targets, attr = attribution_map.clone().detach().requires_grad_(True), imgs = imgs)
     else:
         plaus_score = torch.tensor(0.0)
     
     # attribution_map = normalize_batch(attribution_map) # Normalize attribution maps per image in batch
 
     # Calculate distance regularization
-    distance_map = get_distance_grids(attribution_map, targets.to(attribution_map.device), imgs, opt.focus_coeff)
+    distance_map = get_distance_grids(attribution_map, targets, imgs, opt.focus_coeff)
     # distance_map = torch.ones_like(attribution_map)
     
     if opt.dist_x_bbox:

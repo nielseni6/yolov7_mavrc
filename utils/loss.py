@@ -1812,23 +1812,34 @@ class ComputePGTLossOTA:
                 # Append targets to text file
                 # with open('targets.txt', 'a') as file:
                 #     [file.write('%11.5g ' * 4 % tuple(x) + '\n') for x in torch.cat((txy[i], twh[i]), 1)]
-                
-                ################################################
-                if not opt.inherently_explainable:
-                    if opt.loss_attr:
-                        if get_loss:
-                            attr = get_gradient(imgs, grad_wrt = lcls)
-                    else:
-                        if i in opt.out_num_attrs:
-                            attr = get_gradient(imgs, grad_wrt = ps)
-                            get_loss = True
-                        else:
-                            get_loss = False
-                ################################################
+            
+            obji = self.BCEobj(pi[..., 4], tobj)
+            if obji > 1.0:
+                print("obji",obji)
+            obji=obji.clamp(max=1.0)
+            lobj += obji * self.balance[i] 
+            if lobj > 1.0: # obj loss
+                print("lobj",lobj)
+
             ################################################
+            if (not opt.inherently_explainable) and n:
+                if opt.loss_attr:
+                    if get_loss and (len(opt.out_num_attrs) > 0):
+                        losses = [lbox * self.hyp['box'], lobj * self.hyp['obj'], lcls * self.hyp['cls']]
+                        for il, ls in enumerate(losses):
+                            if il in opt.out_num_attrs:
+                                if il == min(opt.out_num_attrs):
+                                    attr_loss = ls
+                                else:
+                                    attr_loss += ls
+                        attr = get_gradient(imgs, grad_wrt = attr_loss)
+                else:
+                    if i in opt.out_num_attrs:
+                        attr = get_gradient(imgs, grad_wrt = ps)
+                    get_loss = True if i in opt.out_num_attrs else False
             self.attr = attr
             
-            if get_loss:
+            if get_loss and (attr is not None):
                 if opt.iou_loss_only:
                     bbox_map = get_bbox_map(targets_, attr)
                     plaus_score = ((torch.sum((attr * bbox_map))) / (torch.sum(attr)))
@@ -1843,16 +1854,8 @@ class ComputePGTLossOTA:
                     plaus_score = get_plaus_score(targets_, attr)
                 self.plaus_score += plaus_score 
                 num_attrs += 1
-            ################################################
-            
-            obji = self.BCEobj(pi[..., 4], tobj)
-            if obji > 1.0:
-                print("obji",obji)
-            obji=obji.clamp(max=1.0)
-            lobj += obji * self.balance[i] 
-            if lobj > 1.0: # obj loss
-                print("lobj",lobj)
-            
+            ################################################  
+                      
             if self.autobalance:
                 self.balance[i] = self.balance[i] * 0.9999 + 0.0001 / obji.detach().item()
         

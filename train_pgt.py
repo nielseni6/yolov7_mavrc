@@ -475,7 +475,7 @@ def train(hyp, opt, device, tb_writer=None):
                 
             ##########################################################  
             # Confirm plausibility scores
-            if opt.test_plaus_confirm:
+            if opt.test_plaus_confirm and (attr is not None):
                 with torch.no_grad():
                     plaus_score_conf = get_plaus_score(targets_out = targets.to(imgs.device), attr = attr)
                     conf_i += 1 if not math.isnan(plaus_score_conf) else 0
@@ -671,7 +671,7 @@ if __name__ == '__main__':
     parser.add_argument('--data', type=str, default='data/real_world.yaml', help='data.yaml path') 
     parser.add_argument('--hyp', type=str, default='data/hyp.real_world.yaml', help='hyperparameters path') 
     parser.add_argument('--epochs', type=int, default=300) 
-    parser.add_argument('--batch-size', type=int, default=64, help='total batch size for all GPUs') # 16 for coco
+    parser.add_argument('--batch-size', type=int, default=32, help='total batch size for all GPUs') # 16 for coco
     parser.add_argument('--img-size', nargs='+', type=int, default=[640, 640], help='[train, test] image sizes') 
     parser.add_argument('--rect', action='store_true', help='rectangular training') 
     parser.add_argument('--resume', nargs='?', const=True, default=False, help='resume most recent training') 
@@ -712,11 +712,11 @@ if __name__ == '__main__':
     parser.add_argument('--classes', nargs='+', type=int, help='filter by class: --class 0, or --class 0 2 3') 
     ############################## PGT Variables ############################### 
     parser.add_argument('--seed', type=int, default=None, help='reproduce results') 
-    parser.add_argument('--pgt-coeff', type=float, default=0.5, help='learning rate for plausibility gradient') 
+    parser.add_argument('--pgt-coeff', type=float, default=0.08, help='learning rate for plausibility gradient') 
     parser.add_argument('--pgt-lr-decay', type=float, default=1.0, help='learning rate decay for plausibility gradient') 
     parser.add_argument('--pgt-lr-decay-step', type=int, default=1000, help='learning rate decay step for plausibility gradient') 
     parser.add_argument('--n-max-attr-labels', type=int, default=1000, help='maximum number of attribution maps generated for each image') 
-    parser.add_argument('--out_num_attrs', nargs='+', type=int, default=[0,1,2], help='Default output for generating attribution maps') 
+    parser.add_argument('--out_num_attrs', nargs='+', type=int, default=[0,1,2], help='Output for generating attribution maps (for loss_attr 0: box, 1: obj, 2: cls)') 
     parser.add_argument('--clean_plaus_eval', action='store_true', help='If true, calculate plausibility on clean, non-augmented images and labels') 
     parser.add_argument('--class_specific_attr', action='store_true', help='If true, calculate attribution maps for each class individually') 
     parser.add_argument('--seg-labels', action='store_true', help='If true, calculate plaus score with segmentation maps rather than bbox') 
@@ -738,11 +738,11 @@ if __name__ == '__main__':
     parser.add_argument('--inherently_explainable', type=bool, default=False, help='If true, use inherently explainable model') 
     parser.add_argument('--test_plaus_confirm', type=bool, default=True, help='If true, test plausibility confirmation') 
     parser.add_argument('--lplaus_only', type=bool, default=False, help='If true, only calculate plausibility loss') 
-    parser.add_argument('--loss_attr', type=bool, default=True, help='If true, use loss to generate attribution maps') 
+    parser.add_argument('--loss_attr', type=bool, default=False, help='If true, use loss to generate attribution maps') 
     ########################################################################################## 
     opt = parser.parse_args() 
     print(opt) 
-    # opt.plaus_results = True # this is broken
+    # opt.plaus_results = True # this is broken 
     # opt.save_hybrid = True 
     # opt.out_num_attrs = [0,1,2,] # unused if opt.loss_attr == True 
     
@@ -750,14 +750,14 @@ if __name__ == '__main__':
     opt.no_trace = True 
     opt.save_dir = str('runs/' + opt.name + '_lr' + str(opt.pgt_coeff)) 
     # opt.device = '5' 
-    # opt.device = "0,1,2,3"  
+    # opt.device = "0,1,2,3" 
     
-    # lambda03 Console Commands
-    # source /home/nielseni6/envs/yolo/bin/activate
-    # cd /home/nielseni6/PythonScripts/yolov7_mavrc
+    # lambda03 Console Commands 
+    # source /home/nielseni6/envs/yolo/bin/activate 
+    # cd /home/nielseni6/PythonScripts/yolov7_mavrc 
 
-    # nohup python train_pgt.py --device 5 > ./output_logs/gpu5.log 2>&1 &
-    # nohup python -m torch.distributed.launch --nproc_per_node 4 --master_port 9528 train_pgt.py --sync-bn > ./output_logs/gpu2360.log 2>&1 &
+    # nohup python train_pgt.py --device 5 > ./output_logs/gpu5.log 2>&1 & 
+    # nohup python -m torch.distributed.launch --nproc_per_node 4 --master_port 9528 train_pgt.py --sync-bn > ./output_logs/gpu2360.log 2>&1 & 
     
     # Resume run
     # nohup python train_pgt.py --resume runs/pgt/train-pgt-yolov7/pgt5_632/weights/last.pt > ./output_logs/gpu7_resume.log 2>&1 &
