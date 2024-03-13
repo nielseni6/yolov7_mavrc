@@ -1769,11 +1769,8 @@ class ComputePGTLossOTA:
         num_attrs = 0
         bs, as_, gjs, gis, targets, anchors = self.build_targets(p, targets, imgs)
         pre_gen_gains = [torch.tensor(pp.shape, device=device)[[3, 2, 3, 2]] for pp in p] 
-        # if attr is not None:
-        #     distance_map = (get_bbox_map(targets_, attr))
-        # else:
-        #     distance_map = None
-        
+        ps_list = []
+
         # Losses
         for i, pi in enumerate(p):  # layer index, layer predictions
             b, a, gj, gi = bs[i], as_[i], gjs[i], gis[i]  # image, anchor, gridy, gridx
@@ -1837,9 +1834,17 @@ class ComputePGTLossOTA:
                         attr = get_gradient(imgs, grad_wrt = attr_loss)
                 else:
                     if i in opt.out_num_attrs:
-                        attr = get_gradient(imgs, grad_wrt = ps)
-                    get_loss = True if i in opt.out_num_attrs else False
-            self.attr = attr
+                        if opt.attr_out_indiv:
+                            attr = get_gradient(imgs, grad_wrt = ps)
+                            get_loss = True if i in opt.out_num_attrs else False
+                        else:
+                            ps_list.append(ps)
+                            if get_loss:
+                                attr = get_gradient(imgs, grad_wrt = torch.cat(ps_list, dim=0))
+                            # if i == min(opt.out_num_attrs):
+                            #     attr = get_gradient(imgs, grad_wrt = ps)
+                            # else:
+                            #     attr += get_gradient(imgs, grad_wrt = ps)
             
             if get_loss and (attr is not None):
                 if opt.iou_loss_only:
@@ -1861,6 +1866,8 @@ class ComputePGTLossOTA:
             if self.autobalance:
                 self.balance[i] = self.balance[i] * 0.9999 + 0.0001 / obji.detach().item()
         
+        self.attr = attr
+
         if num_attrs > 1:
             self.plaus_score /= num_attrs
         

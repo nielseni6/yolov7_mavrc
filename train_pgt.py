@@ -717,7 +717,7 @@ if __name__ == '__main__':
     parser.add_argument('--pgt-lr-decay', type=float, default=1.0, help='learning rate decay for plausibility gradient') 
     parser.add_argument('--pgt-lr-decay-step', type=int, default=1000, help='learning rate decay step for plausibility gradient') 
     parser.add_argument('--n-max-attr-labels', type=int, default=100, help='maximum number of attribution maps generated for each image') 
-    parser.add_argument('--out_num_attrs', nargs='+', type=int, default=[2,], help='Output for generating attribution maps (for loss_attr 0: box, 1: obj, 2: cls)') 
+    parser.add_argument('--out_num_attrs', nargs='+', type=int, default=[0,1,2,], help='Output for generating attribution maps (for loss_attr 0: box, 1: obj, 2: cls)') 
     parser.add_argument('--clean_plaus_eval', action='store_true', help='If true, calculate plausibility on clean, non-augmented images and labels') 
     parser.add_argument('--class_specific_attr', action='store_true', help='If true, calculate attribution maps for each class individually') 
     parser.add_argument('--seg-labels', action='store_true', help='If true, calculate plaus score with segmentation maps rather than bbox') 
@@ -740,7 +740,8 @@ if __name__ == '__main__':
     parser.add_argument('--inherently_explainable', type=bool, default=False, help='If true, use inherently explainable model') 
     parser.add_argument('--test_plaus_confirm', type=bool, default=True, help='If true, test plausibility confirmation') 
     parser.add_argument('--lplaus_only', type=bool, default=False, help='If true, only calculate plausibility loss') 
-    parser.add_argument('--loss_attr', type=bool, default=True, help='If true, use loss to generate attribution maps') 
+    parser.add_argument('--loss_attr', type=bool, default=False, help='If true, use loss to generate attribution maps') 
+    parser.add_argument('--attr_out_indiv', type=bool, default=False, help='If true, calculate plaus_loss for each output head attribution map individually (loss_attr must be False)')
     ########################################################################################## 
     opt = parser.parse_args() 
     print(opt) 
