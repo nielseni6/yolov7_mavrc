@@ -1824,13 +1824,16 @@ class ComputePGTLossOTA:
             if (not opt.inherently_explainable) and n:
                 if opt.loss_attr:
                     if get_loss and (len(opt.out_num_attrs) > 0):
-                        losses = [lbox * self.hyp['box'], lobj * self.hyp['obj'], lcls * self.hyp['cls']] if opt.weighted_loss_attr else [lbox, lobj, lcls]
-                        for il, ls in enumerate(losses):
-                            if il in opt.out_num_attrs:
-                                if il == min(opt.out_num_attrs):
-                                    attr_loss = ls
-                                else:
-                                    attr_loss += ls
+                        if (len(opt.out_num_attrs) == 1) and (2 in opt.out_num_attrs):
+                            attr_loss = lcls
+                        else:
+                            losses = [lbox * self.hyp['box'], lobj * self.hyp['obj'], lcls * self.hyp['cls']] if opt.weighted_loss_attr else [lbox, lobj, lcls]
+                            for il, ls in enumerate(losses):
+                                if il in opt.out_num_attrs:
+                                    if il == min(opt.out_num_attrs):
+                                        attr_loss = ls
+                                    else:
+                                        attr_loss += ls
                         attr = get_gradient(imgs, grad_wrt = attr_loss)
                 else:
                     if i in opt.out_num_attrs:
