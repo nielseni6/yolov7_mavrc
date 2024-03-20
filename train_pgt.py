@@ -560,7 +560,7 @@ def train(hyp, opt, device, tb_writer=None):
                 plaus_result = 0.0
             plaus_score_total_test = plaus_result
             plaus_loss_total_test = (1 - plaus_result) * opt.pgt_coeff
-
+            
             
             # Write
             with open(results_file, 'a') as f:
@@ -726,7 +726,7 @@ if __name__ == '__main__':
     parser.add_argument('--plaus_results', action='store_true', help='If true, calculate plausibility on clean, non-augmented images and labels during testing') 
     ################################### PGT Loss Variables ################################### 
     parser.add_argument('--dist_reg_only', type=bool, default=True, help='If true, only calculate distance regularization and not plausibility') 
-    parser.add_argument('--focus_coeff', type=float, default=0.25, help='focus_coeff') 
+    parser.add_argument('--focus_coeff', type=float, default=0.24, help='focus_coeff') 
     parser.add_argument('--iou_coeff', type=float, default=0.075, help='iou_coeff') 
     parser.add_argument('--dist_coeff', type=float, default=1.0, help='dist_coeff') 
     parser.add_argument('--bbox_coeff', type=float, default=0.0, help='bbox_coeff') 

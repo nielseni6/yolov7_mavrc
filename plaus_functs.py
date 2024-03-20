@@ -119,9 +119,9 @@ def get_plaus_score(targets_out, attr, debug=False, corners=False, imgs=None, ep
     # for ic in range(co.shape[0]): # potential for speedup here with torch indexing instead of for loop
     #     coords_map[target_inds[ic], :,x1[ic]:x2[ic],y1[ic]:y2[ic]] = True
 
-    # if torch.isnan(attr).any():
-    #     attr = torch.nan_to_num(attr, nan=0.0)
-
+    if torch.isnan(attr).any():
+        attr = torch.nan_to_num(attr, nan=0.0)
+    
     coords_map = get_bbox_map(targets_out, attr)
     plaus_score = ((torch.sum((attr * coords_map))) / (torch.sum(attr)))
 

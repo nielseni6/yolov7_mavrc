@@ -100,7 +100,7 @@ def overlay_attr(img, mask, colormap: str = "jet", alpha: float = 0.7):
     return overlayed_tensor
 
 class Perturbation:
-    def __init__(self, model, opt, nsteps = 10, desired_snr = 5, start=0):#, augment = False, compute_loss = None, loss_metric = "CIoU"):
+    def __init__(self, model, opt, nsteps = 10, desired_snr = 5, start=0, torchattacks_used = False):#, augment = False, compute_loss = None, loss_metric = "CIoU"):
         self.model = model
         self.nsteps = nsteps
         self.snr = desired_snr # Value of SNR in dB at the end of the perturbation steps (nsteps)
@@ -126,6 +126,7 @@ class Perturbation:
         self.debug3 = False
         self.attr_method = None
         self.start = start
+        self.torchattacks_used = torchattacks_used
    
     def __init_attr__(self, attr_method = get_gradient, out_num_attr = 1, 
                       torchattacks_used=False, **kwargs):
@@ -138,8 +139,8 @@ class Perturbation:
     def collect_stats(self, img, targets, paths, shapes, batch_i):
         # for key, value in self.attr_kwargs.items():
         #     self.key = value
-        model = self.model
-        opt = self.opt
+        model = self.model 
+        opt = self.opt 
         self.snr_list = []
         nb, _, height, width = img.shape  # batch size, channels, height, width
         
@@ -175,9 +176,16 @@ class Perturbation:
                         attk_ *= (step_i / (self.nsteps - 1))
                     except:
                         continue
-                noise = attk_.clone().detach() - img.clone().detach()
+                noise = attk_.clone().detach()
             else:
+                attk__ = attk_ - img.clone().detach()
+                attk_ = change_noise_batch(img_, attk__, desired_snr=self.snr)
+                try: # only for 
+                    attk_ *= (step_i / (self.nsteps - 1))
+                except:
+                    continue
                 noise = attk_
+                
                     
             # Verify SNR
             avg_snr = 0.0
@@ -213,15 +221,15 @@ class Perturbation:
                                      grad_wrt=wrt, 
                                      norm=True, keepmean=True, 
                                      absolute=True, grayscale=True)
-            plaus_score = get_plaus_score(targets_out = targets.clone().detach(), 
-                                          attr = attr_grad,
+            plaus_score = get_plaus_score(targets_out = targets, 
+                                          attr = attr_grad.detach(),
                                           imgs=img_,)
             self.plaus_score_total += plaus_score
             self.plaus_list[step_i] += plaus_score
             self.num_batches[step_i] += 1
             
             img_ = img_.detach()
-            model.zero_grad()
+            # model.zero_grad()
             # self.plaus_list[step_i].append(plaus_score)
             ####################################################################################
             
