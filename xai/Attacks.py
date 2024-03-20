@@ -86,7 +86,7 @@ class PGD(Attack):
             delta = torch.clamp(adv_images - images, min=-self.eps, max=self.eps)
             adv_images = torch.clamp(images + delta, min=0, max=1).detach()
 
-        return adv_images
+        return adv_images, delta
 
 class FGSM(Attack):
     r"""
@@ -150,5 +150,6 @@ class FGSM(Attack):
 
         adv_images = images + self.eps * grad.sign()
         adv_images = torch.clamp(adv_images, min=0, max=1).detach()
+        delta = self.eps * grad.sign()
 
-        return adv_images
+        return adv_images, delta

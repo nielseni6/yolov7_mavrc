@@ -137,8 +137,8 @@ def test_pgt(data,
     opt.confusion_matrix = confusion_matrix
     names = {k: v for k, v in enumerate(model.names if hasattr(model, 'names') else model.module.names)}
     opt.names = names
-    coco91class = coco80_to_coco91_class()
-    opt.coco91class = coco91class
+    coco91class = coco80_to_coco91_class() 
+    opt.coco91class = coco91class 
     s = ('%20s' + '%12s' * 6) % ('Class', 'Images', 'Labels', 'P', 'R', 'mAP@.5', 'mAP@.5:.95')
     p, r, f1, mp, mr, map50, map, t0, t1 = 0., 0., 0., 0., 0., 0., 0., 0., 0.
     loss = torch.zeros(3, device=device)
@@ -174,11 +174,9 @@ def test_pgt(data,
         robust_eval.__init_attr__(attr_method = get_gaussian, norm=True, keepmean=True, absolute=False, grayscale=False)
     if opt.atk == 'pgd':
         attr_method = PGD(model, loss=compute_loss, metric=loss_metric, eps=4/255, alpha=1/255, steps=4)
-        # attr_method.targeted = True
         robust_eval.__init_attr__(attr_method = attr_method, torchattacks_used=True)
     if opt.atk == 'fgsm':
         attr_method = FGSM(model, loss=compute_loss, metric=loss_metric, eps=4/255)
-        # attr_method.targeted = True
         robust_eval.__init_attr__(attr_method = attr_method, torchattacks_used=True)
     if opt.atk == 'none':
         robust_eval.__init_attr__(attr_method = None, norm=True, keepmean=True, absolute=False, grayscale=False)
@@ -245,7 +243,7 @@ if __name__ == '__main__':
     # parser.add_argument('--hyp', type=str, default='data/hyp.coco.yaml', help='') 
     # parser.add_argument('--atk', type=str, default='gaussian', help='grad, pgd, gaussian') 
     parser.add_argument('--eval_type', type=str, default='robust', help='robust, evalattai, default') 
-    parser.add_argument('--desired_snr', type=float, default=25.0, help='desired snr') 
+    parser.add_argument('--desired_snr', type=float, default=50.0, help='desired snr') 
     parser.add_argument('--atk_list', nargs='+', type=str, default=['none', 'gaussian', 'fgsm', 'pgd',], help='atk list') 
     parser.add_argument('--weights_dir', type=str, default='weights/eval_coco', help='models folder') 
     parser.add_argument('--entire_folder', action='store_true', help='entire folder') 
@@ -257,9 +255,9 @@ if __name__ == '__main__':
 
     opt.entire_folder = True 
     opt.loss_attr = True 
-    # opt.weights_dir = 'weights/pgt_runs' 
+    opt.weights_dir = 'weights/pgt_runs' 
     # opt.weights_dir = 'weights/pgt_runs2' 
-    opt.weights_dir = 'weights/baselines_kfold' 
+    # opt.weights_dir = 'weights/baselines_kfold' 
     #check_requirements() 
     
     # opt.eval_type = 'default' 

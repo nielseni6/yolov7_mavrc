@@ -151,7 +151,7 @@ class Perturbation:
         # self.attr = get_gradient(im0, grad_wrt=train_out[self.out_num_attr], norm=True, keepmean=True, absolute=True, grayscale=True)
         if self.attr_method is not None:
             if self.torchattacks_used:
-                self.attk = self.attr_method(im0, targets.clone().detach())
+                _, self.attk = self.attr_method(im0, targets.clone().detach())
             else:
                 self.attk = self.attr_method(im0,
                                         grad_wrt=train_out[self.out_num_attr], 
@@ -169,66 +169,60 @@ class Perturbation:
             img_ = img.clone().detach().requires_grad_(True)# * 255.0# + ((self.epsilon * step_i) * attk.clone().detach())
             
             attk_ = attk.clone().detach()
-            if not self.torchattacks_used:
-                if self.attr_method is not None:
-                    attk_ = change_noise_batch(img_, attk, desired_snr=self.snr)
-                    try:
-                        attk_ *= (step_i / (self.nsteps - 1))
-                    except:
-                        continue
-                noise = attk_.clone().detach()
-            else:
-                attk__ = attk_ - img.clone().detach()
-                attk_ = change_noise_batch(img_, attk__, desired_snr=self.snr)
-                try: # only for 
+            if self.attr_method is not None:
+                attk_ = change_noise_batch(img_, attk_, desired_snr=self.snr)
+                try: # only for EvalAttAI
                     attk_ *= (step_i / (self.nsteps - 1))
                 except:
                     continue
-                noise = attk_
+            noise = attk_.clone().detach()
                 
-                    
-            # Verify SNR
-            avg_snr = 0.0
+            
+            # Verify SNR 
+            avg_snr = 0.0 
             for ij in range(len(img)):
                 estimated_snr = 10 * torch.log10(torch.mean(img[ij] ** 2) / torch.mean(noise[ij] ** 2))
-                avg_snr += estimated_snr.item()
-            avg_snr /= len(img)
-            self.snr_list.append(round(avg_snr, 2))
+                avg_snr += estimated_snr.item() 
+            avg_snr /= len(img) 
+            self.snr_list.append(round(avg_snr, 2)) 
             
-            if self.torchattacks_used:
-                img_ = attk.requires_grad_(True)
-            else:
+            if self.attr_method is not None:
                 if step_i != 0:
-                    img_ = img_ + attk_
-                    img_ = torch.clamp(img_, min=0.0, max=1.0)
+                    img_noisy = img_ + attk_
+                    img_noisy = torch.clamp(img_noisy, min=0.0, max=1.0)
+                else:
+                    img_noisy = img_
+            else:
+                img_noisy = img_
             
-            if self.debug1 and step_i != 0:
-                for i_num in range(len(img_)):
-                    imshow(img_[i_num].float(), save_path='figs/img')
-                    imshow(self.attk[i_num].float(), save_path='figs/attk')
+            if self.debug1 and step_i != 0: 
+                for i_num in range(len(img_noisy)): 
+                    imshow(img_noisy[i_num].float(), save_path='figs/img_attacked') 
+                    imshow(self.attk[i_num].float(), save_path='figs/attk') 
                     
-            img_ = img_.half() if opt.half else img_.float()  # uint8 to fp16/32
+            img_noisy = img_noisy.half() if opt.half else img_noisy.float()  # uint8 to fp16/32
             
             ########################### Plausibility and Attribution ###########################
-            img_ = img_.requires_grad_(True)
-            out, train_out = model(img_, augment=opt.augment)
+            img_noisy = img_noisy.requires_grad_(True)
+            t = time_synchronized()
+            out, train_out = model(img_noisy, augment=opt.augment)
             if opt.loss_attr:
                 # batch_loss, bl_components = opt.compute_loss(train_out, targets, img_)
                 wrt = opt.compute_loss(train_out, targets, metric=opt.loss_metric)[0]  # box, obj, cls
             else:
                 wrt = train_out[self.out_num_attr]
-            attr_grad = get_gradient(img_, 
+            attr_grad = get_gradient(img_noisy, 
                                      grad_wrt=wrt, 
-                                     norm=True, keepmean=True, 
+                                     norm=True, keepmean=False, 
                                      absolute=True, grayscale=True)
             plaus_score = get_plaus_score(targets_out = targets, 
                                           attr = attr_grad.detach(),
-                                          imgs=img_,)
+                                          )
             self.plaus_score_total += plaus_score
             self.plaus_list[step_i] += plaus_score
             self.num_batches[step_i] += 1
             
-            img_ = img_.detach()
+            img_noisy = img_noisy.detach()
             # model.zero_grad()
             # self.plaus_list[step_i].append(plaus_score)
             ####################################################################################
@@ -236,9 +230,8 @@ class Perturbation:
             with torch.no_grad():
             # if True:
                 # Run model
-                t = time_synchronized()
-                out, train_out = model(img_, augment=opt.augment)  # inference and training outputs
-                # out, train_out = out.clone().detach(), [train_out[io].clone().detach() for io in range(len(train_out))]
+                # t = time_synchronized()
+                # out, train_out = model(img_noisy, augment=opt.augment)  # inference and training outputs
                 self.t0[step_i] += time_synchronized() - t
                 
                 # Compute loss
@@ -268,7 +261,7 @@ class Perturbation:
                 img_overlay = (overlay_attr(im[si].clone().detach(), atk_map.clone(), alpha = 0.75))
                 
                 overlay_list[step_i].append(img_overlay.clone().detach().cpu().numpy())
-                imgs_shifted[step_i].append((img_[si].clone().detach().float()).cpu().numpy())# / 255.0).cpu().numpy())
+                imgs_shifted[step_i].append((img_noisy[si].clone().detach().float()).cpu().numpy())# / 255.0).cpu().numpy())
                 attr_list[step_i].append(attr_grad[si].clone().detach().cpu().numpy())
                 
             if step_i != 0:
@@ -315,10 +308,10 @@ class Perturbation:
                                     "scores": {"class_score": conf},
                                     "domain": "pixel"} for *xyxy, conf, cls in pred.tolist()]
                         boxes = {"predictions": {"box_data": box_data, "class_labels": opt.names}}  # inference-space
-                        self.wandb_images[step_i].append(opt.wandb_logger.wandb.Image(img_[si], boxes=boxes, caption=path.name))
+                        self.wandb_images[step_i].append(opt.wandb_logger.wandb.Image(img_noisy[si], boxes=boxes, caption=path.name))
                         self.wandb_attk[step_i].append(opt.wandb_logger.wandb.Image(attk_[si], caption=f'{path.name}_atk'))
                         self.wandb_attr[step_i].append(opt.wandb_logger.wandb.Image(attr_grad[si], caption=f'{path.name}_attr'))
-                        img_overlay = (overlay_attr(img_[si].clone().detach(), attr_grad[si].clone(), alpha = 0.75))
+                        img_overlay = (overlay_attr(img_noisy[si].clone().detach(), attr_grad[si].clone(), alpha = 0.75))
                         self.wandb_attr_overlay[step_i].append(opt.wandb_logger.wandb.Image(img_overlay, caption=f'{path.name}_attr_overlay'))
                         # self.images[step_i].append(img_[si].clone().detach())
                         # self.attr[step_i].append(attr_grad[si].clone().detach())
