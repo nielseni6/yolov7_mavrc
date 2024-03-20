@@ -204,7 +204,7 @@ class Perturbation:
             
             ########################### Plausibility and Attribution ###########################
             img_noisy = img_noisy.requires_grad_(True)
-            t = time_synchronized()
+            # t = time_synchronized()
             out, train_out = model(img_noisy, augment=opt.augment)
             if opt.loss_attr:
                 # batch_loss, bl_components = opt.compute_loss(train_out, targets, img_)
@@ -213,7 +213,7 @@ class Perturbation:
                 wrt = train_out[self.out_num_attr]
             attr_grad = get_gradient(img_noisy, 
                                      grad_wrt=wrt, 
-                                     norm=True, keepmean=False, 
+                                     norm=False, keepmean=False, 
                                      absolute=True, grayscale=True)
             plaus_score = get_plaus_score(targets_out = targets, 
                                           attr = attr_grad.detach(),
@@ -230,8 +230,8 @@ class Perturbation:
             with torch.no_grad():
             # if True:
                 # Run model
-                # t = time_synchronized()
-                # out, train_out = model(img_noisy, augment=opt.augment)  # inference and training outputs
+                t = time_synchronized()
+                out, train_out = model(img_noisy, augment=opt.augment)  # inference and training outputs
                 self.t0[step_i] += time_synchronized() - t
                 
                 # Compute loss

@@ -149,7 +149,7 @@ def test_pgt(data,
     # evalattai.__init_attr__(attr_method = get_gradient, norm=True, keepmean=True, absolute=False, grayscale=False)
     
     start=0
-    if opt.eval_type == 'robust':
+    if opt.eval_type == 'robust' or opt.eval_type == 'robust2':
         nsteps = 2
         start=1
         # desired_snr = 10.0
@@ -169,7 +169,7 @@ def test_pgt(data,
     robust_eval = Perturbation(model, opt, nsteps = nsteps, desired_snr = desired_snr, start=start, torchattacks_used=torchattacks_used)
     
     if opt.atk == 'grad':
-        robust_eval.__init_attr__(attr_method = get_gradient, norm=True, keepmean=True, absolute=False, grayscale=False)
+        robust_eval.__init_attr__(attr_method = get_gradient, norm=False, keepmean=False, absolute=False, grayscale=False)
     if opt.atk == 'gaussian':
         robust_eval.__init_attr__(attr_method = get_gaussian, norm=True, keepmean=True, absolute=False, grayscale=False)
     if opt.atk == 'pgd':
@@ -250,7 +250,7 @@ if __name__ == '__main__':
     # parser.add_argument('--allow_val_change', type=bool, default=True, help='allow val change') 
     # parser.add_argument('--debug', action='store_true', help='debug mode for visualizing figures') 
     parser.add_argument('--loss_attr', action='store_true', help='loss attr') 
-    parser.add_argument('--out_num_attrs', nargs='+', type=int, default=[1,], help='Default output for generating attribution maps')
+    parser.add_argument('--out_num_attrs', nargs='+', type=int, default=[2,], help='Default output for generating attribution maps')
     opt = parser.parse_args() 
 
     opt.entire_folder = True 
@@ -265,9 +265,11 @@ if __name__ == '__main__':
     
     opt.eval_type = 'robust' 
     opt.atk_list = ['none', 'gaussian', 'pgd', 'fgsm'] # Evaluate adversarial robustness 
-    # opt.atk_list = ['gaussian', 'pgd', 'fgsm'] # Evaluate adversarial robustness 
+    # # opt.atk_list = ['gaussian', 'pgd', 'fgsm'] # Evaluate adversarial robustness 
 
-    # atk_list = ['grad', 'gaussian', 'none',] # 'pgd', 'fgsm' 
+    # opt.eval_type = 'robust2' 
+    # atk_list = ['none', 'grad'] # 'pgd', 'fgsm' 
+
     atk_list = opt.atk_list 
     
     opt.atk = '' 

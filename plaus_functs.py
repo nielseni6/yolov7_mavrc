@@ -562,12 +562,18 @@ def get_plaus_loss(targets, attribution_map, opt, imgs=None, debug=False, only_l
     else:
         bbox_reg = 0.0
 
+    bbox_map = get_bbox_map(targets, attribution_map)
+    plaus_score = ((torch.sum((attribution_map * bbox_map))) / (torch.sum(attribution_map)))
+    # iou_loss = (1.0 - plaus_score)
+
     if not opt.dist_reg_only:
+        dist_reg_loss = (((1.0 + dist_reg) / 2.0))
         plaus_reg = (plaus_score * opt.iou_coeff) + \
-                    (((dist_reg * opt.dist_coeff) + (bbox_reg * opt.bbox_coeff))\
+                    (((dist_reg_loss * opt.dist_coeff) + \
+                      (bbox_reg * opt.bbox_coeff))\
                     # ((((((1.0 + dist_reg) / 2.0) - 1.0) * opt.dist_coeff) + ((((1.0 + bbox_reg) / 2.0) - 1.0) * opt.bbox_coeff))\
                     # / (plaus_score) \
-                    ) - (1.0 * opt.iou_coeff)
+                    )
     else:
         plaus_reg = (((1.0 + dist_reg) / 2.0))
         # plaus_reg = dist_reg 
