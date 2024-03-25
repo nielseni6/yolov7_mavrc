@@ -736,7 +736,7 @@ if __name__ == '__main__':
     parser.add_argument('--weighted_loss_attr', type=bool, default=False, help='If true, weight individual loss terms before used to generate attribution maps')
     ########################################################################################## 
     parser.add_argument('--k_fold', type=int, default=10, help='Number of folds for k-fold cross validation') 
-    parser.add_argument('--k_fold_num', type=int, default=0, help='Fold number to use for training') 
+    parser.add_argument('--k_fold_num', type=int, default=1, help='Fold number to use for training') 
     parser.add_argument('--inherently_explainable', type=bool, default=False, help='If true, use inherently explainable model') 
     parser.add_argument('--test_plaus_confirm', type=bool, default=True, help='If true, test plausibility confirmation') 
     parser.add_argument('--lplaus_only', type=bool, default=False, help='If true, only calculate plausibility loss') 
