@@ -159,6 +159,10 @@ def test_pgt(data,
     elif opt.eval_type == 'default':
         nsteps = 1
         # desired_snr = 1e+100
+    elif opt.eval_type == 'robust_snr_vary':
+        nsteps = 10
+        # desired_snr = 1e+100
+        
     
     if opt.atk == 'none':
         desired_snr = 1e+100
@@ -243,7 +247,7 @@ if __name__ == '__main__':
     # parser.add_argument('--hyp', type=str, default='data/hyp.coco.yaml', help='') 
     # parser.add_argument('--atk', type=str, default='gaussian', help='grad, pgd, gaussian') 
     parser.add_argument('--eval_type', type=str, default='robust', help='robust, evalattai, default') 
-    parser.add_argument('--desired_snr', type=float, default=50.0, help='desired snr') 
+    parser.add_argument('--desired_snr', type=float, default=30.0, help='desired snr') 
     parser.add_argument('--atk_list', nargs='+', type=str, default=['none', 'gaussian', 'fgsm', 'pgd',], help='atk list') 
     parser.add_argument('--weights_dir', type=str, default='weights/eval_coco', help='models folder') 
     parser.add_argument('--entire_folder', action='store_true', help='entire folder') 
@@ -255,21 +259,26 @@ if __name__ == '__main__':
 
     opt.entire_folder = True 
     opt.loss_attr = True 
-    opt.weights_dir = 'weights/pgt_runs' 
+    # opt.weights_dir = 'weights/pgt_runs' 
     # opt.weights_dir = 'weights/pgt_runs2' 
-    # opt.weights_dir = 'weights/baselines_kfold' 
-    #check_requirements() 
+    opt.weights_dir = 'weights/baselines_kfold' 
+    # check_requirements() 
     
     # opt.eval_type = 'default' 
     # opt.atk_list = ['none',] 
     
-    opt.eval_type = 'robust' 
-    opt.atk_list = ['none', 'gaussian', 'pgd', 'fgsm'] # Evaluate adversarial robustness 
-    # # opt.atk_list = ['gaussian', 'pgd', 'fgsm'] # Evaluate adversarial robustness 
+    # opt.eval_type = 'robust' 
+    # # opt.atk_list = ['none', 'gaussian', 'pgd', 'fgsm'] # Evaluate adversarial robustness 
+    # opt.atk_list = ['none', 'pgd', 'fgsm'] # Evaluate adversarial robustness 
 
     # opt.eval_type = 'robust2' 
-    # atk_list = ['none', 'grad'] # 'pgd', 'fgsm' 
-
+    # opt.atk_list = ['none', 'grad'] # 'pgd', 'fgsm' 
+    
+    opt.eval_type = 'robust_snr_vary'
+    opt.atk_list = ['gaussian']
+    # opt.atk_list = ['pgd']
+    # opt.atk_list = ['fgsm']
+    
     atk_list = opt.atk_list 
     
     opt.atk = '' 
