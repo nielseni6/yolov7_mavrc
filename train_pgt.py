@@ -713,7 +713,7 @@ if __name__ == '__main__':
     parser.add_argument('--classes', nargs='+', type=int, help='filter by class: --class 0, or --class 0 2 3') 
     ############################## PGT Variables ############################### 
     parser.add_argument('--seed', type=int, default=None, help='reproduce results') 
-    parser.add_argument('--pgt-coeff', type=float, default=0.1, help='learning rate for plausibility gradient') 
+    parser.add_argument('--pgt-coeff', type=float, default=0.18, help='learning rate for plausibility gradient') 
     parser.add_argument('--pgt-lr-decay', type=float, default=0.75, help='learning rate decay for plausibility gradient') 
     parser.add_argument('--pgt-lr-decay-step', type=int, default=300, help='learning rate decay step for plausibility gradient') 
     parser.add_argument('--n-max-attr-labels', type=int, default=100, help='maximum number of attribution maps generated for each image') 
@@ -763,16 +763,16 @@ if __name__ == '__main__':
     # nohup python -m torch.distributed.launch --nproc_per_node 4 --master_port 9528 train_pgt.py --sync-bn > ./output_logs/gpu2360.log 2>&1 & 
     
     # Resume run
-    # nohup python train_pgt.py --resume runs/pgt/train-pgt-yolov7/pgt5_632/weights/last.pt > ./output_logs/gpu7_resume.log 2>&1 &
-    # nohup python -m torch.distributed.launch --nproc_per_node 4 --master_port 9527 train_pgt.py --sync-bn --resume runs/pgt/train-pgt-yolov7/pgt5_214/weights/last.pt > ./output_logs/gpu1245_coco_pgtlr0_25.log 2>&1 &
-    # opt.resume = "runs/pgt/train-pgt-yolov7/pgt5_214/weights/last.pt"
-    # opt.weights = 'runs/pgt/train-pgt-yolov7/pgt5_214/weights/last.pt'
+    # nohup python train_pgt.py --resume runs/pgt/train-pgt-yolov7/pgt5_632/weights/last.pt > ./output_logs/gpu7_resume.log 2>&1 & 
+    # nohup python -m torch.distributed.launch --nproc_per_node 4 --master_port 9527 train_pgt.py --sync-bn --resume runs/pgt/train-pgt-yolov7/pgt5_214/weights/last.pt > ./output_logs/gpu1245_coco_pgtlr0_25.log 2>&1 & 
+    # opt.resume = "runs/pgt/train-pgt-yolov7/pgt5_214/weights/last.pt" 
+    # opt.weights = 'runs/pgt/train-pgt-yolov7/pgt5_214/weights/last.pt' 
     
     # opt.dataset = 'coco' 
     opt.dataset = 'real_world_drone' 
-    # opt.sync_bn = True
+    # opt.sync_bn = True 
     
-    if opt.seed is None:
+    if opt.seed is None: 
         opt.seed = random.randrange(sys.maxsize) 
     # if opt.seed is None: 
     #     opt.seed = random.randrange(sys.maxsize) 
