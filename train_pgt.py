@@ -726,7 +726,7 @@ if __name__ == '__main__':
     parser.add_argument('--plaus_results', action='store_true', help='If true, calculate plausibility on clean, non-augmented images and labels during testing') 
     ################################### PGT Loss Variables ################################### 
     parser.add_argument('--dist_reg_only', type=bool, default=False, help='If true, only calculate distance regularization and not plausibility') 
-    parser.add_argument('--focus_coeff', type=float, default=0.25, help='focus_coeff') 
+    parser.add_argument('--focus_coeff', type=float, default=0.5, help='focus_coeff') 
     parser.add_argument('--iou_coeff', type=float, default=0.5, help='iou_coeff') 
     parser.add_argument('--dist_coeff', type=float, default=0.5, help='dist_coeff') 
     parser.add_argument('--bbox_coeff', type=float, default=0.0, help='bbox_coeff') 
