@@ -259,11 +259,11 @@ if __name__ == '__main__':
 
     opt.entire_folder = True 
     opt.loss_attr = True 
-    # opt.weights_dir = 'weights/pgt_runs_best'
+    opt.weights_dir = 'weights/pgt_runs_best'
     # opt.weights_dir = 'weights/pgt_runs_best2'
     # opt.weights_dir = 'weights/pgt_runs' 
     # opt.weights_dir = 'weights/pgt_runs2' 
-    opt.weights_dir = 'weights/baselines_kfold' 
+    # opt.weights_dir = 'weights/baselines_kfold' 
     # check_requirements() 
     
     # opt.eval_type = 'default' 
@@ -388,9 +388,9 @@ if __name__ == '__main__':
                     compute_loss=ComputeLoss,
                     device=device,
                     )
-                if opt.eval_type == 'robust_snr_vary':
-                    results_snr = results
-                    results, snr_list = results
+                # if opt.eval_type == 'robust_snr_vary':
+                #     results_snr = results
+                #     results, snr_list = results
                 
                 
                 # Log
@@ -406,31 +406,12 @@ if __name__ == '__main__':
                 wandb.define_metric("*", step_metric='SNR')
                 for i_step, res in enumerate(results):
                     (result, maps, t) = res[0]
-                    result = list(result).append(snr_list[i_step])
                     # wandb_logger.current_epoch = i_step
-                    for x, tag in zip(result, tags):
+                    for x, tag in zip(list(result), tags):
                         if wandb_logger.wandb:
                             wandb_logger.log({tag: x})  # W&B
                     wandb_logger.end_epoch()
-                
-                if opt.eval_type == 'robust_snr_vary':
-                    tags = ['metrics_vs_SNR/precision', 'metrics_vs_SNR/recall', 'metrics_vs_SNR/mAP_0.5', 'metrics_vs_SNR/mAP_0.5:0.95',
-                            'val_vs_SNR/box_loss', 'val_vs_SNR/obj_loss', 'val_vs_SNR/cls_loss',  # val loss
-                            'metrics_vs_SNR/plaus_score', 'snr/step'
-                            ]
-                    # define our custom x axis metric
-                    wandb.define_metric("snr/step")
-                    # set all other train/ metrics to use this step
-                    wandb.define_metric("metrics_vs_SNR/*", step_metric="snr/step")
-                    wandb.define_metric("val_vs_SNR/*", step_metric="snr/step")
 
-                    for i_step, res in enumerate(results_snr):
-                        (result, maps, t) = res[0]
-                        # wandb_logger.current_epoch = i_step
-                        for x, tag in zip(list(result), tags):
-                            if wandb_logger.wandb:
-                                wandb_logger.log({tag: x})  # W&B
-                        wandb_logger.end_epoch()
 
         
         wandb_logger.finish_run()
