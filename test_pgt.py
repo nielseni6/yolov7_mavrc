@@ -259,12 +259,8 @@ if __name__ == '__main__':
 
     opt.entire_folder = True 
     opt.loss_attr = True 
-<<<<<<< HEAD
     # opt.weights_dir = 'weights/pgt_runs_best'
     # opt.weights_dir = 'weights/pgt_runs_best2'
-=======
-    # opt.weights_dir = 'weights/pgt_runs_best' 
->>>>>>> 78e571e1311e2fabc0fca65364021d6ed2105875
     # opt.weights_dir = 'weights/pgt_runs' 
     # opt.weights_dir = 'weights/pgt_runs2' 
     opt.weights_dir = 'weights/baselines_kfold' 
@@ -281,16 +277,10 @@ if __name__ == '__main__':
     # opt.atk_list = ['none', 'grad'] # 'pgd', 'fgsm' 
     
     opt.eval_type = 'robust_snr_vary'
-<<<<<<< HEAD
     opt.atk_list, opt.desired_snr = ['gaussian'], 30.0
     # opt.atk_list, opt.desired_snr = ['pgd'], 50.0
     # opt.atk_list, opt.desired_snr = ['fgsm'], 70.0
     opt.desired_snr = 0.0
-=======
-    opt.atk_list = ['gaussian']
-    # opt.atk_list = ['pgd']
-    # # opt.atk_list = ['fgsm']
->>>>>>> 78e571e1311e2fabc0fca65364021d6ed2105875
     
     atk_list = opt.atk_list 
     
