@@ -247,7 +247,7 @@ if __name__ == '__main__':
     # parser.add_argument('--hyp', type=str, default='data/hyp.coco.yaml', help='') 
     # parser.add_argument('--atk', type=str, default='gaussian', help='grad, pgd, gaussian') 
     parser.add_argument('--eval_type', type=str, default='robust', help='robust, evalattai, default') 
-    parser.add_argument('--desired_snr', type=float, default=30.0, help='desired snr') 
+    parser.add_argument('--desired_snr', type=float, default=40.0, help='desired snr') 
     parser.add_argument('--atk_list', nargs='+', type=str, default=['none', 'gaussian', 'fgsm', 'pgd',], help='atk list') 
     parser.add_argument('--weights_dir', type=str, default='weights/eval_coco', help='models folder') 
     parser.add_argument('--entire_folder', action='store_true', help='entire folder') 
@@ -259,8 +259,12 @@ if __name__ == '__main__':
 
     opt.entire_folder = True 
     opt.loss_attr = True 
+<<<<<<< HEAD
     # opt.weights_dir = 'weights/pgt_runs_best'
     # opt.weights_dir = 'weights/pgt_runs_best2'
+=======
+    # opt.weights_dir = 'weights/pgt_runs_best' 
+>>>>>>> 78e571e1311e2fabc0fca65364021d6ed2105875
     # opt.weights_dir = 'weights/pgt_runs' 
     # opt.weights_dir = 'weights/pgt_runs2' 
     opt.weights_dir = 'weights/baselines_kfold' 
@@ -277,10 +281,16 @@ if __name__ == '__main__':
     # opt.atk_list = ['none', 'grad'] # 'pgd', 'fgsm' 
     
     opt.eval_type = 'robust_snr_vary'
+<<<<<<< HEAD
     opt.atk_list, opt.desired_snr = ['gaussian'], 30.0
     # opt.atk_list, opt.desired_snr = ['pgd'], 50.0
     # opt.atk_list, opt.desired_snr = ['fgsm'], 70.0
     opt.desired_snr = 0.0
+=======
+    opt.atk_list = ['gaussian']
+    # opt.atk_list = ['pgd']
+    # # opt.atk_list = ['fgsm']
+>>>>>>> 78e571e1311e2fabc0fca65364021d6ed2105875
     
     atk_list = opt.atk_list 
     
@@ -388,6 +398,9 @@ if __name__ == '__main__':
                     compute_loss=ComputeLoss,
                     device=device,
                     )
+                if opt.eval_type == 'robust_snr_vary':
+                    results_snr = results
+                    results, snr_list = results
                 
                 
                 # Log
@@ -409,6 +422,25 @@ if __name__ == '__main__':
                         if wandb_logger.wandb:
                             wandb_logger.log({tag: x})  # W&B
                     wandb_logger.end_epoch()
+                
+                if opt.eval_type == 'robust_snr_vary':
+                    tags = ['metrics_vs_SNR/precision', 'metrics_vs_SNR/recall', 'metrics_vs_SNR/mAP_0.5', 'metrics_vs_SNR/mAP_0.5:0.95',
+                            'val_vs_SNR/box_loss', 'val_vs_SNR/obj_loss', 'val_vs_SNR/cls_loss',  # val loss
+                            'metrics_vs_SNR/plaus_score', 'snr/step'
+                            ]
+                    # define our custom x axis metric
+                    wandb.define_metric("snr/step")
+                    # set all other train/ metrics to use this step
+                    wandb.define_metric("metrics_vs_SNR/*", step_metric="snr/step")
+                    wandb.define_metric("val_vs_SNR/*", step_metric="snr/step")
+
+                    for i_step, res in enumerate(results_snr):
+                        (result, maps, t) = res[0]
+                        # wandb_logger.current_epoch = i_step
+                        for x, tag in zip(list(result), tags):
+                            if wandb_logger.wandb:
+                                wandb_logger.log({tag: x})  # W&B
+                        wandb_logger.end_epoch()
 
         
         wandb_logger.finish_run()
