@@ -211,9 +211,9 @@ def test_pgt(data,
     robust_eval_results, stats_all = robust_eval.compute_stats()
     for ir in range(len(robust_eval_results)):
         r_loss = torch.zeros(3, device=device)
-        ((r_mp, r_mr, r_map50, r_map, r_loss[0], r_loss[1], r_loss[2], r_plaus), r_maps, r_t) = robust_eval_results[ir][0]
-        robust_eval_results[ir][0] = (r_mp, r_mr, r_map50, r_map, *(r_loss.cpu()).tolist(), r_plaus), r_maps, r_t
-    return robust_eval_results
+        ((r_mp, r_mr, r_map50, r_map, r_loss[0], r_loss[1], r_loss[2], r_plaus, snr_list), r_maps, r_t) = robust_eval_results[ir][0]
+        robust_eval_results[ir][0] = (r_mp, r_mr, r_map50, r_map, *(r_loss.cpu()).tolist(), r_plaus, snr_list), r_maps, r_t
+    return robust_eval_results#, snr_list
     ##########################################################################################
 
 if __name__ == '__main__':
@@ -259,6 +259,8 @@ if __name__ == '__main__':
 
     opt.entire_folder = True 
     opt.loss_attr = True 
+    # opt.weights_dir = 'weights/pgt_runs_best'
+    # opt.weights_dir = 'weights/pgt_runs_best2'
     # opt.weights_dir = 'weights/pgt_runs' 
     # opt.weights_dir = 'weights/pgt_runs2' 
     opt.weights_dir = 'weights/baselines_kfold' 
@@ -275,9 +277,10 @@ if __name__ == '__main__':
     # opt.atk_list = ['none', 'grad'] # 'pgd', 'fgsm' 
     
     opt.eval_type = 'robust_snr_vary'
-    opt.atk_list = ['gaussian']
-    # opt.atk_list = ['pgd']
-    # opt.atk_list = ['fgsm']
+    opt.atk_list, opt.desired_snr = ['gaussian'], 30.0
+    # opt.atk_list, opt.desired_snr = ['pgd'], 50.0
+    # opt.atk_list, opt.desired_snr = ['fgsm'], 70.0
+    opt.desired_snr = 0.0
     
     atk_list = opt.atk_list 
     
@@ -390,16 +393,19 @@ if __name__ == '__main__':
                 # Log
                 tags = ['metrics/precision', 'metrics/recall', 'metrics/mAP_0.5', 'metrics/mAP_0.5:0.95',
                         'val/box_loss', 'val/obj_loss', 'val/cls_loss',  # val loss
-                        'plaus_score',
+                        'plaus_score', 'SNR'
                         ]
                 # for ir in range(len(robust_eval_results)):
                 #     r_loss = torch.zeros(3, device=device)
                 #     ((r_mp, r_mr, r_map50, r_map, r_loss[0], r_loss[1], r_loss[2]), r_maps, r_t, r_plaus) = robust_eval_results[ir][0]
                 #     results = (r_mp, r_mr, r_map50, r_map, *(r_loss.cpu()).tolist()), r_maps, r_t, r_plaus
+                wandb.define_metric('SNR')
+                wandb.define_metric("*", step_metric='SNR')
                 for i_step, res in enumerate(results):
                     (result, maps, t) = res[0]
+                    result = list(result).append(snr_list[i_step])
                     # wandb_logger.current_epoch = i_step
-                    for x, tag in zip(list(result), tags):
+                    for x, tag in zip(result, tags):
                         if wandb_logger.wandb:
                             wandb_logger.log({tag: x})  # W&B
                     wandb_logger.end_epoch()

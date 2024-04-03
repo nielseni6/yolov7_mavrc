@@ -6,7 +6,7 @@ from pathlib import Path
 import numpy as np
 from utils.metrics import ap_per_class, ConfusionMatrix
 from utils.torch_utils import select_device, time_synchronized, TracedModel
-
+from numpy import inf
 # from matplotlib.pyplot import colormaps as cm
 import matplotlib.pyplot as plt
 from PIL import Image
@@ -311,7 +311,7 @@ class Perturbation:
                         self.wandb_images[step_i].append(opt.wandb_logger.wandb.Image(img_noisy[si], boxes=boxes, caption=path.name))
                         self.wandb_attk[step_i].append(opt.wandb_logger.wandb.Image(attk_[si], caption=f'{path.name}_atk'))
                         self.wandb_attr[step_i].append(opt.wandb_logger.wandb.Image(attr_grad[si], caption=f'{path.name}_attr'))
-                        img_overlay = (overlay_attr(img_noisy[si].clone().detach(), attr_grad[si].clone(), alpha = 0.75))
+                        img_overlay = overlay_attr(img_noisy[si].clone().detach(), normalize_batch(attr_grad[si].clone()), alpha = 0.75)
                         self.wandb_attr_overlay[step_i].append(opt.wandb_logger.wandb.Image(img_overlay, caption=f'{path.name}_attr_overlay'))
                         # self.images[step_i].append(img_[si].clone().detach())
                         # self.attr[step_i].append(attr_grad[si].clone().detach())
@@ -389,6 +389,9 @@ class Perturbation:
 
             # overlayfig.plot_img_list(imgs_shifted[1])
 
+        self.snr_list[self.snr_list==inf]=150
+        self.snr_list[0] = 150
+
 
         
         return self.stats
@@ -463,7 +466,8 @@ class Perturbation:
                 maps[c] = ap[step_i][i]
             rtemp = (mp[step_i], mr[step_i], map50[step_i], map[step_i], 
                      *(loss[step_i].cpu() / self.total_batches).tolist(), 
-                     (self.plaus_list[step_i]/self.num_batches[step_i])), maps, t
+                     (self.plaus_list[step_i]/self.num_batches[step_i]),
+                     self.snr_list[step_i]), maps, t
             results.append([rtemp])
             print(f"Step {step_i} results: {rtemp}")
             # loss[step_i] = *(loss[step_i].cpu() / self.total_batches).tolist()
