@@ -100,10 +100,10 @@ def overlay_attr(img, mask, colormap: str = "jet", alpha: float = 0.7):
     return overlayed_tensor
 
 class Perturbation:
-    def __init__(self, model, opt, nsteps = 10, desired_snr = 5, start=0, torchattacks_used = False):#, augment = False, compute_loss = None, loss_metric = "CIoU"):
+    def __init__(self, model, opt, nsteps = 10, snr_end = 5, snr_begin = 0, start=0, torchattacks_used = False):#, augment = False, compute_loss = None, loss_metric = "CIoU"):
         self.model = model
         self.nsteps = nsteps
-        self.snr = desired_snr # Value of SNR in dB at the end of the perturbation steps (nsteps)
+        self.snr = snr_end # Value of SNR in dB at the end of the perturbation steps (nsteps)
         self.opt = opt
         # self.augment = opt.augment
         # self.compute_loss = opt.compute_loss
@@ -127,6 +127,8 @@ class Perturbation:
         self.attr_method = None
         self.start = start
         self.torchattacks_used = torchattacks_used
+        self.snr_step_size = (snr_end - snr_begin) / (nsteps-1)
+        self.desired_snr_list = [snr_begin + (i * self.snr_step_size) for i in range(start, nsteps)]
    
     def __init_attr__(self, attr_method = get_gradient, out_num_attr = 1, 
                       torchattacks_used=False, **kwargs):
@@ -170,11 +172,11 @@ class Perturbation:
             
             attk_ = attk.clone().detach()
             if self.attr_method is not None:
-                attk_ = change_noise_batch(img_, attk_, desired_snr=self.snr)
-                try: # only for EvalAttAI
-                    attk_ *= (step_i / (self.nsteps - 1))
-                except:
-                    continue
+                attk_ = change_noise_batch(img_, attk_, desired_snr=self.desired_snr_list[step_i])
+                # try: # only for EvalAttAI
+                #     attk_ *= (step_i / (self.nsteps - 1))
+                # except:
+                #     continue
             noise = attk_.clone().detach()
                 
             
@@ -187,11 +189,9 @@ class Perturbation:
             self.snr_list.append(round(avg_snr, 2)) 
             
             if self.attr_method is not None:
-                if step_i != 0:
-                    img_noisy = img_ + attk_
+                img_noisy = img_ + attk_
+                if opt.clamp:
                     img_noisy = torch.clamp(img_noisy, min=0.0, max=1.0)
-                else:
-                    img_noisy = img_
             else:
                 img_noisy = img_
             
@@ -389,9 +389,6 @@ class Perturbation:
 
             # overlayfig.plot_img_list(imgs_shifted[1])
 
-        self.snr_list[self.snr_list==inf]=150
-        self.snr_list[0] = 150
-
 
         
         return self.stats
@@ -455,7 +452,7 @@ class Perturbation:
             if wandb_attr[step_i]:
                 wandb_logger.log({f"Attribution/Step {step_i}": wandb_attr[step_i]})
             if self.wandb_attr_overlay[step_i]:
-                wandb_logger.log({f"Attribution Overlay/Step {step_i}": self.wandb_attr_overlay[step_i]})
+                wandb_logger.log({f"Attribution Overlay/Step {step_i} SNR {self.snr_list[step_i-self.start]}": self.wandb_attr_overlay[step_i]})
             # Return results
             model.float()  # for training
             if not training:

@@ -152,25 +152,25 @@ def test_pgt(data,
     if opt.eval_type == 'robust' or opt.eval_type == 'robust2':
         nsteps = 2
         start=1
-        # desired_snr = 10.0
+        # snr_end = 10.0
     elif opt.eval_type == 'evalattai':
         nsteps = 10
-        # desired_snr = 5.0
+        # snr_end = 5.0
     elif opt.eval_type == 'default':
         nsteps = 1
-        # desired_snr = 1e+100
+        # snr_end = 1e+100
     elif opt.eval_type == 'robust_snr_vary':
         nsteps = 10
-        # desired_snr = 1e+100
+        # snr_end = 1e+100
         
     
     if opt.atk == 'none':
-        desired_snr = 1e+100
+        snr_end = 1e+100
     else:
-        desired_snr = opt.desired_snr
+        snr_end = opt.snr_end
     
     torchattacks_used = (opt.atk == 'pgd') or (opt.atk == 'fgsm')
-    robust_eval = Perturbation(model, opt, nsteps = nsteps, desired_snr = desired_snr, start=start, torchattacks_used=torchattacks_used)
+    robust_eval = Perturbation(model, opt, nsteps = nsteps, snr_end = snr_end, snr_begin = opt.snr_begin, start=start, torchattacks_used=torchattacks_used)
     
     if opt.atk == 'grad':
         robust_eval.__init_attr__(attr_method = get_gradient, norm=False, keepmean=False, absolute=False, grayscale=False)
@@ -247,7 +247,8 @@ if __name__ == '__main__':
     # parser.add_argument('--hyp', type=str, default='data/hyp.coco.yaml', help='') 
     # parser.add_argument('--atk', type=str, default='gaussian', help='grad, pgd, gaussian') 
     parser.add_argument('--eval_type', type=str, default='robust', help='robust, evalattai, default') 
-    parser.add_argument('--desired_snr', type=float, default=40.0, help='desired snr') 
+    parser.add_argument('--snr_end', type=float, default=80.0, help='desired snr') 
+    parser.add_argument('--snr_begin', type=float, default=20.0, help='begin snr')
     parser.add_argument('--atk_list', nargs='+', type=str, default=['none', 'gaussian', 'fgsm', 'pgd',], help='atk list') 
     parser.add_argument('--weights_dir', type=str, default='weights/eval_coco', help='models folder') 
     parser.add_argument('--entire_folder', action='store_true', help='entire folder') 
@@ -255,15 +256,19 @@ if __name__ == '__main__':
     # parser.add_argument('--debug', action='store_true', help='debug mode for visualizing figures') 
     parser.add_argument('--loss_attr', action='store_true', help='loss attr') 
     parser.add_argument('--out_num_attrs', nargs='+', type=int, default=[2,], help='Default output for generating attribution maps')
+    parser.add_argument('--clamp', type = bool, default = True, help='clamp noisy input to [0, 1] if True')
     opt = parser.parse_args() 
 
     opt.entire_folder = True 
     opt.loss_attr = True 
-    opt.weights_dir = 'weights/pgt_runs_best'
+
+    opt.weights_dir = 'weights/baselines_kfold' 
+    # opt.weights_dir = 'weights/pgt_runs_best'
+
     # opt.weights_dir = 'weights/pgt_runs_best2'
     # opt.weights_dir = 'weights/pgt_runs' 
     # opt.weights_dir = 'weights/pgt_runs2' 
-    # opt.weights_dir = 'weights/baselines_kfold' 
+
     # check_requirements() 
     
     # opt.eval_type = 'default' 
@@ -277,10 +282,12 @@ if __name__ == '__main__':
     # opt.atk_list = ['none', 'grad'] # 'pgd', 'fgsm' 
     
     opt.eval_type = 'robust_snr_vary'
-    opt.atk_list, opt.desired_snr = ['gaussian'], 30.0
-    # opt.atk_list, opt.desired_snr = ['pgd'], 50.0
-    # opt.atk_list, opt.desired_snr = ['fgsm'], 70.0
-    opt.desired_snr = 0.0
+    # opt.atk_list = ['gaussian']
+    opt.atk_list = ['pgd']
+    # opt.atk_list = ['fgsm']
+    # opt.atk_list, opt.snr_end = ['gaussian'], 30.0
+    # opt.atk_list, opt.snr_end = ['pgd'], 50.0
+    # opt.atk_list, opt.snr_end = ['fgsm'], 70.0
     
     atk_list = opt.atk_list 
     
