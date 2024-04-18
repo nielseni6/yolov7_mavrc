@@ -205,7 +205,7 @@ def test_pgt(data,
         robust_eval.collect_stats(img_, targets_, paths, shapes, batch_i)
         ##########################################################################################
 
-############################################################################################
+    ############################################################################################
     ##########################################################################################
     # evalattai_results = evalattai.compute_stats()
     robust_eval_results, stats_all = robust_eval.compute_stats()
@@ -247,8 +247,8 @@ if __name__ == '__main__':
     # parser.add_argument('--hyp', type=str, default='data/hyp.coco.yaml', help='') 
     # parser.add_argument('--atk', type=str, default='gaussian', help='grad, pgd, gaussian') 
     parser.add_argument('--eval_type', type=str, default='robust', help='robust, evalattai, default') 
-    parser.add_argument('--snr_end', type=float, default=80.0, help='desired snr') 
-    parser.add_argument('--snr_begin', type=float, default=20.0, help='begin snr')
+    parser.add_argument('--snr_end', type=float, default=90.0, help='desired snr') 
+    parser.add_argument('--snr_begin', type=float, default=10.0, help='begin snr')
     parser.add_argument('--atk_list', nargs='+', type=str, default=['none', 'gaussian', 'fgsm', 'pgd',], help='atk list') 
     parser.add_argument('--weights_dir', type=str, default='weights/eval_coco', help='models folder') 
     parser.add_argument('--entire_folder', action='store_true', help='entire folder') 
@@ -262,10 +262,12 @@ if __name__ == '__main__':
     opt.entire_folder = True 
     opt.loss_attr = True 
 
-    opt.weights_dir = 'weights/baselines_kfold' 
-    # opt.weights_dir = 'weights/pgt_runs_best'
+    # opt.weights_dir = 'weights/baselines_kfold' 
+    # opt.weights_dir = 'weights/pgt_runs_kfold' 
+    # opt.weights_dir = 'weights/pgt_runs_best' 
 
-    # opt.weights_dir = 'weights/pgt_runs_best2'
+    opt.weights_dir = 'weights/pgt_best'
+    # opt.weights_dir = 'weights/pgt_runs_best2' 
     # opt.weights_dir = 'weights/pgt_runs' 
     # opt.weights_dir = 'weights/pgt_runs2' 
 
@@ -281,13 +283,13 @@ if __name__ == '__main__':
     # opt.eval_type = 'robust2' 
     # opt.atk_list = ['none', 'grad'] # 'pgd', 'fgsm' 
     
-    opt.eval_type = 'robust_snr_vary'
-    # opt.atk_list = ['gaussian']
-    opt.atk_list = ['pgd']
-    # opt.atk_list = ['fgsm']
-    # opt.atk_list, opt.snr_end = ['gaussian'], 30.0
-    # opt.atk_list, opt.snr_end = ['pgd'], 50.0
-    # opt.atk_list, opt.snr_end = ['fgsm'], 70.0
+    opt.eval_type = 'robust_snr_vary' 
+    opt.atk_list = ['gaussian'] 
+    # opt.atk_list = ['pgd'] 
+    # opt.atk_list = ['fgsm'] 
+    # opt.atk_list, opt.snr_end = ['gaussian'], 30.0 
+    # opt.atk_list, opt.snr_end = ['pgd'], 50.0 
+    # opt.atk_list, opt.snr_end = ['fgsm'], 70.0 
     
     atk_list = opt.atk_list 
     

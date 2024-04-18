@@ -39,7 +39,7 @@ def change_noise_batch(signal_tensors, noise_tensors, desired_snr=10):
 
         # Scale the noise tensor
         scaled_noise_tensor = noise_tensor * scaling_factor
-
+        
         # # Add the scaled noise to the signal tensor
         # noisy_signal_tensor = signal_tensor + scaled_noise_tensor
         
@@ -183,7 +183,7 @@ class Perturbation:
             # Verify SNR 
             avg_snr = 0.0 
             for ij in range(len(img)):
-                estimated_snr = 10 * torch.log10(torch.mean(img[ij] ** 2) / torch.mean(noise[ij] ** 2))
+                estimated_snr = 10 * torch.log10(torch.mean(img_[ij] ** 2) / torch.mean(noise[ij] ** 2))
                 avg_snr += estimated_snr.item() 
             avg_snr /= len(img) 
             self.snr_list.append(round(avg_snr, 2)) 
