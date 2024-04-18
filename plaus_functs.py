@@ -30,11 +30,8 @@ def get_gradient(img, grad_wrt, norm=False, absolute=True, grayscale=False, keep
         grad_wrt_outputs = None
     attribution_map = torch.autograd.grad(grad_wrt, img, 
                                     grad_outputs=grad_wrt_outputs, 
-                                    # is_grads_batched=True,
-                                    # retain_graph=True,
                                     create_graph=True, # Create graph to allow for higher order derivatives but slows down computation significantly
-                                    )[0]#.requires_grad_(True)
-    # attribution_map = gradients[0]
+                                    )[0]
     if absolute:
         attribution_map = torch.abs(attribution_map) # attribution_map ** 2 # Take absolute values of gradients
     if grayscale: # Convert to grayscale, saves vram and computation time for plaus_eval
