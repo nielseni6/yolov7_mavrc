@@ -273,6 +273,7 @@ if __name__ == '__main__':
 
     # check_requirements() 
     
+    # opt.weights_dir = 'weights/toy_problem/pgt1_26' 
     # opt.eval_type = 'default' 
     # opt.atk_list = ['none',] 
     

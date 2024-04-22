@@ -127,8 +127,11 @@ class Perturbation:
         self.attr_method = None
         self.start = start
         self.torchattacks_used = torchattacks_used
-        self.snr_step_size = (snr_end - snr_begin) / (nsteps-1)
-        self.desired_snr_list = [snr_begin + (i * self.snr_step_size) for i in range(start, nsteps)]
+        if opt.eval_type != "default":
+            self.snr_step_size = (snr_end - snr_begin) / (nsteps-1)
+            self.desired_snr_list = [snr_begin + (i * self.snr_step_size) for i in range(start, nsteps)]
+        else:
+            self.desired_snr_list = 10e10
    
     def __init_attr__(self, attr_method = get_gradient, out_num_attr = 1, 
                       torchattacks_used=False, **kwargs):
@@ -168,15 +171,11 @@ class Perturbation:
         num_imgs = len(img)
         for step_i in range(self.start, self.nsteps):
             targets_ = targets.clone().detach().requires_grad_(True)
-            img_ = img.clone().detach().requires_grad_(True)# * 255.0# + ((self.epsilon * step_i) * attk.clone().detach())
+            img_ = img.clone().detach().requires_grad_(True)
             
             attk_ = attk.clone().detach()
             if self.attr_method is not None:
                 attk_ = change_noise_batch(img_, attk_, desired_snr=self.desired_snr_list[step_i])
-                # try: # only for EvalAttAI
-                #     attk_ *= (step_i / (self.nsteps - 1))
-                # except:
-                #     continue
             noise = attk_.clone().detach()
                 
             
@@ -189,7 +188,10 @@ class Perturbation:
             self.snr_list.append(round(avg_snr, 2)) 
             
             if self.attr_method is not None:
-                img_noisy = img_ + attk_
+                if opt.eval_type != "default":
+                    img_noisy = img_ + attk_
+                else:
+                    img_noisy = img_
                 if opt.clamp:
                     img_noisy = torch.clamp(img_noisy, min=0.0, max=1.0)
             else:
