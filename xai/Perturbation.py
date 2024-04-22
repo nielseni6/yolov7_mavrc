@@ -127,9 +127,12 @@ class Perturbation:
         self.attr_method = None
         self.start = start
         self.torchattacks_used = torchattacks_used
-        self.snr_step_size = (snr_end - snr_begin) / (nsteps-1)
-        self.desired_snr_list = [snr_begin + (i * self.snr_step_size) for i in range(start, nsteps)]
-   
+        if opt.eval_type != "default":
+            self.snr_step_size = (snr_end - snr_begin) / (nsteps-1)
+            self.desired_snr_list = [snr_begin + (i * self.snr_step_size) for i in range(start, nsteps)]
+        else:
+            self.desired_snr_list = 10e100
+            
     def __init_attr__(self, attr_method = get_gradient, out_num_attr = 1, 
                       torchattacks_used=False, **kwargs):
         self.attr_method = attr_method
@@ -189,7 +192,10 @@ class Perturbation:
             self.snr_list.append(round(avg_snr, 2)) 
             
             if self.attr_method is not None:
-                img_noisy = img_ + attk_
+                if opt.eval_type != "default":
+                    img_noisy = img_ + attk_
+                else:
+                    img_noisy = img_
                 if opt.clamp:
                     img_noisy = torch.clamp(img_noisy, min=0.0, max=1.0)
             else:

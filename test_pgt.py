@@ -266,13 +266,15 @@ if __name__ == '__main__':
     # opt.weights_dir = 'weights/pgt_runs_kfold' 
     # opt.weights_dir = 'weights/pgt_runs_best' 
 
-    opt.weights_dir = 'weights/pgt_best'
+    # opt.weights_dir = 'weights/pgt_best'
     # opt.weights_dir = 'weights/pgt_runs_best2' 
     # opt.weights_dir = 'weights/pgt_runs' 
     # opt.weights_dir = 'weights/pgt_runs2' 
+    opt.weights_dir = 'weights/pgt_runs3' 
 
     # check_requirements() 
     
+    # opt.weights_dir = 'weights/toy_problem/pgt1_26' 
     # opt.eval_type = 'default' 
     # opt.atk_list = ['none',] 
     
@@ -284,13 +286,10 @@ if __name__ == '__main__':
     # opt.atk_list = ['none', 'grad'] # 'pgd', 'fgsm' 
     
     opt.eval_type = 'robust_snr_vary' 
-    opt.atk_list = ['gaussian'] 
+    # opt.atk_list = ['gaussian'] 
     # opt.atk_list = ['pgd'] 
-    # opt.atk_list = ['fgsm'] 
-    # opt.atk_list, opt.snr_end = ['gaussian'], 30.0 
-    # opt.atk_list, opt.snr_end = ['pgd'], 50.0 
-    # opt.atk_list, opt.snr_end = ['fgsm'], 70.0 
-    
+    opt.atk_list = ['fgsm'] 
+
     atk_list = opt.atk_list 
     
     opt.atk = '' 
