@@ -270,13 +270,13 @@ if __name__ == '__main__':
     # opt.weights_dir = 'weights/pgt_runs_best2' 
     # opt.weights_dir = 'weights/pgt_runs' 
     # opt.weights_dir = 'weights/pgt_runs2' 
-    opt.weights_dir = 'weights/pgt_runs3' 
+    # opt.weights_dir = 'weights/pgt_runs3' 
 
     # check_requirements() 
     
-    # opt.weights_dir = 'weights/toy_problem/pgt1_26' 
-    # opt.eval_type = 'default' 
-    # opt.atk_list = ['none',] 
+    opt.weights_dir = 'weights/toy_problem/pgt1_26' 
+    opt.eval_type = 'default' 
+    opt.atk_list = ['none',] 
     
     # opt.eval_type = 'robust' 
     # # opt.atk_list = ['none', 'gaussian', 'pgd', 'fgsm'] # Evaluate adversarial robustness 
@@ -285,10 +285,10 @@ if __name__ == '__main__':
     # opt.eval_type = 'robust2' 
     # opt.atk_list = ['none', 'grad'] # 'pgd', 'fgsm' 
     
-    opt.eval_type = 'robust_snr_vary' 
+    # opt.eval_type = 'robust_snr_vary' 
     # opt.atk_list = ['gaussian'] 
     # opt.atk_list = ['pgd'] 
-    opt.atk_list = ['fgsm'] 
+    # opt.atk_list = ['fgsm'] 
 
     atk_list = opt.atk_list 
     

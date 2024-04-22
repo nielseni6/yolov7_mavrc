@@ -131,7 +131,7 @@ class Perturbation:
             self.snr_step_size = (snr_end - snr_begin) / (nsteps-1)
             self.desired_snr_list = [snr_begin + (i * self.snr_step_size) for i in range(start, nsteps)]
         else:
-            self.desired_snr_list = 10e100
+            self.desired_snr_list = 10e10
             
     def __init_attr__(self, attr_method = get_gradient, out_num_attr = 1, 
                       torchattacks_used=False, **kwargs):
