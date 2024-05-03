@@ -256,13 +256,13 @@ if __name__ == '__main__':
     # parser.add_argument('--debug', action='store_true', help='debug mode for visualizing figures') 
     parser.add_argument('--loss_attr', action='store_true', help='loss attr') 
     parser.add_argument('--out_num_attrs', nargs='+', type=int, default=[2,], help='Default output for generating attribution maps')
-    parser.add_argument('--clamp', type = bool, default = True, help='clamp noisy input to [0, 1] if True')
+    parser.add_argument('--clamp', type = bool, default = False, help='clamp noisy input to [0, 1] if True')
     opt = parser.parse_args() 
 
     opt.entire_folder = True 
     opt.loss_attr = True 
 
-    # opt.weights_dir = 'weights/baselines_kfold' 
+    opt.weights_dir = 'weights/baselines_kfold' 
     # opt.weights_dir = 'weights/pgt_runs_kfold' 
     # opt.weights_dir = 'weights/pgt_runs_best' 
 
@@ -270,14 +270,17 @@ if __name__ == '__main__':
     # opt.weights_dir = 'weights/pgt_runs_best2' 
     # opt.weights_dir = 'weights/pgt_runs' 
     # opt.weights_dir = 'weights/pgt_runs2' 
-    # opt.weights_dir = 'weights/pgt_runs3' 
+    # opt.weights_dir = 'weights/pgt_runs3'
+    # opt.weights_dir = 'weights/pgt_runs4'
 
     # check_requirements() 
     
-    opt.weights_dir = 'weights/toy_problem/pgt1_26' 
-    opt.eval_type = 'default' 
-    opt.atk_list = ['none',] 
-    
+    # opt.weights_dir = 'weights/toy_problem/pgt5_1257' 
+    # opt.eval_type = 'default' 
+    # opt.atk_list = ['none',] 
+    # Best runs include pgt3_307, pgt3_287, pgt5_1228, pgt5_1242, pgt5_1257, pgt5_1241
+    # pgt5_1227 is the best run for the toy problem since it increases plausible score over epochs
+
     # opt.eval_type = 'robust' 
     # # opt.atk_list = ['none', 'gaussian', 'pgd', 'fgsm'] # Evaluate adversarial robustness 
     # opt.atk_list = ['none', 'pgd', 'fgsm'] # Evaluate adversarial robustness 
@@ -285,8 +288,8 @@ if __name__ == '__main__':
     # opt.eval_type = 'robust2' 
     # opt.atk_list = ['none', 'grad'] # 'pgd', 'fgsm' 
     
-    # opt.eval_type = 'robust_snr_vary' 
-    # opt.atk_list = ['gaussian'] 
+    opt.eval_type = 'robust_snr_vary' 
+    opt.atk_list = ['gaussian'] 
     # opt.atk_list = ['pgd'] 
     # opt.atk_list = ['fgsm'] 
 

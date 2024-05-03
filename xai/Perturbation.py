@@ -22,7 +22,7 @@ def nlist(n, inp=None):
     else:
         return [inp for _ in range(n)]
 
-def change_noise_batch(signal_tensors, noise_tensors, desired_snr=10):
+def change_noise_batch(signal_tensors, noise_tensors, desired_snr=10, debug=False):
     
     scaled_noise_tensors = []
     for i in range(signal_tensors.shape[0]):
@@ -32,7 +32,7 @@ def change_noise_batch(signal_tensors, noise_tensors, desired_snr=10):
         assert signal_tensor.shape == noise_tensor.shape
 
         # Calculate current SNR
-        current_snr = 10 * torch.log10(torch.mean(signal_tensor**2) / torch.mean(noise_tensor**2))
+        current_snr = 10 * torch.log10(torch.sum(signal_tensor**2) / torch.sum(noise_tensor**2))
 
         # Calculate noise scaling factor
         scaling_factor = 10**((current_snr - desired_snr) / 20)
@@ -111,6 +111,8 @@ class Perturbation:
         self.jdict, self.stats = nlist(nsteps), nlist(nsteps)
         self.loss = nlist(nsteps, torch.zeros(3, device=opt.device))#[torch.zeros(3, device=opt.device)  for _ in range(nsteps)]
         self.ap, self.ap_class, self.wandb_images = nlist(nsteps), nlist(nsteps), nlist(nsteps)
+        self.input_images = nlist(nsteps)
+        self.wandb_attr_overlay_bbox = nlist(nsteps)
         self.wandb_figs = nlist(nsteps)
         self.wandb_attk, self.wandb_attk_overlay = nlist(nsteps), nlist(nsteps)
         self.wandb_attr_overlay = nlist(nsteps)
@@ -178,15 +180,14 @@ class Perturbation:
             if self.attr_method is not None:
                 attk_ = change_noise_batch(img_, attk_, desired_snr=self.desired_snr_list[step_i])
             noise = attk_.clone().detach()
-                
             
-            # Verify SNR 
-            avg_snr = 0.0 
-            for ij in range(len(img)):
-                estimated_snr = 10 * torch.log10(torch.mean(img_[ij] ** 2) / torch.mean(noise[ij] ** 2))
-                avg_snr += estimated_snr.item() 
-            avg_snr /= len(img) 
-            self.snr_list.append(round(avg_snr, 2)) 
+            # # Verify SNR 
+            # avg_snr = 0.0 
+            # for ij in range(len(img)):
+            #     estimated_snr = 10 * torch.log10(torch.mean(img_[ij] ** 2) / torch.mean(noise[ij] ** 2))
+            #     avg_snr += estimated_snr.item() 
+            # avg_snr /= len(img) 
+            # self.snr_list.append(round(avg_snr, 2)) 
             
             if self.attr_method is not None:
                 if opt.eval_type != "default":
@@ -198,6 +199,10 @@ class Perturbation:
             else:
                 img_noisy = img_
             
+            # Verify SNR 
+            estimated_snr = 10 * torch.log10(torch.sum((img_) ** 2) / torch.sum((img_noisy - img_) ** 2))
+            self.snr_list.append(round(estimated_snr.item(), 2)) 
+
             if self.debug1 and step_i != 0: 
                 for i_num in range(len(img_noisy)): 
                     imshow(img_noisy[i_num].float(), save_path='figs/img_attacked') 
@@ -262,6 +267,7 @@ class Perturbation:
                 atk_map = torch.sum(atk_map, 0, keepdim=True)
                 atk_map = normalize_tensor(atk_map) # Normalize attack maps per image in batch
                 img_overlay = (overlay_attr(im[si].clone().detach(), atk_map.clone(), alpha = 0.75))
+
                 
                 overlay_list[step_i].append(img_overlay.clone().detach().cpu().numpy())
                 imgs_shifted[step_i].append((img_noisy[si].clone().detach().float()).cpu().numpy())# / 255.0).cpu().numpy())
@@ -312,10 +318,12 @@ class Perturbation:
                                     "domain": "pixel"} for *xyxy, conf, cls in pred.tolist()]
                         boxes = {"predictions": {"box_data": box_data, "class_labels": opt.names}}  # inference-space
                         self.wandb_images[step_i].append(opt.wandb_logger.wandb.Image(img_noisy[si], boxes=boxes, caption=path.name))
+                        self.input_images[step_i].append(opt.wandb_logger.wandb.Image(img_noisy[si], caption=f'{path.name}_input'))
                         self.wandb_attk[step_i].append(opt.wandb_logger.wandb.Image(attk_[si], caption=f'{path.name}_atk'))
                         self.wandb_attr[step_i].append(opt.wandb_logger.wandb.Image(attr_grad[si], caption=f'{path.name}_attr'))
                         img_overlay = overlay_attr(img_noisy[si].clone().detach(), normalize_batch(attr_grad[si].clone()), alpha = 0.75)
                         self.wandb_attr_overlay[step_i].append(opt.wandb_logger.wandb.Image(img_overlay, caption=f'{path.name}_attr_overlay'))
+                        self.wandb_attr_overlay_bbox[step_i].append(opt.wandb_logger.wandb.Image(img_overlay, boxes=boxes, caption=f'{path.name}_attr_overlay_bbox'))
                         # self.images[step_i].append(img_[si].clone().detach())
                         # self.attr[step_i].append(attr_grad[si].clone().detach())
                 opt.wandb_logger.log_training_progress(predn, path, opt.names) if opt.wandb_logger and opt.wandb_logger.wandb_run else None
@@ -448,6 +456,8 @@ class Perturbation:
                     wandb_logger.log({"Validation": val_batches})
             if wandb_images[step_i]:
                 wandb_logger.log({f"Bounding Box Debugger/Images for Perturbation Step {step_i} SNR {self.snr_list[step_i-self.start]} {opt.atk}": wandb_images[step_i]})
+            if self.input_images[step_i]:
+                wandb_logger.log({f"Input Images/Step {step_i} SNR {self.snr_list[step_i-self.start]} {opt.atk}": self.input_images[step_i]})
             # wandb_attk is not displaying in wandb
             if wandb_attk[step_i]:
                 wandb_logger.log({f"Adversarial Noise/Step {step_i} SNR {self.snr_list[step_i-self.start]} {opt.atk}": wandb_attk[step_i]})
@@ -456,6 +466,10 @@ class Perturbation:
                 wandb_logger.log({f"Attribution/Step {step_i}": wandb_attr[step_i]})
             if self.wandb_attr_overlay[step_i]:
                 wandb_logger.log({f"Attribution Overlay/Step {step_i} SNR {self.snr_list[step_i-self.start]}": self.wandb_attr_overlay[step_i]})
+            if self.wandb_attr_overlay_bbox[step_i]:
+                wandb_logger.log({f"Bounding Box Debugger/Attribution Overlay Step {step_i} SNR {self.snr_list[step_i-self.start]} {opt.atk}": self.wandb_attr_overlay_bbox[step_i]})
+
+            
             # Return results
             model.float()  # for training
             if not training:

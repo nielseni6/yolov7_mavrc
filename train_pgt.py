@@ -713,7 +713,7 @@ if __name__ == '__main__':
     parser.add_argument('--classes', nargs='+', type=int, help='filter by class: --class 0, or --class 0 2 3') 
     ############################## PGT Variables ############################### 
     parser.add_argument('--seed', type=int, default=None, help='reproduce results') 
-    parser.add_argument('--pgt-coeff', type=float, default=0.08, help='learning rate for plausibility gradient') 
+    parser.add_argument('--pgt-coeff', type=float, default=0.16, help='learning rate for plausibility gradient') 
     parser.add_argument('--pgt-lr-decay', type=float, default=0.75, help='learning rate decay for plausibility gradient') 
     parser.add_argument('--pgt-lr-decay-step', type=int, default=300, help='learning rate decay step for plausibility gradient') 
     parser.add_argument('--n-max-attr-labels', type=int, default=100, help='maximum number of attribution maps generated for each image') 
@@ -726,8 +726,8 @@ if __name__ == '__main__':
     parser.add_argument('--plaus_results', action='store_true', help='If true, calculate plausibility on clean, non-augmented images and labels during testing') 
     ################################### PGT Loss Variables ################################### 
     parser.add_argument('--dist_reg_only', type=bool, default=True, help='If true, only calculate distance regularization and not plausibility') 
-    parser.add_argument('--focus_coeff', type=float, default=0.2, help='focus_coeff') 
-    parser.add_argument('--iou_coeff', type=float, default=0.5, help='iou_coeff') 
+    parser.add_argument('--focus_coeff', type=float, default=0.16, help='focus_coeff') 
+    parser.add_argument('--iou_coeff', type=float, default=0.075, help='iou_coeff') 
     parser.add_argument('--dist_coeff', type=float, default=0.5, help='dist_coeff') 
     parser.add_argument('--bbox_coeff', type=float, default=0.0, help='bbox_coeff') 
     parser.add_argument('--dist_x_bbox', type=bool, default=True, help='If true, zero all distance regularization values to 0 within bbox region') 
