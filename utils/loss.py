@@ -1760,7 +1760,7 @@ class ComputePGTLossOTA:
         
         self.n_nans = 0
 
-    def __call__(self, p, targets, opt, imgs, attr=None, pgt_coeff = 1.0, metric='CIoU',):  # predictions, targets, model   
+    def __call__(self, p, targets, opt, imgs, attr=None, pgt_coeff = 1.0, metric='CIoU', pred_labels=None):  # predictions, targets, model   
 
         device = targets.device
         targets_ = targets.clone().detach()
@@ -1848,7 +1848,8 @@ class ComputePGTLossOTA:
                             #     attr = get_gradient(imgs, grad_wrt = ps)
                             # else:
                             #     attr += get_gradient(imgs, grad_wrt = ps)
-            
+            if pred_labels is not None:
+                targets_ = pred_labels
             if get_loss and (attr is not None):
                 if opt.iou_loss_only:
                     bbox_map = get_bbox_map(targets_, attr)

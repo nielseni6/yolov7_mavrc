@@ -262,6 +262,8 @@ if __name__ == '__main__':
     opt.entire_folder = True 
     opt.loss_attr = True 
 
+    # scp -r /home/nielseni6/PythonScripts/yolov7_mavrc/weights/pgt_runs4/ nielseni6@lambda05.rowan.edu:/home/nielseni6/PythonScripts/yolov7_mavrc/weights/pgt_runs4/
+
     # opt.weights_dir = 'weights/baselines_kfold' 
     # opt.weights_dir = 'weights/pgt_runs_kfold' 
     # opt.weights_dir = 'weights/pgt_runs_best' 
