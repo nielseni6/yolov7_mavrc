@@ -177,10 +177,10 @@ def test_pgt(data,
     if opt.atk == 'gaussian':
         robust_eval.__init_attr__(attr_method = get_gaussian, norm=True, keepmean=True, absolute=False, grayscale=False)
     if opt.atk == 'pgd':
-        attr_method = PGD(model, loss=compute_loss, metric=loss_metric, eps=4/255, alpha=1/255, steps=4)
+        attr_method = PGD(model, loss=compute_loss, metric=loss_metric, eps=40/255, alpha=10/255, steps=4)
         robust_eval.__init_attr__(attr_method = attr_method, torchattacks_used=True)
     if opt.atk == 'fgsm':
-        attr_method = FGSM(model, loss=compute_loss, metric=loss_metric, eps=4/255)
+        attr_method = FGSM(model, loss=compute_loss, metric=loss_metric, eps=40/255)
         robust_eval.__init_attr__(attr_method = attr_method, torchattacks_used=True)
     if opt.atk == 'none':
         robust_eval.__init_attr__(attr_method = None, norm=True, keepmean=True, absolute=False, grayscale=False)
@@ -256,20 +256,24 @@ if __name__ == '__main__':
     # parser.add_argument('--debug', action='store_true', help='debug mode for visualizing figures') 
     parser.add_argument('--loss_attr', action='store_true', help='loss attr') 
     parser.add_argument('--out_num_attrs', nargs='+', type=int, default=[2,], help='Default output for generating attribution maps')
-    parser.add_argument('--clamp', type = bool, default = True, help='clamp noisy input to [0, 1] if True')
+    parser.add_argument('--clamp', type = bool, default = False, help='clamp noisy input to [0, 1] if True')
+    parser.add_argument('--LossOTA', type = bool, default = True, help='Use ComputeLossOTA if True')
     opt = parser.parse_args() 
 
     opt.entire_folder = True 
     opt.loss_attr = True 
+    
+    # scp -r /home/nielseni6/PythonScripts/yolov7_mavrc/weights/pgt_runs4/ nielseni6@lambda02.rowan.edu:/home/nielseni6/PythonScripts/yolov7_mavrc/weights/
 
-    # opt.weights_dir = 'weights/baselines_kfold' 
+    opt.weights_dir = 'weights/baselines_kfold' 
     # opt.weights_dir = 'weights/pgt_runs_kfold' 
     # opt.weights_dir = 'weights/pgt_runs_best' 
 
-    opt.weights_dir = 'weights/pgt_best'
+    # opt.weights_dir = 'weights/pgt_best'
     # opt.weights_dir = 'weights/pgt_runs_best2' 
     # opt.weights_dir = 'weights/pgt_runs' 
     # opt.weights_dir = 'weights/pgt_runs2' 
+    # opt.weights_dir = 'weights/pgt_runs4' 
 
     # check_requirements() 
     
@@ -285,12 +289,9 @@ if __name__ == '__main__':
     # opt.atk_list = ['none', 'grad'] # 'pgd', 'fgsm' 
     
     opt.eval_type = 'robust_snr_vary' 
-    opt.atk_list = ['gaussian'] 
+    # opt.atk_list = ['gaussian'] 
     # opt.atk_list = ['pgd'] 
-    # opt.atk_list = ['fgsm'] 
-    # opt.atk_list, opt.snr_end = ['gaussian'], 30.0 
-    # opt.atk_list, opt.snr_end = ['pgd'], 50.0 
-    # opt.atk_list, opt.snr_end = ['fgsm'], 70.0 
+    opt.atk_list = ['fgsm'] 
     
     atk_list = opt.atk_list 
     
@@ -395,7 +396,7 @@ if __name__ == '__main__':
                     v5_metric=opt.v5_metric,
                     opt = opt,
                     wandb_logger=wandb_logger,
-                    compute_loss=ComputeLoss,
+                    compute_loss=ComputeLossOTA if opt.LossOTA else ComputeLoss,
                     device=device,
                     )
                 # if opt.eval_type == 'robust_snr_vary':

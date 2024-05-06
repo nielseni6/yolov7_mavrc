@@ -20,15 +20,17 @@ def subfigimshow(img, ax):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--device', type=str, default='0', help='device')
-    parser.add_argument('--focus_coeff', type=float, default=1.0, help='focus_coeff')
+    parser.add_argument('--focus_coeff', type=float, default=0.2, help='focus_coeff')
     parser.add_argument('--dist_coeff', type=float, default=0.5, help='dist_coeff')
     parser.add_argument('--dist_reg_only', type=bool, default=True, help='dist_reg_only')
-    parser.add_argument('--pgt_coeff', type=float, default=5.0, help='pgt_coeff')
-    parser.add_argument('--alpha', type=float, default=500.0, help='alpha')
+    parser.add_argument('--pgt_coeff', type=float, default=1.0, help='pgt_coeff')
+    parser.add_argument('--alpha', type=float, default=400.0, help='alpha')
     parser.add_argument('--iou_coeff', type=float, default=0.5, help='iou_coeff')
     parser.add_argument('--bbox_coeff', type=float, default=0.0, help='bbox_coeff')
     parser.add_argument('--dist_x_bbox', type=bool, default=True, help='dist_x_bbox')
     parser.add_argument('--iou_loss_only', type=bool, default=False, help='iou_loss_only')
+    parser.add_argument('--scheduler', type=float, default=2.0, help='scheduler for alpha')
+    parser.add_argument('--show_dist_reg', type=bool, default=False, help='show distance regularization map in figure')
     opt = parser.parse_args() 
     print(opt) 
     
@@ -36,13 +38,17 @@ if __name__ == '__main__':
     os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID" 
     os.environ["CUDA_VISIBLE_DEVICES"] = opt.device 
     
-    targets = torch.tensor([[0, 1, 0.4, 0.6, 0.05, 0.07],
-                           [1, 0, 0.25, 0.2, 0.04, 0.05],
+    targets = torch.tensor([
+    #                        [0, 1, 0.4, 0.6, 0.05, 0.07],
+    #                        [1, 0, 0.25, 0.2, 0.04, 0.05],
                            [2, 0, 0.8, 0.76, 0.05, 0.05],
-                           [2, 0, 0.8, 0.2, 0.05, 0.05],])
+                           [2, 0, 0.8, 0.2, 0.05, 0.05],
+                           [0, 0, 0.8, 0.76, 0.05, 0.05],
+                           [1, 0, 0.8, 0.2, 0.05, 0.05],
+                           ])
     unique_classes = torch.unique(targets[:,0])
     # X = (gaussian_blur(torch.rand(len(unique_classes), 1, 50, 50)**2, 3)**4)
-    attr = (gaussian_blur(torch.rand(len(unique_classes), 1, 640, 640)**2, 3)**4).requires_grad_(True)
+    attr = (gaussian_blur(torch.rand(len(unique_classes), 1, 640, 640)**2, 13)**4).requires_grad_(True)
     plaus_loss = get_plaus_loss(targets, attribution_map=attr, 
                                                         opt=opt, 
                                                         debug=True,
@@ -71,7 +77,14 @@ if __name__ == '__main__':
             ax.set_title(f'PGT Loss:\n{round(float(plaus_loss), 5)}')
         subfigimshow(attr[j], ax)  # Display the image
         ax.axis('off')
+    
     for i in range(10):
+        plaus_loss, (plaus_score, dist_reg, plaus_reg,), distance_map = get_plaus_loss(targets.requires_grad_(True), attribution_map=attr, opt=opt, debug=True)
+        
+        delta_attr = torch.autograd.grad(plaus_loss, attr, create_graph=True, retain_graph=True)[0] 
+        attr = attr - (delta_attr * opt.alpha) 
+        opt.alpha *= opt.scheduler
+
         plaus_loss, (plaus_score, dist_reg, plaus_reg,), distance_map = get_plaus_loss(targets, attribution_map=attr, opt=opt, debug=True)
         if opt.iou_loss_only:
             bbox_map = get_bbox_map(targets, attr)
@@ -79,20 +92,20 @@ if __name__ == '__main__':
             plaus_loss = (1.0 - plaus_score)
             distance_map = bbox_map
             
-        delta_attr = torch.autograd.grad(plaus_loss, attr, create_graph=True,)[0] 
-        attr = attr - (delta_attr * opt.alpha) 
+
+
         # attr = attr.clamp(0, 1) 
         attr = normalize_batch(attr) 
         print(f'step: {i}, plaus_loss: {plaus_loss}, plaus_score: {plaus_score}, dist_reg: {dist_reg}, plaus_reg: {plaus_reg}') 
         for j in range(len(attr)): 
             # Add a subplot for each image 
-            if i == 0: 
+            if i == 0 and opt.show_dist_reg: 
                 ax = fig.add_subplot(rows, cols, 1 + (j * cols)) 
                 ax.set_title(f'Distance Regularization Map {j}') 
-                subfigimshow(distance_map[j], ax) 
+                subfigimshow((1 - distance_map[j]), ax) 
                 ax.axis('off') 
                 # imshow(distance_map[j], save_path=f'figs/dist_grid{j}') 
-            ax = fig.add_subplot(rows, cols, 3 + (j * cols) + i) 
+            ax = fig.add_subplot(rows, cols, (3 + (j * cols) + i))
             if j == 0: 
                 ax.set_title(f'Attr Step {i + 1}') 
             if j == len(attr) - 1: 

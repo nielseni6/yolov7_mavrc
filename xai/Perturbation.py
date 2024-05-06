@@ -179,13 +179,13 @@ class Perturbation:
             noise = attk_.clone().detach()
                 
             
-            # Verify SNR 
-            avg_snr = 0.0 
-            for ij in range(len(img)):
-                estimated_snr = 10 * torch.log10(torch.mean(img_[ij] ** 2) / torch.mean(noise[ij] ** 2))
-                avg_snr += estimated_snr.item() 
-            avg_snr /= len(img) 
-            self.snr_list.append(round(avg_snr, 2)) 
+            # # Verify SNR 
+            # avg_snr = 0.0 
+            # for ij in range(len(img)):
+            #     estimated_snr = 10 * torch.log10(torch.mean(img_[ij] ** 2) / torch.mean(noise[ij] ** 2))
+            #     avg_snr += estimated_snr.item() 
+            # avg_snr /= len(img) 
+            # self.snr_list.append(round(avg_snr, 2)) 
             
             if self.attr_method is not None:
                 if opt.eval_type != "default":
@@ -196,6 +196,10 @@ class Perturbation:
                     img_noisy = torch.clamp(img_noisy, min=0.0, max=1.0)
             else:
                 img_noisy = img_
+            
+            # Verify SNR 
+            estimated_snr = 10 * torch.log10(torch.sum((img_) ** 2) / torch.sum((img_noisy - img_) ** 2))
+            self.snr_list.append(round(estimated_snr.item(), 2)) 
             
             if self.debug1 and step_i != 0: 
                 for i_num in range(len(img_noisy)): 

@@ -714,8 +714,8 @@ if __name__ == '__main__':
     ############################## PGT Variables ############################### 
     parser.add_argument('--seed', type=int, default=None, help='reproduce results') 
     parser.add_argument('--pgt-coeff', type=float, default=0.16, help='learning rate for plausibility gradient') 
-    parser.add_argument('--pgt-lr-decay', type=float, default=0.75, help='learning rate decay for plausibility gradient') 
-    parser.add_argument('--pgt-lr-decay-step', type=int, default=300, help='learning rate decay step for plausibility gradient') 
+    parser.add_argument('--pgt-lr-decay', type=float, default=300.0, help='learning rate decay for plausibility gradient') 
+    parser.add_argument('--pgt-lr-decay-step', type=int, default=0.75, help='learning rate decay step for plausibility gradient') 
     parser.add_argument('--n-max-attr-labels', type=int, default=100, help='maximum number of attribution maps generated for each image') 
     parser.add_argument('--out_num_attrs', nargs='+', type=int, default=[2,], help='Output for generating attribution maps (for loss_attr 0: box, 1: obj, 2: cls)') 
     parser.add_argument('--clean_plaus_eval', action='store_true', help='If true, calculate plausibility on clean, non-augmented images and labels') 
@@ -725,8 +725,8 @@ if __name__ == '__main__':
     parser.add_argument('--save_hybrid', action='store_true', help='If true, save hybrid attribution maps') 
     parser.add_argument('--plaus_results', action='store_true', help='If true, calculate plausibility on clean, non-augmented images and labels during testing') 
     ################################### PGT Loss Variables ################################### 
-    parser.add_argument('--dist_reg_only', type=bool, default=False, help='If true, only calculate distance regularization and not plausibility') 
-    parser.add_argument('--focus_coeff', type=float, default=0.5, help='focus_coeff') 
+    parser.add_argument('--dist_reg_only', type=bool, default=True, help='If true, only calculate distance regularization and not plausibility') 
+    parser.add_argument('--focus_coeff', type=float, default=0.18, help='focus_coeff') 
     parser.add_argument('--iou_coeff', type=float, default=0.5, help='iou_coeff') 
     parser.add_argument('--dist_coeff', type=float, default=0.5, help='dist_coeff') 
     parser.add_argument('--bbox_coeff', type=float, default=0.0, help='bbox_coeff') 
@@ -763,10 +763,10 @@ if __name__ == '__main__':
     # nohup python -m torch.distributed.launch --nproc_per_node 4 --master_port 9528 train_pgt.py --sync-bn > ./output_logs/gpu2360.log 2>&1 & 
     
     # Resume run
-    # nohup python train_pgt.py --resume runs/pgt/train-pgt-yolov7/pgt5_632/weights/last.pt > ./output_logs/gpu7_resume.log 2>&1 & 
+    # nohup python train_pgt.py --resume runs/pgt/train-pgt-yolov7/pgt5_1270/weights/last.pt --weights runs/pgt/train-pgt-yolov7/pgt5_1270/weights/last.pt > ./output_logs/gpu5_resume.log 2>&1 & 
     # nohup python -m torch.distributed.launch --nproc_per_node 4 --master_port 9527 train_pgt.py --sync-bn --resume runs/pgt/train-pgt-yolov7/pgt5_214/weights/last.pt > ./output_logs/gpu1245_coco_pgtlr0_25.log 2>&1 & 
-    # opt.resume = "runs/pgt/train-pgt-yolov7/pgt5_214/weights/last.pt" 
-    # opt.weights = 'runs/pgt/train-pgt-yolov7/pgt5_214/weights/last.pt' 
+    # opt.resume = "runs/pgt/train-pgt-yolov7/pgt5_1269/weights/last.pt" 
+    # opt.weights = 'runs/pgt/train-pgt-yolov7/pgt5_1269/weights/last.pt' 
     
     # opt.dataset = 'coco' 
     opt.dataset = 'real_world_drone' 
