@@ -395,7 +395,7 @@ def train(hyp, opt, device, tb_writer=None):
         
         plaus_loss_total_train, plaus_score_total_train = 0.0, 0.0
         dist_reg_total_train = 0.0
-        num_batches = 0
+        num_batches = 1 if (opt.pgt_coeff == 0.0) else 0
         for i, (imgs, targets, paths, _) in pbar:  # batch -------------------------------------------------------------
             ni = i + nb * epoch  # number integrated batches (since train start)
             imgs = imgs.to(device, non_blocking=True).float() / 255.0  # uint8 to float32, 0-255 to 0.0-1.0
@@ -729,11 +729,11 @@ if __name__ == '__main__':
     parser.add_argument('--plaus_results', action='store_true', help='If true, calculate plausibility on clean, non-augmented images and labels during testing') 
     ################################### PGT Loss Variables ################################### 
     parser.add_argument('--dist_reg_only', type=bool, default=True, help='If true, only calculate distance regularization and not plausibility') 
-    parser.add_argument('--focus_coeff', type=float, default=0.20, help='focus_coeff') 
+    parser.add_argument('--focus_coeff', type=float, default=0.25, help='focus_coeff') 
     parser.add_argument('--iou_coeff', type=float, default=0.075, help='iou_coeff') 
     parser.add_argument('--dist_coeff', type=float, default=1.0, help='dist_coeff') 
     parser.add_argument('--bbox_coeff', type=float, default=0.0, help='bbox_coeff') 
-    parser.add_argument('--dist_x_bbox', type=bool, default=True, help='If true, zero all distance regularization values to 0 within bbox region') 
+    parser.add_argument('--dist_x_bbox', type=bool, default=False, help='If true, zero all distance regularization values to 0 within bbox region') 
     parser.add_argument('--pred_targets', type=bool, default=False, help='If true, use predicted targets for plausibility loss') 
     parser.add_argument('--iou_loss_only', type=bool, default=False, help='If true, only calculate iou loss, no distance regularizers') 
     parser.add_argument('--weighted_loss_attr', type=bool, default=False, help='If true, weight individual loss terms before used to generate attribution maps')
