@@ -93,11 +93,10 @@ def test_pgt(data,
     opt.device = device
     
     # Half
-    half = False
-    # half = device.type != 'cpu' and half_precision  # half precision only supported on CUDA
-    if half:
-        model.half()
+    half = device.type != 'cpu' and half_precision  # half precision only supported on CUDA
     opt.half = half
+    if opt.half:
+        model.half()
     
     # Configure
     model.eval()
@@ -153,15 +152,23 @@ def test_pgt(data,
         nsteps = 2
         start=1
         # snr_end = 10.0
-    elif opt.eval_type == 'evalattai':
+    if opt.eval_type == 'evalattai':
         nsteps = 10
         # snr_end = 5.0
-    elif opt.eval_type == 'default':
+    if opt.eval_type == 'default':
         nsteps = 1
         # snr_end = 1e+100
-    elif opt.eval_type == 'robust_snr_vary':
+    if opt.eval_type == 'robust_snr_vary':
         nsteps = 10
         # snr_end = 1e+100
+        if opt.attack_weights != opt.weights:
+            attack_model = attempt_load(opt.attack_weights, map_location=device)
+            attack_model.eval()
+        else:
+            attack_model = model
+        opt.attack_model = attack_model
+    else:
+        opt.attack_model = model
         
     
     if opt.atk == 'none':
@@ -177,10 +184,10 @@ def test_pgt(data,
     if opt.atk == 'gaussian':
         robust_eval.__init_attr__(attr_method = get_gaussian, norm=True, keepmean=True, absolute=False, grayscale=False)
     if opt.atk == 'pgd':
-        attr_method = PGD(model, loss=compute_loss, metric=loss_metric, eps=40/255, alpha=10/255, steps=4)
+        attr_method = PGD(attack_model, loss=compute_loss, metric=loss_metric, eps=40/255, alpha=10/255, steps=4)
         robust_eval.__init_attr__(attr_method = attr_method, torchattacks_used=True)
     if opt.atk == 'fgsm':
-        attr_method = FGSM(model, loss=compute_loss, metric=loss_metric, eps=40/255)
+        attr_method = FGSM(attack_model, loss=compute_loss, metric=loss_metric, eps=40/255)
         robust_eval.__init_attr__(attr_method = attr_method, torchattacks_used=True)
     if opt.atk == 'none':
         robust_eval.__init_attr__(attr_method = None, norm=True, keepmean=True, absolute=False, grayscale=False)
@@ -248,16 +255,17 @@ if __name__ == '__main__':
     # parser.add_argument('--atk', type=str, default='gaussian', help='grad, pgd, gaussian') 
     parser.add_argument('--eval_type', type=str, default='robust', help='robust, evalattai, default') 
     parser.add_argument('--snr_end', type=float, default=90.0, help='desired snr') 
-    parser.add_argument('--snr_begin', type=float, default=10.0, help='begin snr')
+    parser.add_argument('--snr_begin', type=float, default=10.0, help='begin snr') 
     parser.add_argument('--atk_list', nargs='+', type=str, default=['none', 'gaussian', 'fgsm', 'pgd',], help='atk list') 
     parser.add_argument('--weights_dir', type=str, default='weights/eval_coco', help='models folder') 
     parser.add_argument('--entire_folder', action='store_true', help='entire folder') 
     # parser.add_argument('--allow_val_change', type=bool, default=True, help='allow val change') 
     # parser.add_argument('--debug', action='store_true', help='debug mode for visualizing figures') 
     parser.add_argument('--loss_attr', action='store_true', help='loss attr') 
-    parser.add_argument('--out_num_attrs', nargs='+', type=int, default=[2,], help='Default output for generating attribution maps')
-    parser.add_argument('--clamp', type = bool, default = False, help='clamp noisy input to [0, 1] if True')
-    parser.add_argument('--LossOTA', type = bool, default = True, help='Use ComputeLossOTA if True')
+    parser.add_argument('--out_num_attrs', nargs='+', type=int, default=[2,], help='Default output for generating attribution maps') 
+    parser.add_argument('--clamp', type = bool, default = False, help='clamp noisy input to [0, 1] if True') 
+    parser.add_argument('--LossOTA', type = bool, default = False, help='Use ComputeLossOTA if True (currently broken)') 
+    parser.add_argument('--attack_weights', type = str, default = 'weights/baselines_kfold/base_fold1(pgt5_583).pt', help='Weights used to generate adversarial attacks') 
     opt = parser.parse_args() 
 
     opt.entire_folder = True 
@@ -265,9 +273,9 @@ if __name__ == '__main__':
     
     # scp -r /home/nielseni6/PythonScripts/yolov7_mavrc/weights/pgt_runs4/ nielseni6@lambda02.rowan.edu:/home/nielseni6/PythonScripts/yolov7_mavrc/weights/
 
-    opt.weights_dir = 'weights/baselines_kfold' 
+    # opt.weights_dir = 'weights/baselines_kfold' 
     # opt.weights_dir = 'weights/pgt_runs_kfold' 
-    # opt.weights_dir = 'weights/pgt_runs_best' 
+    opt.weights_dir = 'weights/pgt_runs_best' 
 
     # opt.weights_dir = 'weights/pgt_best'
     # opt.weights_dir = 'weights/pgt_runs_best2' 
@@ -304,8 +312,7 @@ if __name__ == '__main__':
     username = os.getenv('USER') 
     os.environ["WANDB_ENTITY"] = username 
     opt.username = username 
-    
-    opt.half_precision = True 
+     
     # opt.device = '4' 
     device_num = opt.device 
     
