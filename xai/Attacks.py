@@ -29,13 +29,13 @@ class PGD(Attack):
 
     """
 
-    def __init__(self, model, loss, metric, eps=8 / 255, alpha=2 / 255, steps=10, random_start=True, augment=False):
+    def __init__(self, model, loss, metric, eps=8 / 255, alpha=2 / 255, steps=10, random_start=True, augment=False, targeted = False):
         super().__init__("PGD", model)
         self.eps = eps
         self.alpha = alpha
         self.steps = steps
         self.random_start = random_start
-        self.supported_mode = ["default", "targeted"]
+        self.targeted = targeted
         self.loss = loss
         self.metric = metric
         self.augment = augment
@@ -110,10 +110,11 @@ class FGSM(Attack):
 
     """
 
-    def __init__(self, model, loss, metric, eps=8 / 255, augment=False):
+    def __init__(self, model, loss, metric, eps=8 / 255, augment=False, targeted=False):
         super().__init__("FGSM", model)
         self.eps = eps
-        self.supported_mode = ["default", "targeted"]
+        self.targeted = targeted
+        # self.supported_mode = ["default", "targeted"]
         self.loss = loss
         self.metric = metric
         self.augment = augment
@@ -127,7 +128,7 @@ class FGSM(Attack):
         labels = labels.clone().detach().to(self.device)
 
         if self.targeted:
-            target_labels = self.get_target_label(images, labels)
+            target_labels = labels
             
         loss = self.loss # nn.CrossEntropyLoss()
         metric = self.metric
@@ -139,7 +140,7 @@ class FGSM(Attack):
 
         # Calculate loss
         if self.targeted:
-            cost = -loss(outputs, target_labels, metric=metric)[0]  # sum(box, obj, cls)
+            cost = loss(outputs, target_labels, images, metric=metric)[0]  # sum(box, obj, cls)
         else:
             cost = loss(outputs, labels, metric=metric)[0]  # sum(box, obj, cls)
 

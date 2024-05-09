@@ -93,11 +93,10 @@ def test_pgt(data,
     opt.device = device
     
     # Half
-    half = False
-    # half = device.type != 'cpu' and half_precision  # half precision only supported on CUDA
-    if half:
-        model.half()
+    half = device.type != 'cpu' and half_precision  # half precision only supported on CUDA
     opt.half = half
+    if opt.half:
+        model.half()
     
     # Configure
     model.eval()
@@ -153,15 +152,23 @@ def test_pgt(data,
         nsteps = 2
         start=1
         # snr_end = 10.0
-    elif opt.eval_type == 'evalattai':
+    if opt.eval_type == 'evalattai':
         nsteps = 10
         # snr_end = 5.0
-    elif opt.eval_type == 'default':
+    if opt.eval_type == 'default':
         nsteps = 1
         # snr_end = 1e+100
-    elif opt.eval_type == 'robust_snr_vary':
+    if opt.eval_type == 'robust_snr_vary':
         nsteps = 10
         # snr_end = 1e+100
+        if opt.attack_weights != opt.weights:
+            attack_model = attempt_load(opt.attack_weights, map_location=device)
+            attack_model.eval()
+        else:
+            attack_model = model
+        opt.attack_model = attack_model
+    else:
+        opt.attack_model = model
         
     
     if opt.atk == 'none':
@@ -177,10 +184,10 @@ def test_pgt(data,
     if opt.atk == 'gaussian':
         robust_eval.__init_attr__(attr_method = get_gaussian, norm=True, keepmean=True, absolute=False, grayscale=False)
     if opt.atk == 'pgd':
-        attr_method = PGD(model, loss=compute_loss, metric=loss_metric, eps=4/255, alpha=1/255, steps=4)
+        attr_method = PGD(attack_model, loss=compute_loss, metric=loss_metric, eps=40/255, alpha=10/255, steps=4)
         robust_eval.__init_attr__(attr_method = attr_method, torchattacks_used=True)
     if opt.atk == 'fgsm':
-        attr_method = FGSM(model, loss=compute_loss, metric=loss_metric, eps=4/255)
+        attr_method = FGSM(attack_model, loss=compute_loss, metric=loss_metric, eps=40/255)
         robust_eval.__init_attr__(attr_method = attr_method, torchattacks_used=True)
     if opt.atk == 'none':
         robust_eval.__init_attr__(attr_method = None, norm=True, keepmean=True, absolute=False, grayscale=False)
@@ -248,19 +255,23 @@ if __name__ == '__main__':
     # parser.add_argument('--atk', type=str, default='gaussian', help='grad, pgd, gaussian') 
     parser.add_argument('--eval_type', type=str, default='robust', help='robust, evalattai, default') 
     parser.add_argument('--snr_end', type=float, default=90.0, help='desired snr') 
-    parser.add_argument('--snr_begin', type=float, default=10.0, help='begin snr')
+    parser.add_argument('--snr_begin', type=float, default=10.0, help='begin snr') 
     parser.add_argument('--atk_list', nargs='+', type=str, default=['none', 'gaussian', 'fgsm', 'pgd',], help='atk list') 
     parser.add_argument('--weights_dir', type=str, default='weights/eval_coco', help='models folder') 
     parser.add_argument('--entire_folder', action='store_true', help='entire folder') 
     # parser.add_argument('--allow_val_change', type=bool, default=True, help='allow val change') 
     # parser.add_argument('--debug', action='store_true', help='debug mode for visualizing figures') 
     parser.add_argument('--loss_attr', action='store_true', help='loss attr') 
-    parser.add_argument('--out_num_attrs', nargs='+', type=int, default=[2,], help='Default output for generating attribution maps')
-    parser.add_argument('--clamp', type = bool, default = False, help='clamp noisy input to [0, 1] if True')
+    parser.add_argument('--out_num_attrs', nargs='+', type=int, default=[2,], help='Default output for generating attribution maps') 
+    parser.add_argument('--clamp', type = bool, default = False, help='clamp noisy input to [0, 1] if True') 
+    parser.add_argument('--LossOTA', type = bool, default = False, help='Use ComputeLossOTA if True (currently broken)') 
+    parser.add_argument('--attack_weights', type = str, default = 'weights/baselines_kfold/base_fold1(pgt5_583).pt', help='Weights used to generate adversarial attacks') 
     opt = parser.parse_args() 
 
     opt.entire_folder = True 
     opt.loss_attr = True 
+    
+    # scp -r /home/nielseni6/PythonScripts/yolov7_mavrc/weights/pgt_runs4/ nielseni6@lambda02.rowan.edu:/home/nielseni6/PythonScripts/yolov7_mavrc/weights/
 
     opt.weights_dir = 'weights/baselines_kfold' 
     # opt.weights_dir = 'weights/pgt_runs_kfold' 
@@ -270,17 +281,14 @@ if __name__ == '__main__':
     # opt.weights_dir = 'weights/pgt_runs_best2' 
     # opt.weights_dir = 'weights/pgt_runs' 
     # opt.weights_dir = 'weights/pgt_runs2' 
-    # opt.weights_dir = 'weights/pgt_runs3'
-    # opt.weights_dir = 'weights/pgt_runs4'
+    # opt.weights_dir = 'weights/pgt_runs4' 
 
     # check_requirements() 
     
-    # opt.weights_dir = 'weights/toy_problem/pgt5_1257' 
+    # opt.weights_dir = 'weights/toy_problem/pgt1_26' 
     # opt.eval_type = 'default' 
     # opt.atk_list = ['none',] 
-    # Best runs include pgt3_307, pgt3_287, pgt5_1228, pgt5_1242, pgt5_1257, pgt5_1241
-    # pgt5_1227 is the best run for the toy problem since it increases plausible score over epochs
-
+    
     # opt.eval_type = 'robust' 
     # # opt.atk_list = ['none', 'gaussian', 'pgd', 'fgsm'] # Evaluate adversarial robustness 
     # opt.atk_list = ['none', 'pgd', 'fgsm'] # Evaluate adversarial robustness 
@@ -289,10 +297,10 @@ if __name__ == '__main__':
     # opt.atk_list = ['none', 'grad'] # 'pgd', 'fgsm' 
     
     opt.eval_type = 'robust_snr_vary' 
-    opt.atk_list = ['gaussian'] 
+    # opt.atk_list = ['gaussian'] 
     # opt.atk_list = ['pgd'] 
-    # opt.atk_list = ['fgsm'] 
-
+    opt.atk_list = ['fgsm'] 
+    
     atk_list = opt.atk_list 
     
     opt.atk = '' 
@@ -304,8 +312,7 @@ if __name__ == '__main__':
     username = os.getenv('USER') 
     os.environ["WANDB_ENTITY"] = username 
     opt.username = username 
-    
-    opt.half_precision = True 
+     
     # opt.device = '4' 
     device_num = opt.device 
     
@@ -396,23 +403,16 @@ if __name__ == '__main__':
                     v5_metric=opt.v5_metric,
                     opt = opt,
                     wandb_logger=wandb_logger,
-                    compute_loss=ComputeLoss,
+                    compute_loss=ComputeLossOTA if opt.LossOTA else ComputeLoss,
                     device=device,
                     )
-                # if opt.eval_type == 'robust_snr_vary':
-                #     results_snr = results
-                #     results, snr_list = results
-                
                 
                 # Log
                 tags = ['metrics/precision', 'metrics/recall', 'metrics/mAP_0.5', 'metrics/mAP_0.5:0.95',
                         'val/box_loss', 'val/obj_loss', 'val/cls_loss',  # val loss
                         'plaus_score', 'SNR'
                         ]
-                # for ir in range(len(robust_eval_results)):
-                #     r_loss = torch.zeros(3, device=device)
-                #     ((r_mp, r_mr, r_map50, r_map, r_loss[0], r_loss[1], r_loss[2]), r_maps, r_t, r_plaus) = robust_eval_results[ir][0]
-                #     results = (r_mp, r_mr, r_map50, r_map, *(r_loss.cpu()).tolist()), r_maps, r_t, r_plaus
+
                 wandb.define_metric('SNR')
                 wandb.define_metric("*", step_metric='SNR')
                 for i_step, res in enumerate(results):
@@ -427,23 +427,4 @@ if __name__ == '__main__':
         
         wandb_logger.finish_run()
         
-    # elif opt.task == 'speed':  # speed benchmarks
-    #     for w in opt.weights:
-    #         test_pgt(opt.data, w, opt.batch_size, opt.img_size, 0.25, 0.45, opt=opt, save_json=False, plots=False, v5_metric=opt.v5_metric)
-
-    # elif opt.task == 'study':  # run over a range of settings and save/plot
-    #     # python test_pgt.py --task study --data coco.yaml --iou 0.65 --weights yolov7.pt
-    #     x = list(range(256, 1536 + 128, 128))  # x axis (image sizes)
-    #     for w in opt.weights:
-    #         f = f'study_{Path(opt.data).stem}_{Path(w).stem}.txt'  # filename to save to
-    #         y = []  # y axis
-    #         for i in x:  # img-size
-    #             print(f'\nRunning {f} point {i}...')
-    #             r, _, t = test_pgt(opt.data, w, opt.batch_size, i, opt.conf_thres, opt.iou_thres, opt.save_json,
-    #                            plots=False, v5_metric=opt.v5_metric, opt=opt)
-    #             y.append(r + t)  # results and times
-    #         np.savetxt(f, y, fmt='%10.4g')  # save
-    #     os.system('zip -r study.zip study_*.txt')
-    #     plot_study_txt(x=x)  # plot
-
     
