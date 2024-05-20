@@ -161,7 +161,7 @@ def test_pgt(data,
     if opt.eval_type == 'robust_snr_vary':
         nsteps = 10
         # snr_end = 1e+100
-        if opt.attack_weights != opt.weights:
+        if (opt.attack_weights is not None) and (opt.attack_weights != opt.weights):
             attack_model = attempt_load(opt.attack_weights, map_location=device)
             attack_model.eval()
         else:
@@ -265,13 +265,14 @@ if __name__ == '__main__':
     parser.add_argument('--out_num_attrs', nargs='+', type=int, default=[2,], help='Default output for generating attribution maps') 
     parser.add_argument('--clamp', type = bool, default = False, help='clamp noisy input to [0, 1] if True') 
     parser.add_argument('--LossOTA', type = bool, default = False, help='Use ComputeLossOTA if True (currently broken)') 
-    parser.add_argument('--attack_weights', type = str, default = 'weights/baselines_kfold/base_fold1(pgt5_583).pt', help='Weights used to generate adversarial attacks') 
+    parser.add_argument('--attack_weights', type = str, default = None, help='Weights used to generate adversarial attacks') 
     opt = parser.parse_args() 
 
     opt.entire_folder = True 
     opt.loss_attr = True 
+    opt.attack_weights = 'weights/baselines_kfold/base_fold1(pgt5_583).pt'
     
-    # scp -r /home/nielseni6/PythonScripts/yolov7_mavrc/weights/pgt_runs4/ nielseni6@lambda02.rowan.edu:/home/nielseni6/PythonScripts/yolov7_mavrc/weights/
+    # scp -r /home/nielseni6/PythonScripts/yolov7_mavrc/weights/pgt_runs7/ nielseni6@lambda02.rowan.edu:/home/nielseni6/PythonScripts/yolov7_mavrc/weights/
 
     # opt.weights_dir = 'weights/baselines_kfold' 
     # opt.weights_dir = 'weights/pgt_runs_kfold' 
@@ -312,10 +313,9 @@ if __name__ == '__main__':
     username = os.getenv('USER') 
     os.environ["WANDB_ENTITY"] = username 
     opt.username = username 
-     
+    
     # opt.device = '4' 
     device_num = opt.device 
-    
     
     if opt.dataset == 'real_world_drone':
         if ('lambda02' == opt.host_name) or ('lambda03' == opt.host_name) or ('lambda05' == opt.host_name):    

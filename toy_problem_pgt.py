@@ -27,7 +27,7 @@ if __name__ == '__main__':
     parser.add_argument('--alpha', type=float, default=400.0, help='alpha')
     parser.add_argument('--iou_coeff', type=float, default=0.5, help='iou_coeff')
     parser.add_argument('--bbox_coeff', type=float, default=0.0, help='bbox_coeff')
-    parser.add_argument('--dist_x_bbox', type=bool, default=True, help='dist_x_bbox')
+    parser.add_argument('--dist_x_bbox', type=bool, default=False, help='dist_x_bbox')
     parser.add_argument('--iou_loss_only', type=bool, default=False, help='iou_loss_only')
     parser.add_argument('--scheduler', type=float, default=2.0, help='scheduler for alpha')
     parser.add_argument('--show_dist_reg', type=bool, default=False, help='show distance regularization map in figure')
