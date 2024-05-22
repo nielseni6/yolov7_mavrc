@@ -1821,7 +1821,7 @@ class ComputePGTLossOTA:
             ################################################
             ############## Plausibility Loss ############### 
             ################################################
-            if (not opt.inherently_explainable) and n:
+            if (not opt.inherently_explainable) and n and (opt.pgt_coeff != 0.0):
                 if opt.loss_attr:
                     if get_loss and (len(opt.out_num_attrs) > 0):
                         if (len(opt.out_num_attrs) == 1) and (2 in opt.out_num_attrs):
