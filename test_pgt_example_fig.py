@@ -82,6 +82,15 @@ def test_pgt(data,
         model = attempt_load(weights, map_location=device)  # load FP32 model
         gs = max(int(model.stride.max()), 32)  # grid size (max stride)
         imgsz = check_img_size(imgsz, s=gs)  # check img_size
+
+        try:
+            print(f'Hyperparameters: {model.hyp}')
+        except:
+            # Hyperparameters
+            with open(opt.hyp) as f:
+                hyp = yaml.load(f, Loader=yaml.SafeLoader)  # load hyps
+            model.hyp = hyp
+            model.gr = 1.0  # iou loss ratio (obj_loss = 1.0 or iou)
         
         if compute_loss is not None:
             compute_loss = compute_loss(model)
@@ -250,10 +259,10 @@ if __name__ == '__main__':
     parser.add_argument('--bbox_interval', type=int, default=-1, help='Set bounding-box image logging interval for W&B') 
     parser.add_argument('--artifact_alias', type=str, default="latest", help='version of dataset artifact to be used') 
     ############################################################################ 
-    parser.add_argument('--dataset', default='real_world_drone', help='coco or real_world_drone') 
+    parser.add_argument('--dataset', default='Birds_Animals', help='coco or real_world_drone') 
     # parser.add_argument('--hyp', type=str, default='data/hyp.coco.yaml', help='') 
     # parser.add_argument('--atk', type=str, default='gaussian', help='grad, pgd, gaussian') 
-    parser.add_argument('--eval_type', type=str, default='robust', help='robust, evalattai, default') 
+    parser.add_argument('--eval_type', type=str, default='default', help='robust, evalattai, default') 
     parser.add_argument('--snr_end', type=float, default=60.0, help='desired snr') 
     parser.add_argument('--snr_begin', type=float, default=0.0, help='begin snr') 
     parser.add_argument('--nsteps', type=int, default=14, help='number of steps to assess SNR at [step size is (nsteps-1) / (snr_end - snr_begin)]') 
@@ -277,8 +286,8 @@ if __name__ == '__main__':
 
     # opt.weights_dir = 'weights/baselines_kfold' 
     # opt.weights_dir = 'weights/pgt_runs_kfold' 
-    opt.weights_dir = 'weights/pgt_runs_best' 
-    
+    # opt.weights_dir = 'weights/pgt_runs_best' 
+    opt.weights_dir = 'weights/pretrained'
     
     # opt.weights_dir = 'weights/pgt_runs6' 
 
@@ -329,13 +338,17 @@ if __name__ == '__main__':
         opt.cfg = 'cfg/training/yolov7.yaml'
         opt.hyp = 'data/hyp.scratch.p5.yaml'
         opt.data = 'data/coco_lambda01.yaml'
+    if opt.dataset == 'Birds_Animals':
+        opt.source = '/data/nielseni6/Birds_Animals/images'
+        opt.data = 'data/Birds_Animals.yaml'
+        opt.hyp = 'data/hyp.Birds_Animals.yaml'
     
     opt.save_json |= opt.data.endswith('coco.yaml')
     opt.data = check_file(opt.data)  # check file
     # print(opt)
     
     ########## CHANGE THIS TO CHANGE DATASET ##########
-    opt.dataset = 'real_world_drone'
+    opt.dataset = 'Birds_Animals'
     # opt.weights_dir = 'weights/drone_eval'
     opt.batch_size = 16
     ###################################################

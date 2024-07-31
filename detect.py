@@ -20,7 +20,7 @@ from pytorch_grad_cam.utils.model_targets import ClassifierOutputTarget
 
 from pytorch_grad_cam.utils.find_layers import find_layer_predicate_recursive
 
-# from cam_utils import renormalize_cam_in_bounding_boxes
+# from archive.cam_utils import renormalize_cam_in_bounding_boxes
 # from torchsummary import summary
 
 def returnGrad(img, model, device, augment):
@@ -110,7 +110,7 @@ def detect(save_img=False):
     
     skip = False
     for path, img, im0s, vid_cap in dataset:
-        process_img = img_num > 11 # if false the image will be skipped
+        process_img = True #img_num > 0 # if false the image will be skipped
         if not process_img:
             if skip:
                 print("Skipping image", img_num, end='\r')
@@ -402,7 +402,8 @@ if __name__ == '__main__':
     opt.no_trace = True
     # opt.view_img = True
     # opt.name = "practice_data" 
-    opt.name = "Real_world_test"
+    # opt.name = "Real_world_test"
+    opt.name = "Birds_Animals"
     opt.cam_list = ["grad", "eigen"]
     # cam_list = ["score","fullgrad",]
     # opt.cam_list = ["fullgrad", "eigengrad", "grad", "eigen", ]
@@ -411,7 +412,8 @@ if __name__ == '__main__':
     # opt.cam = 'vanilla_grad'
     # opt.cam = "grad_test"
     # opt.source = '/home/nielseni6/PythonScripts/yolov7_mavrc/practice_data/small_set/yolo/images' 
-    opt.source = '/data/Koutsoubn8/ijcnn_v7data/Real_world_test/images'
+    # opt.source = '/data/Koutsoubn8/ijcnn_v7data/Real_world_test/images'
+    opt.source = '../../../../data/nielseni6/Birds_Animals/images'
 
     opt.only_detect_true = True
 

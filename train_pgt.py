@@ -51,7 +51,7 @@ import matplotlib.pyplot as plt
 
 logger = logging.getLogger(__name__)
 # import torch
-torch.manual_seed(8)
+# torch.manual_seed(8)
 
 def train(hyp, opt, device, tb_writer=None):
     logger.info(colorstr('hyperparameters: ') + ', '.join(f'{k}={v}' for k, v in hyp.items()))
@@ -395,7 +395,8 @@ def train(hyp, opt, device, tb_writer=None):
         
         plaus_loss_total_train, plaus_score_total_train = 0.0, 0.0
         dist_reg_total_train = 0.0
-        num_batches = 1 if (opt.pgt_coeff == 0.0) else 0
+        # num_batches = 1 if (opt.pgt_coeff == 0.0) else 0
+        num_batches = 0
         for i, (imgs, targets, paths, _) in pbar:  # batch -------------------------------------------------------------
             ni = i + nb * epoch  # number integrated batches (since train start)
             imgs = imgs.to(device, non_blocking=True).float() / 255.0  # uint8 to float32, 0-255 to 0.0-1.0
@@ -425,14 +426,14 @@ def train(hyp, opt, device, tb_writer=None):
             # with amp.autocast(enabled=cuda):
             if True:
                 # Use PGT built-into the model 
-                use_pgt = (opt.pgt_coeff != 0.0) and (opt.inherently_explainable)
+                use_pgt = ((opt.pgt_coeff != 0.0) or opt.show_plaus_score) and (opt.inherently_explainable)
                 # use_pgt = False
 
                 out = model(imgs.requires_grad_(True), pgt = use_pgt, out_nums = opt.out_num_attrs)  # forward
 
                 # Get predicted labels for generating predicted attribution maps, 
                 # only needed for loss attributions since they are target specific
-                if (opt.pgt_coeff != 0.0) and opt.loss_attr and opt.pred_targets:
+                if ((opt.pgt_coeff != 0.0) or opt.show_plaus_score) and opt.loss_attr and opt.pred_targets:
                     ema.update_attr(model, include=['yaml', 'nc', 'hyp', 'gr', 'names', 'stride', 'class_weights'])
                     ema.update(model)
                     det_out, out_ = get_detections(ema.ema, imgs.clone().detach())
@@ -450,7 +451,7 @@ def train(hyp, opt, device, tb_writer=None):
                 
                 compute_pgt_loss.nl = 3
                 compute_loss_ota.nl = 3
-
+                
                 if 'loss_ota' not in hyp or hyp['loss_ota'] == 1:
                     print('Using loss_ota') if i == 0 else None
                     loss, loss_items = compute_pgt_loss(pred, targets, opt, imgs, attr, pgt_coeff = opt.pgt_coeff, metric=opt.loss_metric, pred_labels=pred_labels)  # loss scaled by batch_size
@@ -470,10 +471,10 @@ def train(hyp, opt, device, tb_writer=None):
                 #            ADDED PLAUSIBILITY LOSS BELOW              #
                 #########################################################
                     
-                if (opt.pgt_coeff != 0.0):
+                if ((opt.pgt_coeff != 0.0) or opt.show_plaus_score):
                     plaus_loss_total_train += loss_items[3]
                     plaus_score_total_train += compute_pgt_loss.plaus_score #(1 - (loss_items[3] / opt.pgt_coeff))
-                    num_batches += 1
+                num_batches += 1
                 
             ##########################################################  
             # Confirm plausibility scores
@@ -669,7 +670,7 @@ def train(hyp, opt, device, tb_writer=None):
 
 if __name__ == '__main__': 
     parser = argparse.ArgumentParser() 
-    parser.add_argument('--weights', type=str, default='weights/yolov7-tiny.pt', help='initial weights path') 
+    parser.add_argument('--weights', type=str, default='weights/phase1.pt', help='initial weights path') 
     parser.add_argument('--cfg', type=str, default='', help='model.yaml path') 
     parser.add_argument('--data', type=str, default='data/real_world.yaml', help='data.yaml path') 
     parser.add_argument('--hyp', type=str, default='data/hyp.real_world.yaml', help='hyperparameters path') 
@@ -715,10 +716,10 @@ if __name__ == '__main__':
     parser.add_argument('--classes', nargs='+', type=int, help='filter by class: --class 0, or --class 0 2 3') 
     ############################## PGT Variables ############################### 
     parser.add_argument('--seed', type=int, default=None, help='reproduce results') 
-    parser.add_argument('--pgt-coeff', type=float, default=0.29, help='learning rate for plausibility gradient') 
+    parser.add_argument('--pgt-coeff', type=float, default=0.5, help='learning rate for plausibility gradient') 
     parser.add_argument('--pgt-lr-decay', type=float, default=0.75, help='learning rate decay for plausibility gradient') 
-    parser.add_argument('--pgt-lr-decay-step', type=int, default=300.0, help='learning rate decay step for plausibility gradient') 
-    # parser.add_argument('--pgt-lr-decay-add', type=float, default=0.3, help='learning rate decay to add to pgt coeff')
+    parser.add_argument('--pgt-lr-decay-step', type=int, default=25.0, help='learning rate decay step for plausibility gradient') 
+    # parser.add_argument('--pgt-lr-decay-add', type=float, default=0.3, help='learning rate decay to add to pgt coeff') 
     parser.add_argument('--n-max-attr-labels', type=int, default=100, help='maximum number of attribution maps generated for each image') 
     parser.add_argument('--out_num_attrs', nargs='+', type=int, default=[2,], help='Output for generating attribution maps (for loss_attr 0: box, 1: obj, 2: cls)') 
     parser.add_argument('--clean_plaus_eval', action='store_true', help='If true, calculate plausibility on clean, non-augmented images and labels') 
@@ -729,14 +730,14 @@ if __name__ == '__main__':
     parser.add_argument('--plaus_results', action='store_true', help='If true, calculate plausibility on clean, non-augmented images and labels during testing') 
     ################################### PGT Loss Variables ################################### 
     parser.add_argument('--dist_reg_only', type=bool, default=True, help='If true, only calculate distance regularization and not plausibility') 
-    parser.add_argument('--focus_coeff', type=float, default=0.25, help='focus_coeff') 
+    parser.add_argument('--focus_coeff', type=float, default=0.3, help='focus_coeff') 
     parser.add_argument('--iou_coeff', type=float, default=0.075, help='iou_coeff') 
     parser.add_argument('--dist_coeff', type=float, default=1.0, help='dist_coeff') 
     parser.add_argument('--bbox_coeff', type=float, default=0.0, help='bbox_coeff') 
     parser.add_argument('--dist_x_bbox', type=bool, default=False, help='If true, zero all distance regularization values to 0 within bbox region') 
     parser.add_argument('--pred_targets', type=bool, default=False, help='If true, use predicted targets for plausibility loss') 
     parser.add_argument('--iou_loss_only', type=bool, default=False, help='If true, only calculate iou loss, no distance regularizers') 
-    parser.add_argument('--weighted_loss_attr', type=bool, default=False, help='If true, weight individual loss terms before used to generate attribution maps')
+    parser.add_argument('--weighted_loss_attr', type=bool, default=False, help='If true, weight individual loss terms before used to generate attribution maps') 
     ########################################################################################## 
     parser.add_argument('--k_fold', type=int, default=10, help='Number of folds for k-fold cross validation') 
     parser.add_argument('--k_fold_num', type=int, default=1, help='Fold number to use for training') 
@@ -745,6 +746,7 @@ if __name__ == '__main__':
     parser.add_argument('--lplaus_only', type=bool, default=False, help='If true, only calculate plausibility loss') 
     parser.add_argument('--loss_attr', type=bool, default=True, help='If true, use loss to generate attribution maps') 
     parser.add_argument('--attr_out_indiv', type=bool, default=False, help='If true, calculate plaus_loss for each output head attribution map individually (loss_attr must be False)')
+    parser.add_argument('--show_plaus_score', type=bool, default=False, help='If true, show plausibility score, even if not calculating plausibility loss') 
     ########################################################################################## 
     opt = parser.parse_args() 
     print(opt) 
@@ -762,7 +764,8 @@ if __name__ == '__main__':
     # source /home/nielseni6/envs/yolo/bin/activate 
     # cd /home/nielseni6/PythonScripts/yolov7_mavrc 
 
-    # nohup python train_pgt.py --device 5 > ./output_logs/gpu5.log 2>&1 & 
+    # nohup python train_pgt.py --device 2 --k_fold_num 2 > ./output_logs/gpu2.log 2>&1 &
+    # nohup python train_pgt.py --device 2 > ./output_logs/gpu2.log 2>&1 & 
     # nohup python -m torch.distributed.launch --nproc_per_node 4 --master_port 9528 train_pgt.py --sync-bn > ./output_logs/gpu2360.log 2>&1 & 
     
     # Resume run
@@ -793,11 +796,12 @@ if __name__ == '__main__':
     os.environ["OMP_NUM_THREADS"] = "1" 
     # opt.local_rank = -1 # os.environ["LOCAL_RANK"] 
     
+    pretrained = '.pretrained' if opt.weights.endswith('.pt') and os.path.isfile(opt.weights) else ''
     if opt.dataset == 'real_world_drone': 
         if ('lambda02' == opt.host_name) or ('lambda03' == opt.host_name) or ('lambda05' == opt.host_name): 
             opt.source = '/data/Koutsoubn8/ijcnn_v7data/Real_world_test/images' 
             opt.data = 'data/real_world.yaml' 
-            opt.hyp = 'data/hyp.real_world.yaml' 
+            opt.hyp = f'data/hyp.real_world{pretrained}.yaml' 
         if ('lambda01' == opt.host_name): 
             opt.source = '/data/nielseni6/ijcnn_v7data/Real_world_test/images' 
             opt.data = 'data/real_world_lambda01.yaml' 
@@ -806,7 +810,7 @@ if __name__ == '__main__':
             opt.source = [f'/data/nielseni6/drone_data/k_fold{int(i + (int(i>=opt.k_fold_num)))}/images' for i in range(9)] 
             opt.hyp = f'data/hyp.real_world_kfold{opt.k_fold_num}.yaml' 
             opt.data = f'data/real_world_kfold{opt.k_fold_num}.yaml' 
-        opt.weights = ''
+        # opt.weights = ''
         if opt.inherently_explainable:
             opt.cfg = 'cfg/training/yolov7-tiny-drone-pgt.yaml' 
         else:
@@ -816,7 +820,7 @@ if __name__ == '__main__':
         opt.source = "/data/nielseni6/coco/images" 
         ######### scratch #########
         opt.cfg = 'cfg/training/yolov7.yaml' 
-        opt.weights = '' 
+        # opt.weights = '' 
         opt.hyp = 'data/hyp.scratch.p5.yaml' 
         ###########################
         # ######## pretrained #######

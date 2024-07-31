@@ -1781,13 +1781,13 @@ class ComputePGTLossOTA:
             if n:
                 ps = pi[b, a, gj, gi]  # prediction subset corresponding to targets
                 
-                # Regression
-                grid = torch.stack([gi, gj], dim=1)
-                pxy = ps[:, :2].sigmoid() * 2. - 0.5
-                #pxy = ps[:, :2].sigmoid() * 3. - 1.
-                pwh = (ps[:, 2:4].sigmoid() * 2) ** 2 * anchors[i]
+                # Regression 
+                grid = torch.stack([gi, gj], dim=1) 
+                pxy = ps[:, :2].sigmoid() * 2. - 0.5 
+                #pxy = ps[:, :2].sigmoid() * 3. - 1. 
+                pwh = (ps[:, 2:4].sigmoid() * 2) ** 2 * anchors[i] 
                 pbox = torch.cat((pxy, pwh), 1)  # predicted box
-                selected_tbox = targets[i][:, 2:6] * pre_gen_gains[i]
+                selected_tbox = targets[i][:, 2:6] * pre_gen_gains[i] 
                 selected_tbox[:, :2] -= grid
                 if pbox.T.isnan().any():
                     print("pbox is nan", pbox.T)            #OTA!
@@ -1821,7 +1821,7 @@ class ComputePGTLossOTA:
             ################################################
             ############## Plausibility Loss ############### 
             ################################################
-            if (not opt.inherently_explainable) and n and (opt.pgt_coeff != 0.0):
+            if (not opt.inherently_explainable) and bool(n) and ((opt.pgt_coeff != 0.0) or opt.show_plaus_score):
                 if opt.loss_attr:
                     if get_loss and (len(opt.out_num_attrs) > 0):
                         if (len(opt.out_num_attrs) == 1) and (2 in opt.out_num_attrs):
@@ -1844,10 +1844,8 @@ class ComputePGTLossOTA:
                             ps_list.append(ps)
                             if get_loss:
                                 attr = get_gradient(imgs, grad_wrt = torch.cat(ps_list, dim=0))
-                            # if i == min(opt.out_num_attrs):
-                            #     attr = get_gradient(imgs, grad_wrt = ps)
-                            # else:
-                            #     attr += get_gradient(imgs, grad_wrt = ps)
+
+
             if pred_labels is not None:
                 targets_ = pred_labels
             if get_loss and (attr is not None):
@@ -1886,7 +1884,8 @@ class ComputePGTLossOTA:
         lobj=lobj.clamp(max=2)
         # lplaus=lplaus.clamp(max=2)
         
-        if pgt_coeff != 0.0:
+        if opt.pgt_coeff != 0.0:
+        # if ((opt.pgt_coeff != 0.0) or opt.show_plaus_score):
             if opt.lplaus_only:
                 loss_r = lplaus
             else:

@@ -40,11 +40,13 @@ def change_noise_batch(signal_tensors, noise_tensors, desired_snr=10, debug=Fals
         # Scale the noise tensor
         scaled_noise_tensor = noise_tensor * scaling_factor
         
-        # # Add the scaled noise to the signal tensor
-        # noisy_signal_tensor = signal_tensor + scaled_noise_tensor
-        
-        # # Verify SNR
-        # estimated_snr = 10 * torch.log10(torch.mean(torch.pow(signal_tensor, 2)) / torch.mean(torch.pow(scaled_noise_tensor, 2)))
+        if debug:
+            # Add the scaled noise to the signal tensor
+            noisy_signal_tensor = signal_tensor + scaled_noise_tensor
+            
+            # Verify SNR
+            estimated_snr = 10 * torch.log10(torch.mean(torch.pow(signal_tensor, 2)) / torch.mean(torch.pow(scaled_noise_tensor, 2)))
+            print(f"Estimated SNR: {float(estimated_snr)}")
         
         scaled_noise_tensors.append(scaled_noise_tensor)
     return torch.stack(scaled_noise_tensors)
