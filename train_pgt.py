@@ -797,6 +797,7 @@ if __name__ == '__main__':
     # opt.local_rank = -1 # os.environ["LOCAL_RANK"] 
     
     pretrained = '.pretrained' if opt.weights.endswith('.pt') and os.path.isfile(opt.weights) else ''
+    pre = True if opt.weights.endswith('.pt') and os.path.isfile(opt.weights) else False
     if opt.dataset == 'real_world_drone': 
         if ('lambda02' == opt.host_name) or ('lambda03' == opt.host_name) or ('lambda05' == opt.host_name): 
             opt.source = '/data/Koutsoubn8/ijcnn_v7data/Real_world_test/images' 
@@ -808,8 +809,9 @@ if __name__ == '__main__':
             opt.hyp = 'data/hyp.real_world_lambda01.yaml' 
         if opt.k_fold: 
             opt.source = [f'/data/nielseni6/drone_data/k_fold{int(i + (int(i>=opt.k_fold_num)))}/images' for i in range(9)] 
-            opt.hyp = f'data/hyp.real_world_kfold{opt.k_fold_num}.yaml' 
+            opt.hyp = f'data/hyp.real_world_kfold{opt.k_fold_num if not pre else pretrained}.yaml' 
             opt.data = f'data/real_world_kfold{opt.k_fold_num}.yaml' 
+
         # opt.weights = ''
         if opt.inherently_explainable:
             opt.cfg = 'cfg/training/yolov7-tiny-drone-pgt.yaml' 
