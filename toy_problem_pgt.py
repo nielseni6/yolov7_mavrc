@@ -6,17 +6,58 @@ import argparse
 import matplotlib.pyplot as plt
 import numpy as np
 import os
+import cv2
 
+# TODO - We need to modify this function to not be grey scale
 def subfigimshow(img, ax):
+    print(f'img shape: {img.shape}')
     try:
         npimg = img.clone().detach().cpu().numpy()
     except:
         npimg = img
-    tpimg = np.transpose(npimg, (1, 2, 0))
-    ax.imshow(tpimg)
+    if len(npimg.shape) == 2:
+        # If it's a 2D array, it's likely a grayscale image
+        ax.imshow(npimg, cmap='gray')
+    elif len(npimg.shape) == 3:
+        if npimg.shape[0] == 3 or npimg.shape[0] == 1:
+            # If the first dimension is 3 or 1, it's likely in (C, H, W) format
+            tpimg = np.transpose(npimg, (1, 2, 0))
+        else:
+            # It's already in (H, W, C) format
+            tpimg = npimg
+        
+        if tpimg.shape[2] == 1:
+            # If it's a 3D array with only one channel, squeeze it
+            ax.imshow(np.squeeze(tpimg), cmap='gray')
+        else:
+            ax.imshow(tpimg)
+    else:
+        raise ValueError(f"Unexpected image shape: {npimg.shape}")
+
+def draw_bounding_boxes(image, boxes, color=(0, 255, 0), thickness=2):
+    # Ensure image is 3-channel RGB
+    if len(image.shape) == 2:
+        image = np.stack([image] * 3, axis=-1)
+    elif len(image.shape) == 3 and image.shape[2] == 1:
+        image = np.repeat(image, 3, axis=2)
+    
+    # Ensure image is uint8 and in range [0, 255]
+    if image.dtype != np.uint8:
+        image = (image * 255).clip(0, 255).astype(np.uint8)
+    
+    image_with_boxes = image.copy()
+    for box in boxes:
+        x_center, y_center, width, height = box
+        x_min = int((x_center - width / 2) * image_with_boxes.shape[1])
+        y_min = int((y_center - height / 2) * image_with_boxes.shape[0])
+        x_max = int((x_center + width / 2) * image_with_boxes.shape[1])
+        y_max = int((y_center + height / 2) * image_with_boxes.shape[0])
+        cv2.rectangle(image_with_boxes, (x_min, y_min), (x_max, y_max), color, thickness)
+    
+    return image_with_boxes
 
 #NOTE: We want to keep the number of bb at 0 for now (1). This is the number of targets we want to have not BB
-def toy_problem(pgt_coeff, focus_coeff, alpha, num_bb, x_coord, y_coord, scheduler=2.0, device='0', dist_coeff=0.5, dist_reg_only=True, iou_coeff=0.5, 
+def toy_problem(pgt_coeff, focus_coeff, x_coord, y_coord, num_bb=0, alpha=400.0, scheduler=2.0, device="0", dist_coeff=0.5, dist_reg_only=True, iou_coeff=0.5, 
                 bbox_coeff=0.0, dist_x_bbox=False, iou_loss_only=False, show_dist_reg=True):
     
     # Create a Namespace object to hold params
@@ -24,10 +65,10 @@ def toy_problem(pgt_coeff, focus_coeff, alpha, num_bb, x_coord, y_coord, schedul
     # Save all parameters as attributes of the Namespace object
     opt.pgt_coeff = pgt_coeff
     opt.focus_coeff = focus_coeff
-    opt.alpha = alpha
-    opt.num_bb = num_bb
     opt.x_coord = x_coord
     opt.y_coord = y_coord
+    opt.num_bb = num_bb
+    opt.alpha = alpha
     opt.scheduler = scheduler
     opt.device = device
     opt.dist_coeff = dist_coeff
@@ -43,10 +84,10 @@ def toy_problem(pgt_coeff, focus_coeff, alpha, num_bb, x_coord, y_coord, schedul
 
     # Set CUDA device
     os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID" 
-    os.environ["CUDA_VISIBLE_DEVICES"] = opt.device 
+    os.environ["CUDA_VISIBLE_DEVICES"] = str(int(opt.device))
     
     targets = torch.tensor([
-                            [opt.num_bb, 0, opt.x_coord, opt.y_coord, 0.05, 0.05],
+                            [0, 0, opt.x_coord, opt.y_coord, 0.05, 0.05],
     #                        [0, 1, 0.4, 0.6, 0.05, 0.07],
     #                        [1, 0, 0.25, 0.2, 0.04, 0.05],
                         #    [2, 0, 0.8, 0.76, 0.05, 0.05],
@@ -66,8 +107,6 @@ def toy_problem(pgt_coeff, focus_coeff, alpha, num_bb, x_coord, y_coord, schedul
         bbox_map = get_bbox_map(targets, attr)
         plaus_score = ((torch.sum((attr * bbox_map))) / (torch.sum(attr)))
         plaus_loss = (1.0 - plaus_score)
-    # else:
-    #     plaus_loss = get_plaus_loss(targets, attr, opt, only_loss = True)
 
     nsamples = 10
     rows = len(attr)  # Number of images
@@ -75,17 +114,27 @@ def toy_problem(pgt_coeff, focus_coeff, alpha, num_bb, x_coord, y_coord, schedul
     size = 3
 
     # Create a new figure for each i
-    fig = plt.figure(figsize=(cols * size, rows * size))
+    fig1 = plt.figure(figsize=(cols * size, rows * size))
     plt.tight_layout()
-    
-    for j in range(len(attr)):
-        ax = fig.add_subplot(rows, cols, 2 + (j * cols))
-        if j == 0:
-            ax.set_title('Attr Step 0')
-        if j == len(attr) - 1:
-            ax.set_title(f'PGT Loss:\n{round(float(plaus_loss), 5)}')
-        subfigimshow(attr[j], ax)  # Display the image
-        ax.axis('off')
+
+    # Create the second figure for the remaining 8 attr steps
+    fig2 = plt.figure(figsize=(cols * size, rows * size))
+    plt.tight_layout()
+
+    # Create a figure for plausibility scores
+    fig3, ax3 = plt.subplots(figsize=(10, 6))
+    plaus_scores = []
+
+    #THIS IS OLD CODE
+    # for j in range(len(attr)):
+    #     ax = fig.add_subplot(rows, cols, 2 + (j * cols))
+    #     if j == 0:
+    #         ax.set_title('Attr Step 0')
+    #     if j == len(attr) - 1:
+    #         # ax.set_title(f'PGT Loss:\n{round(float(plaus_loss), 5)}')
+    #         ax.set_title(f'Attr Step:\n{round(float(plaus_loss), 5)}')
+    #     subfigimshow(attr[j], ax)  # Display the image
+    #     ax.axis('off')
     
     for i in range(10):
         plaus_loss, (plaus_score, dist_reg, plaus_reg,), distance_map = get_plaus_loss(targets.requires_grad_(True), attribution_map=attr, opt=opt, debug=True)
@@ -102,55 +151,67 @@ def toy_problem(pgt_coeff, focus_coeff, alpha, num_bb, x_coord, y_coord, schedul
             distance_map = bbox_map
 
         # attr = attr.clamp(0, 1) 
-        attr = normalize_batch(attr) 
-        print(f'step: {i}, plaus_loss: {plaus_loss}, plaus_score: {plaus_score}, dist_reg: {dist_reg}, plaus_reg: {plaus_reg}') 
-        for j in range(len(attr)): 
+        attr = normalize_batch(attr)
+        plaus_scores.append(float(plaus_loss))
+        print(f'step: {i}, plaus_loss: {plaus_loss}, plaus_score: {plaus_score}, dist_reg: {dist_reg}, plaus_reg: {plaus_reg}')
+
+        for j in range(len(attr)):
+
             # Add a subplot for each image 
             if i == 0 and opt.show_dist_reg: 
-                ax = fig.add_subplot(rows, cols, 1 + (j * cols)) 
+                ax = fig1.add_subplot(rows, cols, 1 + (j * cols)) 
                 ax.set_title(f'Distance Regularization Map {j}') 
-                subfigimshow((1 - distance_map[j]), ax) 
-                ax.axis('off') 
-                # imshow(distance_map[j], save_path=f'figs/dist_grid{j}') 
-            ax = fig.add_subplot(rows, cols, (3 + (j * cols) + i))
-            if j == 0: 
-                ax.set_title(f'Attr Step {i + 1}') 
-            if j == len(attr) - 1: 
-                ax.set_title(f'PGT Loss:\n{round(float(plaus_loss), 5)}') 
-            subfigimshow(attr[j], ax)  # Display the image
-            ax.axis('off') 
-            # imshow(attr[j], save_path=f'figs/test_map{j}_{i}')
+                img_tensor = (1 - distance_map[j]).detach().cpu().squeeze(0)  # Assuming grayscale image
+                img_np = img_tensor.numpy()
+                img_np = (img_np * 255).clip(0, 255).astype(np.uint8)
+                bbox_coords = targets[:, 2:6].detach().cpu().numpy()  # This gives us [x_coord, y_coord, width, height] (all bb for now)
+                img_with_boxes = draw_bounding_boxes(img_np, bbox_coords)
+                subfigimshow(img_with_boxes, ax) 
+                ax.axis('off')
+             
+            else:  
+                if i == 1:
+                    # Add the first attr step to fig1
+                    ax = fig1.add_subplot(rows, cols, 2 + (j * cols))
+                    ax.set_title(f'Attr Step {i}' if j == 0 else '')
+                    img_tensor = attr[j].detach().cpu().squeeze(0)  # Assuming grayscale image
+                    img_np = img_tensor.numpy()
+                    img_np = (img_np * 255).clip(0, 255).astype(np.uint8)
+                    bbox_coords = targets[:, 2:6].detach().cpu().numpy()  # This gives us [x_coord, y_coord, width, height] (all bb for now)
+                    img_with_boxes = draw_bounding_boxes(img_np, bbox_coords)
+                    subfigimshow(img_with_boxes, ax)
+                    ax.axis('off')
+                else:
+                    # Subsequent steps go to fig2
+                    ax = fig2.add_subplot(rows, cols, 1 + (i - 1) + (j * cols))
+                    ax.set_title(f'Attr Step {i}' if j == 0 else '')
+                    subfigimshow(attr[j], ax)
+                    ax.axis('off')
+    
+    # Plot plausibility scores
+    ax3.plot(range(nsamples), plaus_scores, marker='o', label='Plausibility Score')
+    ax3.set_title('Plausibility Scores Across Steps')
+    ax3.set_xlabel('Step')
+    ax3.set_ylabel('Plausibility Score')
+    ax3.grid(True)
+    ax3.legend()
 
-            # Save each individual image
-            individual_fig = plt.figure()
-            individual_ax = individual_fig.add_subplot(1, 1, 1)
-            subfigimshow(attr[j], individual_ax)
-            individual_ax.axis('off')
-            individual_fig.savefig(f'figs/individual_image_{j}_step_{i+1}.png')
-            save_dirs.append(f'figs/individual_image_{j}_step_{i+1}.png')
-            plt.close(individual_fig)
-            
-    # Save the full figure
-    fig.savefig('figs/toy_problem_pgt.png', bbox_inches='tight')
-    save_dirs.append('figs/toy_problem_pgt.png')
-    # save_path = f'figs/toy_problem_pgt_focus{focus_coeff}'.replace('.', '_')
-    # save_path = f'figs/'.replace('.', '_')
-    # fig.savefig(f'{save_path}.png', bbox_inches='tight')
-    # fig.savefig(f'{save_path}.pdf', bbox_inches='tight')
-    plt.close(fig)  # Close the figure to free up memory
-    print(f'plaus_loss: {plaus_loss}, plaus_score: {plaus_score}, dist_reg: {dist_reg}, plaus_reg: {plaus_reg}')
-    print(f'each image saved infividually. Saved dirs: {save_dirs}')
+    # Save the figures
+    fig1.savefig('figs/distance_and_first_step.png', bbox_inches='tight')
+    plt.close(fig1)
 
-# for i in range(10):
-#     delta_attr = torch.autograd.grad(plaus_loss, attr, retain_graph=True,)[0]
-#     or j in range(len(attr)):
-#         imshow(attr[j], save_path=f'figs/test_map{j}_{i}')
-#         imshow((1 - distance_map[j]), save_path=f'figs/dist_grid{j}')
+    fig2.savefig('figs/remaining_attr_steps.png', bbox_inches='tight')
+    plt.close(fig2)
 
-    return save_dirs[10]
+    fig3.savefig('figs/plausibility_scores.png', bbox_inches='tight')
+    plt.close(fig3)
+
+    print('Figures saved: figs/distance_and_first_step.png, figs/remaining_attr_steps.png, and figs/plausibility_scores.png')
+    return 'figs/distance_and_first_step.png', 'figs/remaining_attr_steps.png', 'figs/plausibility_scores.png'
 
 if __name__ == '__main__':
 
+    #TODO - this does not appear to be working correctly
     parser = argparse.ArgumentParser()
     # ##################### Standard Settings #####################
     parser.add_argument('--pgt_coeff', type=float, default=1.0, help='pgt_coeff')
@@ -172,6 +233,6 @@ if __name__ == '__main__':
     parser.add_argument('--show_dist_reg', type=bool, default=True, help='show distance regularization map in figure')
     opt = parser.parse_args()
 
-    toy_problem(opt.pgt_coeff, opt.focus_coeff, opt.alpha, opt.num_bb, opt.x_coord, opt.y_coord, 
+    toy_problem(opt.pgt_coeff, opt.focus_coeff, opt.x_coord, opt.y_coord, opt.alpha, opt.num_bb, 
                 opt.scheduler, opt.device, opt.dist_coeff, opt.dist_reg_only, opt.iou_coeff, 
                 opt.bbox_coeff, opt.dist_x_bbox, opt.iou_loss_only, opt.show_dist_reg)
