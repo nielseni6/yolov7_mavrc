@@ -8,7 +8,6 @@ import numpy as np
 import os
 import cv2
 
-# TODO - We need to modify this function to not be grey scale
 def subfigimshow(img, ax):
     print(f'img shape: {img.shape}')
     try:
@@ -56,8 +55,7 @@ def draw_bounding_boxes(image, boxes, color=(0, 255, 0), thickness=2):
     
     return image_with_boxes
 
-#NOTE: We want to keep the number of bb at 0 for now (1). This is the number of targets we want to have not BB
-def toy_problem(pgt_coeff, focus_coeff, x_coord, y_coord, num_bb=0, alpha=400.0, scheduler=2.0, device="0", dist_coeff=0.5, dist_reg_only=True, iou_coeff=0.5, 
+def toy_problem(pgt_coeff, focus_coeff, x_coord, y_coord, num_bb=0, alpha=200.0, scheduler=2.0, device="0", dist_coeff=0.5, dist_reg_only=True, iou_coeff=0.5, 
                 bbox_coeff=0.0, dist_x_bbox=False, iou_loss_only=False, show_dist_reg=True):
     
     # Create a Namespace object to hold params
@@ -86,6 +84,7 @@ def toy_problem(pgt_coeff, focus_coeff, x_coord, y_coord, num_bb=0, alpha=400.0,
     os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID" 
     os.environ["CUDA_VISIBLE_DEVICES"] = str(int(opt.device))
     
+    #TODO - Adjust this for the number of bounding boxes
     targets = torch.tensor([
                             [0, 0, opt.x_coord, opt.y_coord, 0.05, 0.05],
     #                        [0, 1, 0.4, 0.6, 0.05, 0.07],
@@ -108,6 +107,7 @@ def toy_problem(pgt_coeff, focus_coeff, x_coord, y_coord, num_bb=0, alpha=400.0,
         plaus_score = ((torch.sum((attr * bbox_map))) / (torch.sum(attr)))
         plaus_loss = (1.0 - plaus_score)
 
+    # Plot params (adjust as nessesary)
     nsamples = 10
     rows = len(attr)  # Number of images
     cols = nsamples + 2  # Define the number of columns for subplots
@@ -121,20 +121,13 @@ def toy_problem(pgt_coeff, focus_coeff, x_coord, y_coord, num_bb=0, alpha=400.0,
     fig2 = plt.figure(figsize=(cols * size, rows * size))
     plt.tight_layout()
 
-    # Create a figure for plausibility scores
+    # Create a figure for plausibility losses
     fig3, ax3 = plt.subplots(figsize=(10, 6))
-    plaus_scores = []
+    plaus_losses = []
 
-    #THIS IS OLD CODE
-    # for j in range(len(attr)):
-    #     ax = fig.add_subplot(rows, cols, 2 + (j * cols))
-    #     if j == 0:
-    #         ax.set_title('Attr Step 0')
-    #     if j == len(attr) - 1:
-    #         # ax.set_title(f'PGT Loss:\n{round(float(plaus_loss), 5)}')
-    #         ax.set_title(f'Attr Step:\n{round(float(plaus_loss), 5)}')
-    #     subfigimshow(attr[j], ax)  # Display the image
-    #     ax.axis('off')
+    # Create a figure for plausibility scores
+    fig4, ax4 = plt.subplots(figsize=(10, 6))
+    plaus_scores = []
     
     for i in range(10):
         plaus_loss, (plaus_score, dist_reg, plaus_reg,), distance_map = get_plaus_loss(targets.requires_grad_(True), attribution_map=attr, opt=opt, debug=True)
@@ -152,7 +145,8 @@ def toy_problem(pgt_coeff, focus_coeff, x_coord, y_coord, num_bb=0, alpha=400.0,
 
         # attr = attr.clamp(0, 1) 
         attr = normalize_batch(attr)
-        plaus_scores.append(float(plaus_loss))
+        plaus_losses.append(float(plaus_loss))
+        plaus_scores.append(float(plaus_score))
         print(f'step: {i}, plaus_loss: {plaus_loss}, plaus_score: {plaus_score}, dist_reg: {dist_reg}, plaus_reg: {plaus_reg}')
 
         for j in range(len(attr)):
@@ -161,11 +155,11 @@ def toy_problem(pgt_coeff, focus_coeff, x_coord, y_coord, num_bb=0, alpha=400.0,
             if i == 0 and opt.show_dist_reg: 
                 ax = fig1.add_subplot(rows, cols, 1 + (j * cols)) 
                 ax.set_title(f'Distance Regularization Map {j}') 
-                img_tensor = (1 - distance_map[j]).detach().cpu().squeeze(0)  # Assuming grayscale image
-                img_np = img_tensor.numpy()
-                img_np = (img_np * 255).clip(0, 255).astype(np.uint8)
+                img_tensor = (1 - distance_map[j]).detach().cpu()
+                img_np = img_tensor.detach().cpu().numpy().squeeze()
+                img_colored = plt.cm.viridis(img_np)
                 bbox_coords = targets[:, 2:6].detach().cpu().numpy()  # This gives us [x_coord, y_coord, width, height] (all bb for now)
-                img_with_boxes = draw_bounding_boxes(img_np, bbox_coords)
+                img_with_boxes = draw_bounding_boxes(img_colored, bbox_coords)
                 subfigimshow(img_with_boxes, ax) 
                 ax.axis('off')
              
@@ -174,27 +168,38 @@ def toy_problem(pgt_coeff, focus_coeff, x_coord, y_coord, num_bb=0, alpha=400.0,
                     # Add the first attr step to fig1
                     ax = fig1.add_subplot(rows, cols, 2 + (j * cols))
                     ax.set_title(f'Attr Step {i}' if j == 0 else '')
-                    img_tensor = attr[j].detach().cpu().squeeze(0)  # Assuming grayscale image
-                    img_np = img_tensor.numpy()
-                    img_np = (img_np * 255).clip(0, 255).astype(np.uint8)
+                    img_tensor = attr[j].detach().cpu()
+                    img_np = img_tensor.detach().cpu().numpy().squeeze()
+                    img_colored = plt.cm.viridis(img_np)
                     bbox_coords = targets[:, 2:6].detach().cpu().numpy()  # This gives us [x_coord, y_coord, width, height] (all bb for now)
-                    img_with_boxes = draw_bounding_boxes(img_np, bbox_coords)
+                    img_with_boxes = draw_bounding_boxes(img_colored, bbox_coords)
                     subfigimshow(img_with_boxes, ax)
                     ax.axis('off')
                 else:
                     # Subsequent steps go to fig2
                     ax = fig2.add_subplot(rows, cols, 1 + (i - 1) + (j * cols))
                     ax.set_title(f'Attr Step {i}' if j == 0 else '')
-                    subfigimshow(attr[j], ax)
+                    img_tensor = attr[j].detach().cpu()
+                    img_np = img_tensor.detach().cpu().numpy().squeeze()
+                    img_colored = plt.cm.viridis(img_np)
+                    subfigimshow(img_colored, ax)
                     ax.axis('off')
     
-    # Plot plausibility scores
-    ax3.plot(range(nsamples), plaus_scores, marker='o', label='Plausibility Score')
-    ax3.set_title('Plausibility Scores Across Steps')
+    # Plot plausibility losses
+    ax3.plot(range(nsamples), plaus_losses, marker='o', label='Plausibility Loss')
+    ax3.set_title('Plausibility Losses Across Steps')
     ax3.set_xlabel('Step')
-    ax3.set_ylabel('Plausibility Score')
+    ax3.set_ylabel('Plausibility Loss')
     ax3.grid(True)
     ax3.legend()
+
+    # Plot plausibility scores
+    ax4.plot(range(nsamples), plaus_scores, marker='o', label='Plausibility Scores')
+    ax4.set_title('Plausibility Scores Across Steps')
+    ax4.set_xlabel('Step')
+    ax4.set_ylabel('Plausibility Score')
+    ax4.grid(True)
+    ax4.legend()
 
     # Save the figures
     fig1.savefig('figs/distance_and_first_step.png', bbox_inches='tight')
@@ -203,11 +208,15 @@ def toy_problem(pgt_coeff, focus_coeff, x_coord, y_coord, num_bb=0, alpha=400.0,
     fig2.savefig('figs/remaining_attr_steps.png', bbox_inches='tight')
     plt.close(fig2)
 
-    fig3.savefig('figs/plausibility_scores.png', bbox_inches='tight')
+    fig3.savefig('figs/plausibility_losses.png', bbox_inches='tight')
     plt.close(fig3)
 
-    print('Figures saved: figs/distance_and_first_step.png, figs/remaining_attr_steps.png, and figs/plausibility_scores.png')
-    return 'figs/distance_and_first_step.png', 'figs/remaining_attr_steps.png', 'figs/plausibility_scores.png'
+    fig4.savefig('figs/plausibility_scores.png', bbox_inches='tight')
+    plt.close(fig3)
+
+
+    print('Figures saved: figs/distance_and_first_step.png, figs/remaining_attr_steps.png, and figs/plausibility_losses.png, figs/plausibility_scores.png')
+    return 'figs/distance_and_first_step.png', 'figs/remaining_attr_steps.png', 'figs/plausibility_losses.png', 'figs/plausibility_scores.png'
 
 if __name__ == '__main__':
 
