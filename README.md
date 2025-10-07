@@ -1,6 +1,6 @@
 # XAI Branch Info
 
-Main script to run is test_plaus_or_faith.py. Plausibility Guided Training implemented (run train_pgt.py). Accuracy of training not yet tested.
+Main script to run is test_plaus_or_faith.py. Plausibility Guided Training implemented (run train_pgt.py).
 
 # Turret Gunner Survivability and Simulation Environment Project (Main Code)
 
